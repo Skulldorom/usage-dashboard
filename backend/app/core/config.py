@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "sqlite+aiosqlite:///./usage-dashboard.db"
     encryption_key: str = Field(..., min_length=32)
+    admin_token: str | None = Field(default=None, min_length=16)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
 
