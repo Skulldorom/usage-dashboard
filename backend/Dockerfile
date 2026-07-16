@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS runtime
+FROM python:3.14-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 RUN addgroup --system app && adduser --system --ingroup app app
@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/alembic ./alembic
 COPY backend/app ./app
+COPY pytest.ini ./pytest.ini
 COPY backend/tests ./tests
 RUN chown -R app:app /app
 USER app
