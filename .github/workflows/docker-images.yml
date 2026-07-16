@@ -1,13 +1,6 @@
 name: Docker images
 
 on:
-  pull_request:
-    paths:
-      - backend/**
-      - frontend/**
-      - deploy/**
-      - docker-compose.yml
-      - .github/workflows/docker-images.yml
   push:
     branches:
       - main
