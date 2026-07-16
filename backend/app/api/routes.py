@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import require_admin_auth
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.database import get_session
@@ -23,12 +24,12 @@ def _config_read(config: ProviderConfig) -> ProviderConfigRead:
 async def providers() -> list[dict]:
     return list_providers()
 
-@router.get("/configs", response_model=list[ProviderConfigRead])
+@router.get("/configs", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
 async def list_configs(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.provider, ProviderConfig.label))).scalars().all()
     return [_config_read(row) for row in rows]
 
-@router.post("/configs", response_model=ProviderConfigRead, status_code=status.HTTP_201_CREATED)
+@router.post("/configs", response_model=ProviderConfigRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_auth)])
 async def create_config(payload: ProviderConfigCreate, session: AsyncSession = Depends(get_session)):
     try:
         get_adapter_class(payload.provider)
@@ -45,7 +46,7 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     await session.refresh(config)
     return _config_read(config)
 
-@router.patch("/configs/{config_id}", response_model=ProviderConfigRead)
+@router.patch("/configs/{config_id}", response_model=ProviderConfigRead, dependencies=[Depends(require_admin_auth)])
 async def update_config(config_id: int, payload: ProviderConfigUpdate, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
     if not config:
@@ -64,7 +65,7 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
     await session.refresh(config)
     return _config_read(config)
 
-@router.delete("/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)])
 async def delete_config(config_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(delete(ProviderConfig).where(ProviderConfig.id == config_id))
     if result.rowcount == 0:
@@ -84,7 +85,7 @@ async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnaps
     await session.refresh(snapshot)
     return snapshot
 
-@router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead)
+@router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_admin_auth)])
 async def poll_config(config_id: int, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
     if not config:
@@ -93,12 +94,12 @@ async def poll_config(config_id: int, session: AsyncSession = Depends(get_sessio
         raise HTTPException(status_code=409, detail="Provider config is disabled")
     return await _poll_one(config, session)
 
-@router.post("/poll", response_model=list[UsageSnapshotRead])
+@router.post("/poll", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
 async def poll_all(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)))).scalars().all()
     return [await _poll_one(config, session) for config in configs]
 
-@router.get("/usage", response_model=list[DashboardConfigUsage])
+@router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_admin_auth)])
 async def usage(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.provider, ProviderConfig.label))).scalars().all()
     payload = []
@@ -107,7 +108,7 @@ async def usage(session: AsyncSession = Depends(get_session)):
         payload.append({"config": _config_read(config), "latest": latest})
     return payload
 
-@router.get("/homepage", response_model=HomepagePayload)
+@router.get("/homepage", response_model=HomepagePayload, dependencies=[Depends(require_admin_auth)])
 async def homepage(session: AsyncSession = Depends(get_session)):
     rows = await usage(session)
     configured = len(rows)
