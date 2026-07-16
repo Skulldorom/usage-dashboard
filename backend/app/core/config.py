@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     encryption_key: str = Field(..., min_length=32)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
+    admin_token: str | None = None
 
     @property
     def cors_origins(self) -> list[str]:
