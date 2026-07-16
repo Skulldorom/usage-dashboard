@@ -6,7 +6,7 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI/Codex, Anthropic
 
 - Backend: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
 - Frontend: Vite, React, MUI, React Router
-- Runtime: PostgreSQL, nginx, Docker Compose
+- Runtime: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
 
 ## Quick start
 
@@ -20,7 +20,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Open through the fronting nginx service:
+Open through the frontend container, which also proxies API traffic to the backend:
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
@@ -39,7 +39,7 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
 | `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
-| `NGINX_HTTP_PORT` | Host port published by the fronting nginx service. Defaults to `3000`. |
+| `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |
 | `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins for the FastAPI API. |
 | `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
 

@@ -9,7 +9,6 @@ on:
     paths:
       - backend/**
       - frontend/**
-      - deploy/**
       - docker-compose.yml
       - .github/workflows/docker-images.yml
   workflow_dispatch:
