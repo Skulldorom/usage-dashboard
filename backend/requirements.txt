@@ -8,5 +8,5 @@ pydantic-settings==2.10.1
 cryptography==48.0.1
 httpx==0.28.1
 pytest==9.0.3
-pytest-asyncio==1.1.0
+pytest-asyncio==1.4.0
 aiosqlite==0.21.0
