@@ -1,7 +1,30 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel, MenuItem, Select, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
-import AddIcon from '@mui/icons-material/Add'
-import DeleteIcon from '@mui/icons-material/Delete'
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormHelperText,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  Stack,
+  Switch,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import HubRoundedIcon from '@mui/icons-material/HubRounded'
+import KeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import { api } from '../api.js'
 
 const initialForm = {
@@ -28,17 +51,17 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
-  const selectedProvider = useMemo(() => providers.find((p) => p.id === form.provider), [providers, form.provider])
+  const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
   const isAnthropic = form.provider === 'anthropic'
 
   const load = useCallback(async () => {
     setError('')
     try {
-      const p = await api.providers()
-      setProviders(p)
+      const providerRows = await api.providers()
+      setProviders(providerRows)
       setForm((current) => {
-        if (p.length && !p.some((provider) => provider.id === current.provider)) return { ...initialForm, provider: p[0].id }
+        if (providerRows.length && !providerRows.some((provider) => provider.id === current.provider)) return { ...initialForm, provider: providerRows[0].id }
         return current
       })
     } catch (err) {
@@ -46,7 +69,6 @@ export default function SettingsPage() {
       setError(err.message)
       return
     }
-
     try {
       setConfigs(await api.configs())
     } catch (err) {
@@ -58,26 +80,14 @@ export default function SettingsPage() {
   useEffect(() => { load() }, [load])
 
   function payloadFromForm() {
-    const payload = {
-      provider: form.provider,
-      label: form.label,
-      api_key: form.api_key,
-      base_url: form.base_url || null,
-      is_enabled: true,
-      extra: {},
-    }
+    const payload = { provider: form.provider, label: form.label, api_key: form.api_key, base_url: form.base_url || null, is_enabled: true, extra: {} }
     if (isCustom) {
       payload.extra = {
         method: form.custom_method,
         path: form.custom_path,
         auth_header_name: form.custom_auth_header_name || 'Authorization',
         auth_header_template: form.custom_auth_header_template || 'Bearer {api_key}',
-        metrics: [{
-          label: form.custom_metric_label,
-          path: form.custom_metric_path,
-          unit: form.custom_metric_unit || null,
-          maximum_path: form.custom_metric_maximum_path || null,
-        }],
+        metrics: [{ label: form.custom_metric_label, path: form.custom_metric_path, unit: form.custom_metric_unit || null, maximum_path: form.custom_metric_maximum_path || null }],
       }
     }
     return payload
@@ -90,9 +100,7 @@ export default function SettingsPage() {
       setOpen(false)
       setForm(initialForm)
       await load()
-    } catch (err) {
-      setError(err.message)
-    }
+    } catch (err) { setError(err.message) }
   }
 
   async function testConnection() {
@@ -100,73 +108,59 @@ export default function SettingsPage() {
     setTestError('')
     setTestResult(null)
     setTesting(true)
-    try {
-      setTestResult(await api.testConfig(payloadFromForm()))
-    } catch (err) {
-      setTestError(err.message)
-    } finally {
-      setTesting(false)
-    }
+    try { setTestResult(await api.testConfig(payloadFromForm())) }
+    catch (err) { setTestError(err.message) }
+    finally { setTesting(false) }
   }
 
   async function remove(id) { await api.deleteConfig(id); await load() }
-  async function toggle(cfg) { await api.updateConfig(cfg.id, { is_enabled: !cfg.is_enabled }); await load() }
+  async function toggle(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
   const testDisabled = testing || !form.label || !form.api_key || (isCustom && (!form.base_url || !form.custom_path))
 
-  return (
-    <Stack spacing={3}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between">
-        <Box>
-          <Typography variant="h4">Settings</Typography>
-          <Typography color="text.secondary">Add Firecrawl, DeepSeek, OpenAI/Codex, Anthropic, OpenRouter, or custom HTTP credentials. Keys are encrypted before storage.</Typography>
-        </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError('') }}>Add provider</Button>
-      </Stack>
-      {error && <Alert severity="error">{error}</Alert>}
-      <Table>
-        <TableHead><TableRow><TableCell>Enabled</TableCell><TableCell>Provider</TableCell><TableCell>Label</TableCell><TableCell>API key</TableCell><TableCell>Base URL</TableCell><TableCell align="right">Actions</TableCell></TableRow></TableHead>
-        <TableBody>{configs.map((cfg) => <TableRow key={cfg.id}><TableCell><Switch checked={cfg.is_enabled} onChange={() => toggle(cfg)} /></TableCell><TableCell>{cfg.provider}</TableCell><TableCell>{cfg.label}</TableCell><TableCell>{cfg.api_key_masked}</TableCell><TableCell>{cfg.base_url || 'default'}</TableCell><TableCell align="right"><Button color="error" startIcon={<DeleteIcon />} onClick={() => remove(cfg.id)}>Remove</Button></TableCell></TableRow>)}</TableBody>
-      </Table>
-      <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Add API provider</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ mt: 1 }}>
-            <FormControl fullWidth>
-              <InputLabel>Provider</InputLabel>
-              <Select label="Provider" value={form.provider} onChange={(e) => setForm({ ...initialForm, provider: e.target.value })}>
-                {providers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
-              </Select>
-              {selectedProvider && <FormHelperText>{selectedProvider.description}</FormHelperText>}
-            </FormControl>
-            {isAnthropic && <Alert severity="info">Anthropic usage requires an Admin API key from Console → Settings → Organization → Admin API Keys. A regular Claude inference key will just sit there and sulk.</Alert>}
-            <TextField label="Label" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} placeholder="main" />
-            <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(e) => setForm({ ...form, api_key: e.target.value })} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; do not put secrets in URLs.' : ''} />
-            <TextField label="Base URL override" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional'} required={isCustom} />
-            {isCustom && (
-              <Stack spacing={2}>
-                <FormControl fullWidth>
-                  <InputLabel>HTTP method</InputLabel>
-                  <Select label="HTTP method" value={form.custom_method} onChange={(e) => setForm({ ...form, custom_method: e.target.value })}>
-                    <MenuItem value="GET">GET</MenuItem>
-                    <MenuItem value="POST">POST</MenuItem>
-                  </Select>
-                </FormControl>
-                <TextField label="Path" value={form.custom_path} onChange={(e) => setForm({ ...form, custom_path: e.target.value })} placeholder="/v1/billing" required />
-                <TextField label="Auth header name" value={form.custom_auth_header_name} onChange={(e) => setForm({ ...form, custom_auth_header_name: e.target.value })} />
-                <TextField label="Auth header template" value={form.custom_auth_header_template} onChange={(e) => setForm({ ...form, custom_auth_header_template: e.target.value })} helperText="Use {api_key} where the encrypted secret should be inserted." />
-                <Typography variant="subtitle2">Metric extraction</Typography>
-                <TextField label="Metric label" value={form.custom_metric_label} onChange={(e) => setForm({ ...form, custom_metric_label: e.target.value })} />
-                <TextField label="JSON path" value={form.custom_metric_path} onChange={(e) => setForm({ ...form, custom_metric_path: e.target.value })} helperText="Supports simple paths like $.credits.remaining and $.items[0].usage." />
-                <TextField label="Unit" value={form.custom_metric_unit} onChange={(e) => setForm({ ...form, custom_metric_unit: e.target.value })} />
-                <TextField label="Maximum JSON path (optional)" value={form.custom_metric_maximum_path} onChange={(e) => setForm({ ...form, custom_metric_maximum_path: e.target.value })} />
-              </Stack>
-            )}
-            {testError && <Alert severity="error">Test failed: {testError}</Alert>}
-            {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
-          </Stack>
-        </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit}>Save</Button></DialogActions>
-      </Dialog>
-    </Stack>
-  )
+  return <>
+    <header className="page-heading">
+      <Box><div className="page-kicker">Connections</div><Typography component="h1" variant="h2">Provider settings</Typography><Typography component="p">Manage credentials and custom endpoints. Secrets are encrypted before storage and never returned in full.</Typography></Box>
+      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError('') }}>Add provider</Button>
+    </header>
+    {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+    <Paper className="settings-panel glass-panel" variant="outlined">
+      <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
+      {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config) => {
+        const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
+        return <div className="config-row" key={config.id}>
+          <div className="config-identity"><div className="config-avatar">{initials}</div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography></div></div>
+          <div className="config-detail"><span>Credential</span>{config.api_key_masked}</div>
+          <div className="config-detail"><span>Endpoint</span>{config.base_url || 'Provider default'}</div>
+          <div className="config-actions"><Tooltip title={config.is_enabled ? 'Disable provider' : 'Enable provider'}><Switch checked={config.is_enabled} onChange={() => toggle(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} ${config.label}` }} /></Tooltip><Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip></div>
+        </div>
+      })}</div>}
+    </Paper>
+    <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
+      <DialogTitle><Typography variant="overline" color="primary.main">New connection</Typography><Typography variant="h5">Add API provider</Typography></DialogTitle>
+      <DialogContent>
+        <Stack spacing={2.25} sx={{ mt: 1 }}>
+          <FormControl fullWidth><InputLabel>Provider</InputLabel><Select label="Provider" value={form.provider} onChange={(event) => setForm({ ...initialForm, provider: event.target.value })}>{providers.map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.name}</MenuItem>)}</Select>{selectedProvider && <FormHelperText>{selectedProvider.description}</FormHelperText>}</FormControl>
+          {isAnthropic && <Alert severity="info">Anthropic usage requires an Admin API key from Console → Settings → Organization → Admin API Keys. A normal inference key will merely sit there looking decorative.</Alert>}
+          <TextField label="Connection label" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Production" />
+          <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(event) => setForm({ ...form, api_key: event.target.value })} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : ''} />
+          <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional — provider default will be used'} required={isCustom} />
+          {isCustom && <Stack spacing={2.25}>
+            <Typography className="dialog-section-label">Custom request</Typography>
+            <FormControl fullWidth><InputLabel>HTTP method</InputLabel><Select label="HTTP method" value={form.custom_method} onChange={(event) => setForm({ ...form, custom_method: event.target.value })}><MenuItem value="GET">GET</MenuItem><MenuItem value="POST">POST</MenuItem></Select></FormControl>
+            <TextField label="Path" value={form.custom_path} onChange={(event) => setForm({ ...form, custom_path: event.target.value })} placeholder="/v1/billing" required />
+            <TextField label="Auth header name" value={form.custom_auth_header_name} onChange={(event) => setForm({ ...form, custom_auth_header_name: event.target.value })} />
+            <TextField label="Auth header template" value={form.custom_auth_header_template} onChange={(event) => setForm({ ...form, custom_auth_header_template: event.target.value })} helperText="Use {api_key} where the encrypted secret should be inserted." />
+            <Typography className="dialog-section-label">Metric extraction</Typography>
+            <TextField label="Metric label" value={form.custom_metric_label} onChange={(event) => setForm({ ...form, custom_metric_label: event.target.value })} />
+            <TextField label="JSON path" value={form.custom_metric_path} onChange={(event) => setForm({ ...form, custom_metric_path: event.target.value })} helperText="Supports simple paths such as $.credits.remaining and $.items[0].usage." />
+            <TextField label="Unit" value={form.custom_metric_unit} onChange={(event) => setForm({ ...form, custom_metric_unit: event.target.value })} />
+            <TextField label="Maximum JSON path (optional)" value={form.custom_metric_maximum_path} onChange={(event) => setForm({ ...form, custom_metric_maximum_path: event.target.value })} />
+          </Stack>}
+          {testError && <Alert severity="error">Test failed: {testError}</Alert>}
+          {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit}>Save provider</Button></DialogActions>
+    </Dialog>
+  </>
 }
