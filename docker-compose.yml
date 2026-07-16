@@ -14,9 +14,7 @@ services:
       retries: 5
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
+    image: ${BACKEND_IMAGE:-ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG:-main}}
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://usage_dashboard:change-me@db:5432/usage_dashboard}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env. See .env.example.}
@@ -26,11 +24,7 @@ services:
         condition: service_healthy
 
   frontend:
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    image: ${FRONTEND_IMAGE:-ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG:-main}}
     depends_on:
       - backend
 

@@ -14,7 +14,8 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI/Codex, Anthropic
 cp .env.example .env
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 # paste that value into ENCRYPTION_KEY in .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 Open through the fronting nginx service:
@@ -23,7 +24,7 @@ Open through the fronting nginx service:
 - Backend health: http://localhost:3000/health
 - Homepage payload: http://localhost:3000/api/v1/homepage
 
-Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is intentionally internal-only and is not published on the host.
+Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is intentionally internal-only and is not published on the host. The default Compose stack pulls published images from GitHub Container Registry; set `IMAGE_TAG`, `BACKEND_IMAGE`, or `FRONTEND_IMAGE` to pin or override them.
 
 ## Configuration
 
@@ -31,9 +32,12 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | --- | --- |
 | `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
+| `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `main`. |
+| `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
+| `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
 | `NGINX_HTTP_PORT` | Host port published by the fronting nginx service. Defaults to `3000`. |
 | `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins for the FastAPI API. |
-| `VITE_API_BASE_URL` | Frontend API base path. Defaults to `/api` for nginx proxying. |
+| `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
 
 ## Providers
 
@@ -113,4 +117,12 @@ cd frontend
 npm install
 npm run dev
 npm run build
+```
+
+To build local images instead of using GHCR, run explicit builds with the Dockerfiles:
+
+```bash
+docker build -t usage-dashboard-backend:local -f backend/Dockerfile .
+docker build -t usage-dashboard-frontend:local -f frontend/Dockerfile .
+BACKEND_IMAGE=usage-dashboard-backend:local FRONTEND_IMAGE=usage-dashboard-frontend:local docker compose up -d
 ```
