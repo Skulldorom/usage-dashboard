@@ -1,12 +1,16 @@
+import ipaddress
 import re
+import socket
 from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
 
+from app.core.config import settings
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 _PATH_TOKEN_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)(?:\[(\d+)\])?")
+_BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain"}
 
 class CustomHTTPAdapter(ProviderAdapter):
     id = "custom_http"
@@ -42,6 +46,7 @@ class CustomHTTPAdapter(ProviderAdapter):
             raise ValueError("Custom HTTP base URL must be an absolute http(s) URL")
         if parsed_base.username or parsed_base.password or "@" in parsed_base.netloc:
             raise ValueError("Do not store credentials in the custom provider URL")
+        CustomHTTPAdapter._validate_base_url_host(parsed_base.hostname)
         if urlsplit(path).scheme or urlsplit(path).netloc:
             raise ValueError("Custom HTTP path must be relative; put the host in Base URL")
         if "api_key=" in path.lower() or "token=" in path.lower():
@@ -52,6 +57,46 @@ class CustomHTTPAdapter(ProviderAdapter):
         base = base_url.rstrip("/")
         clean_path = path if path.startswith("/") else f"/{path}"
         return {**extra, "method": method, "url": f"{base}{clean_path}", "metrics": metric_paths}
+
+    @staticmethod
+    def _validate_base_url_host(hostname: str | None) -> None:
+        if not hostname:
+            raise ValueError("Custom HTTP base URL must include a hostname")
+        normalized = hostname.rstrip(".").lower()
+        if normalized in settings.custom_http_allowed_hosts:
+            return
+        if normalized in _BLOCKED_HOSTNAMES or normalized.endswith(".localhost"):
+            raise ValueError("Custom HTTP base URL host is not allowed")
+        try:
+            ip = ipaddress.ip_address(normalized)
+        except ValueError:
+            CustomHTTPAdapter._validate_resolved_addresses(normalized)
+        else:
+            CustomHTTPAdapter._reject_internal_ip(ip)
+
+    @staticmethod
+    def _validate_resolved_addresses(hostname: str) -> None:
+        try:
+            resolved = socket.getaddrinfo(hostname, None, type=socket.SOCK_STREAM)
+        except socket.gaierror as exc:
+            raise ValueError("Custom HTTP base URL hostname could not be resolved") from exc
+        addresses = {result[4][0] for result in resolved}
+        if not addresses:
+            raise ValueError("Custom HTTP base URL hostname could not be resolved")
+        for address in addresses:
+            CustomHTTPAdapter._reject_internal_ip(ipaddress.ip_address(address))
+
+    @staticmethod
+    def _reject_internal_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
+        if any((
+            ip.is_loopback,
+            ip.is_link_local,
+            ip.is_private,
+            ip.is_reserved,
+            ip.is_unspecified,
+            ip.is_multicast,
+        )):
+            raise ValueError("Custom HTTP base URL host resolves to a private or internal IP address")
 
     @staticmethod
     def extract_json_path(data: Any, path: str) -> Any:
