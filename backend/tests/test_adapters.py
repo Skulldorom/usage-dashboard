@@ -43,3 +43,50 @@ def test_custom_http_parser_extracts_configured_json_paths():
 def test_custom_http_rejects_credentials_in_url():
     with pytest.raises(ValueError, match="credentials"):
         CustomHTTPAdapter._validated_config({"path": "/usage", "metrics": [{"label": "used", "path": "$.used"}]}, "https://token@example.com")
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://127.0.0.1",
+        "http://localhost",
+        "http://169.254.169.254",
+        "http://10.0.0.1",
+        "http://172.16.0.1",
+        "http://192.168.1.1",
+        "http://[::1]",
+        "http://[fc00::1]",
+        "http://[fe80::1]",
+    ],
+)
+def test_custom_http_rejects_private_and_internal_hosts(base_url):
+    with pytest.raises(ValueError, match="host|IP"):
+        CustomHTTPAdapter._validated_config({"path": "/usage", "metrics": [{"label": "used", "path": "$.used"}]}, base_url)
+
+
+def test_custom_http_rejects_hostname_resolving_to_private_ip(monkeypatch):
+    def fake_getaddrinfo(*args, **kwargs):
+        return [(None, None, None, "", ("10.0.0.5", 443))]
+
+    monkeypatch.setattr("app.providers.custom_http.socket.getaddrinfo", fake_getaddrinfo)
+
+    with pytest.raises(ValueError, match="private or internal"):
+        CustomHTTPAdapter._validated_config({"path": "/usage", "metrics": [{"label": "used", "path": "$.used"}]}, "https://api.example.com")
+
+
+def test_custom_http_allows_hostname_resolving_to_public_ip(monkeypatch):
+    def fake_getaddrinfo(*args, **kwargs):
+        return [(None, None, None, "", ("8.8.8.8", 443))]
+
+    monkeypatch.setattr("app.providers.custom_http.socket.getaddrinfo", fake_getaddrinfo)
+
+    config = CustomHTTPAdapter._validated_config({"path": "/usage", "metrics": [{"label": "used", "path": "$.used"}]}, "https://api.example.com")
+
+    assert config["url"] == "https://api.example.com/usage"
+
+
+def test_custom_http_allowlist_bypasses_internal_host_rejection(monkeypatch):
+    monkeypatch.setattr("app.providers.custom_http.settings.custom_http_allowed_hosts_raw", "localhost")
+
+    config = CustomHTTPAdapter._validated_config({"path": "/usage", "metrics": [{"label": "used", "path": "$.used"}]}, "http://localhost")
+
+    assert config["url"] == "http://localhost/usage"

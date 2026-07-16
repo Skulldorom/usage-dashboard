@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     encryption_key: str = Field(..., min_length=32)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
+    custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")
+
+    @property
+    def custom_http_allowed_hosts(self) -> set[str]:
+        return {host.strip().rstrip(".").lower() for host in self.custom_http_allowed_hosts_raw.split(",") if host.strip()}
 
     @property
     def cors_origins(self) -> list[str]:
