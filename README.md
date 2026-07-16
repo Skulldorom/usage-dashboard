@@ -5,14 +5,14 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI/Codex, Anthropic
 ## Stack
 
 - Backend: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
-- Frontend: Vite, React 19, MUI 6, React Router
-- Runtime: PostgreSQL 16, nginx, Docker Compose
+- Frontend: Vite, React, MUI, React Router
+- Runtime: PostgreSQL, nginx, Docker Compose
 
 ## Quick start
 
 ```bash
 cp .env.example .env
-python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+openssl rand -base64 32 | tr '+/' '-_'
 # paste that value into ENCRYPTION_KEY in .env
 # generate an admin token and paste it into ADMIN_TOKEN in .env
 openssl rand -hex 32
