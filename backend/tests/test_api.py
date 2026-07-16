@@ -1,15 +1,20 @@
-from pathlib import Path
+import asyncio
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from time import perf_counter
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.config import settings
 from app.database import get_session
 from app.main import app
 from app.models import Base, ProviderConfig, UsageSnapshot
+from app.providers.base import Metric, ProviderAdapter, ProviderUsage
+from app.providers.registry import ADAPTERS
 
 DB = Path("/tmp/usage_dashboard_test_api.db")
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
@@ -18,6 +23,7 @@ TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
 @pytest_asyncio.fixture(autouse=True)
 async def sqlite_db(monkeypatch):
     monkeypatch.setattr(settings, "admin_token", "test-admin-token-123")
+    monkeypatch.setattr(settings, "snapshot_retention_days", 90)
     if DB.exists():
         DB.unlink()
     engine = create_async_engine(TEST_DATABASE_URL)
@@ -35,6 +41,25 @@ async def sqlite_db(monkeypatch):
     await engine.dispose()
     if DB.exists():
         DB.unlink()
+
+
+class FakeAdapter(ProviderAdapter):
+    id = "fake"
+    name = "Fake"
+    description = "Fake test provider"
+    default_base_url = "https://fake.example"
+    metric_names = ["remaining"]
+
+    async def fetch_usage(self) -> ProviderUsage:
+        await asyncio.sleep(float(self.extra.get("delay", 0)))
+        if self.api_key == "bad-key":
+            raise ValueError("invalid test key")
+        return ProviderUsage(
+            status="healthy",
+            summary=f"{self.api_key} ok",
+            metrics=[Metric(label="remaining", value=42, unit="credits", maximum=100)],
+            raw={"ok": True},
+        )
 
 
 @pytest.mark.asyncio
@@ -134,3 +159,77 @@ async def test_config_history_requires_admin_auth():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         unauthorized = await client.get("/api/v1/configs/1/history")
         assert unauthorized.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_config_test_endpoint_returns_usage_without_persisting(monkeypatch):
+    monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        tested = await client.post("/api/v1/configs/test", json={"provider": "fake", "label": "scratch", "api_key": "good-key"}, headers=auth)
+        assert tested.status_code == 200, tested.text
+        assert tested.json()["summary"] == "good-key ok"
+        assert tested.json()["metrics"][0]["value"] == 42
+
+        failed = await client.post("/api/v1/configs/test", json={"provider": "fake", "label": "scratch", "api_key": "bad-key"}, headers=auth)
+        assert failed.status_code == 400
+        assert "invalid test key" in failed.text
+
+        configs = await client.get("/api/v1/configs", headers=auth)
+        assert configs.json() == []
+
+
+@pytest.mark.asyncio
+async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
+    monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for idx in range(3):
+            created = await client.post("/api/v1/configs", json={"provider": "fake", "label": f"provider-{idx}", "api_key": f"key-{idx}", "extra": {"delay": 0.15}}, headers=auth)
+            assert created.status_code == 201, created.text
+
+        start = perf_counter()
+        polled = await client.post("/api/v1/poll", headers=auth)
+        elapsed = perf_counter() - start
+
+        assert polled.status_code == 200, polled.text
+        assert len(polled.json()) == 3
+        assert elapsed < 0.35
+
+
+@pytest.mark.asyncio
+async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(monkeypatch):
+    monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
+    monkeypatch.setattr(settings, "snapshot_retention_days", 0)
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/v1/configs", json={"provider": "fake", "label": "polled", "api_key": "good-key"}, headers=auth)
+        second = await client.post("/api/v1/configs", json={"provider": "fake", "label": "old-only", "api_key": "good-key"}, headers=auth)
+        assert first.status_code == 201, first.text
+        assert second.status_code == 201, second.text
+        first_id = first.json()["id"]
+        second_id = second.json()["id"]
+
+        engine = create_async_engine(TEST_DATABASE_URL)
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+        old_time = datetime.now(UTC) - timedelta(days=30)
+        async with Session() as session:
+            session.add_all([
+                UsageSnapshot(provider_config_id=first_id, provider="fake", status="healthy", summary="old polled", metrics=[], raw={}, checked_at=old_time),
+                UsageSnapshot(provider_config_id=second_id, provider="fake", status="healthy", summary="old only", metrics=[], raw={}, checked_at=old_time),
+            ])
+            await session.commit()
+
+        polled = await client.post(f"/api/v1/configs/{first_id}/poll", headers=auth)
+        assert polled.status_code == 200, polled.text
+
+        async with Session() as session:
+            snapshot_count = await session.scalar(select(func.count()).select_from(UsageSnapshot))
+        await engine.dispose()
+        assert snapshot_count == 2
+
+        usage = await client.get("/api/v1/usage", headers=auth)
+        assert usage.status_code == 200, usage.text
+        latest_by_label = {item["config"]["label"]: item["latest"] for item in usage.json()}
+        assert latest_by_label["polled"]["summary"] == "good-key ok"
+        assert latest_by_label["old-only"]["summary"] == "old only"

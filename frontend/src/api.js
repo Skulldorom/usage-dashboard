@@ -23,6 +23,7 @@ async function request(path, options = {}) {
 export const api = {
   providers: () => request('/providers'),
   configs: () => request('/configs'),
+  testConfig: (payload) => request('/configs/test', { method: 'POST', body: JSON.stringify(payload) }),
   createConfig: (payload) => request('/configs', { method: 'POST', body: JSON.stringify(payload) }),
   updateConfig: (id, payload) => request(`/configs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteConfig: (id) => request(`/configs/${id}`, { method: 'DELETE' }),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel, MenuItem, Select, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, FormControl, FormHelperText, InputLabel, MenuItem, Select, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import { api } from '../api.js'
@@ -25,6 +25,9 @@ export default function SettingsPage() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(initialForm)
   const [error, setError] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState(null)
+  const [testError, setTestError] = useState('')
   const selectedProvider = useMemo(() => providers.find((p) => p.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
   const isAnthropic = form.provider === 'anthropic'
@@ -83,8 +86,23 @@ export default function SettingsPage() {
     }
   }
 
+  async function testConnection() {
+    setError('')
+    setTestError('')
+    setTestResult(null)
+    setTesting(true)
+    try {
+      setTestResult(await api.testConfig(payloadFromForm()))
+    } catch (err) {
+      setTestError(err.message)
+    } finally {
+      setTesting(false)
+    }
+  }
+
   async function remove(id) { await api.deleteConfig(id); await load() }
   async function toggle(cfg) { await api.updateConfig(cfg.id, { is_enabled: !cfg.is_enabled }); await load() }
+  const testDisabled = testing || !form.label || !form.api_key || (isCustom && (!form.base_url || !form.custom_path))
 
   return (
     <Stack gap={3}>
@@ -93,7 +111,7 @@ export default function SettingsPage() {
           <Typography variant="h4">Settings</Typography>
           <Typography color="text.secondary">Add Firecrawl, DeepSeek, OpenAI/Codex, Anthropic, OpenRouter, or custom HTTP credentials. Keys are encrypted before storage.</Typography>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpen(true)}>Add provider</Button>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError('') }}>Add provider</Button>
       </Stack>
       {error && <Alert severity="error">{error}</Alert>}
       <Table>
@@ -134,9 +152,11 @@ export default function SettingsPage() {
                 <TextField label="Maximum JSON path (optional)" value={form.custom_metric_maximum_path} onChange={(e) => setForm({ ...form, custom_metric_maximum_path: e.target.value })} />
               </Stack>
             )}
+            {testError && <Alert severity="error">Test failed: {testError}</Alert>}
+            {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button variant="contained" onClick={submit}>Save</Button></DialogActions>
+        <DialogActions><Button onClick={() => setOpen(false)}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit}>Save</Button></DialogActions>
       </Dialog>
     </Stack>
   )

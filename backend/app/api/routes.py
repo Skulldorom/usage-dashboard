@@ -1,7 +1,9 @@
-from datetime import UTC, datetime, timedelta
+import asyncio
 from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import asc, delete, desc, select
+from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin_auth
@@ -10,7 +12,7 @@ from app.core.crypto import CryptoError, CryptoService
 from app.database import get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import DashboardConfigUsage, HomepagePayload, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, UsageSnapshotRead
+from app.schemas import DashboardConfigUsage, HomepagePayload, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 
@@ -52,6 +54,17 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     return _config_read(config)
 
 
+@router.post("/configs/test", response_model=ProviderUsageRead, dependencies=[Depends(require_admin_auth)])
+async def test_config(payload: ProviderConfigCreate):
+    try:
+        adapter_cls = get_adapter_class(payload.provider)
+        adapter = adapter_cls(payload.api_key, base_url=payload.base_url, timeout=settings.request_timeout_seconds, extra=payload.extra)
+        usage = await adapter.fetch_usage()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": usage.status, "summary": usage.summary, "metrics": [asdict(metric) for metric in usage.metrics], "raw": usage.raw}
+
+
 @router.patch("/configs/{config_id}", response_model=ProviderConfigRead, dependencies=[Depends(require_admin_auth)])
 async def update_config(config_id: int, payload: ProviderConfigUpdate, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
@@ -79,6 +92,7 @@ async def delete_config(config_id: int, session: AsyncSession = Depends(get_sess
         raise HTTPException(status_code=404, detail="Provider config not found")
     await session.commit()
 
+
 @router.get("/configs/{config_id}/history", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
 async def config_history(config_id: int, hours: int = 168, limit: int = 500, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
@@ -92,7 +106,8 @@ async def config_history(config_id: int, hours: int = 168, limit: int = 500, ses
     result = await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config_id, UsageSnapshot.checked_at >= since).order_by(asc(UsageSnapshot.checked_at), asc(UsageSnapshot.id)).limit(limit))
     return result.scalars().all()
 
-async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
+
+async def _snapshot_for_config(config: ProviderConfig) -> UsageSnapshot:
     try:
         adapter_cls = get_adapter_class(config.provider)
         adapter = adapter_cls(_crypto().decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds, extra=config.extra)
@@ -100,9 +115,28 @@ async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnaps
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
     except Exception as exc:
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status="error", summary=f"{config.label}: polling failed", metrics=[], raw={}, error=str(exc))
+    return snapshot
+
+
+async def _prune_old_snapshots(session: AsyncSession) -> None:
+    if settings.snapshot_retention_days < 0:
+        return
+    cutoff = datetime.now(UTC) - timedelta(days=settings.snapshot_retention_days)
+    ranked_snapshots = select(
+        UsageSnapshot.id,
+        func.row_number().over(partition_by=UsageSnapshot.provider_config_id, order_by=(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))).label("rank"),
+    ).subquery()
+    latest_snapshot_ids = select(ranked_snapshots.c.id).where(ranked_snapshots.c.rank == 1)
+    await session.execute(delete(UsageSnapshot).where(UsageSnapshot.checked_at < cutoff, UsageSnapshot.id.not_in(latest_snapshot_ids)))
+    await session.commit()
+
+
+async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
+    snapshot = await _snapshot_for_config(config)
     session.add(snapshot)
     await session.commit()
     await session.refresh(snapshot)
+    await _prune_old_snapshots(session)
     return snapshot
 
 
@@ -119,7 +153,13 @@ async def poll_config(config_id: int, session: AsyncSession = Depends(get_sessio
 @router.post("/poll", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
 async def poll_all(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)))).scalars().all()
-    return [await _poll_one(config, session) for config in configs]
+    snapshots = await asyncio.gather(*(_snapshot_for_config(config) for config in configs))
+    session.add_all(snapshots)
+    await session.commit()
+    for snapshot in snapshots:
+        await session.refresh(snapshot)
+    await _prune_old_snapshots(session)
+    return snapshots
 
 
 @router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_admin_auth)])
