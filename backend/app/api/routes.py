@@ -1,7 +1,7 @@
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 from dataclasses import asdict
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, desc, select
+from sqlalchemy import asc, delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin_auth
@@ -79,6 +79,18 @@ async def delete_config(config_id: int, session: AsyncSession = Depends(get_sess
         raise HTTPException(status_code=404, detail="Provider config not found")
     await session.commit()
 
+@router.get("/configs/{config_id}/history", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
+async def config_history(config_id: int, hours: int = 168, limit: int = 500, session: AsyncSession = Depends(get_session)):
+    config = await session.get(ProviderConfig, config_id)
+    if not config:
+        raise HTTPException(status_code=404, detail="Provider config not found")
+    if hours <= 0:
+        raise HTTPException(status_code=400, detail="hours must be greater than zero")
+    if limit <= 0:
+        raise HTTPException(status_code=400, detail="limit must be greater than zero")
+    since = datetime.now(UTC) - timedelta(hours=hours)
+    result = await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config_id, UsageSnapshot.checked_at >= since).order_by(asc(UsageSnapshot.checked_at), asc(UsageSnapshot.id)).limit(limit))
+    return result.scalars().all()
 
 async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
     try:
