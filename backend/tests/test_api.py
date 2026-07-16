@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import UTC, datetime, timedelta
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -6,7 +7,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import settings
 from app.database import get_session
 from app.main import app
-from app.models import Base
+from app.models import Base, ProviderConfig, UsageSnapshot
 
 DB = Path("/tmp/usage_dashboard_test_api.db")
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
@@ -60,3 +61,41 @@ async def test_protected_routes_require_admin_auth():
 
         authorized = await client.get("/api/v1/homepage", headers={"Authorization": "Bearer test-admin-token-123"})
         assert authorized.status_code == 200
+
+@pytest.mark.asyncio
+async def test_config_history_returns_recent_snapshots_in_ascending_order():
+    now = datetime.now(UTC)
+    engine = create_async_engine(TEST_DATABASE_URL)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    async with Session() as session:
+        config = ProviderConfig(provider="firecrawl", label="main", encrypted_api_key="encrypted")
+        session.add(config)
+        await session.flush()
+        snapshots = [
+            UsageSnapshot(provider_config_id=config.id, provider="firecrawl", status="healthy", summary="old", metrics=[{"label": "remaining_tokens", "value": 900}], raw={}, checked_at=now - timedelta(hours=8)),
+            UsageSnapshot(provider_config_id=config.id, provider="firecrawl", status="healthy", summary="new", metrics=[{"label": "remaining_tokens", "value": 700}], raw={}, checked_at=now - timedelta(hours=1)),
+            UsageSnapshot(provider_config_id=config.id, provider="firecrawl", status="healthy", summary="outside", metrics=[{"label": "remaining_tokens", "value": 1000}], raw={}, checked_at=now - timedelta(hours=48)),
+        ]
+        session.add_all(snapshots)
+        await session.commit()
+        config_id = config.id
+    await engine.dispose()
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/configs/{config_id}/history", params={"hours": 24, "limit": 1}, headers=auth)
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert [snapshot["summary"] for snapshot in payload] == ["old"]
+
+        response = await client.get(f"/api/v1/configs/{config_id}/history", params={"hours": 24, "limit": 10}, headers=auth)
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert [snapshot["summary"] for snapshot in payload] == ["old", "new"]
+        assert all(snapshot["provider_config_id"] == config_id for snapshot in payload)
+
+@pytest.mark.asyncio
+async def test_config_history_requires_admin_auth():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        unauthorized = await client.get("/api/v1/configs/1/history")
+        assert unauthorized.status_code == 401
