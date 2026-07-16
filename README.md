@@ -35,7 +35,7 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
 | `ADMIN_TOKEN` | Required bearer token for dashboard config, usage, polling, and homepage API routes. Generate a long random value and enter it in the frontend Admin token dialog. |
-| `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `main`. |
+| `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
 | `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
 | `NGINX_HTTP_PORT` | Host port published by the fronting nginx service. Defaults to `3000`. |
