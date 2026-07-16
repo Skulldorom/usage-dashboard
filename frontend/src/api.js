@@ -50,9 +50,10 @@ async function parseJsonResponse(res, path) {
 async function request(path, options = {}) {
   const token = getAdminToken()
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
+  const { headers: optionHeaders = {}, ...fetchOptions } = options
   const res = await fetch(`${V1}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeaders, ...(options.headers || {}) },
-    ...options,
+    ...fetchOptions,
+    headers: { 'Content-Type': 'application/json', ...authHeaders, ...optionHeaders },
   })
   if (!res.ok) throw new Error(await parseErrorResponse(res))
   if (res.status === 204) return null
