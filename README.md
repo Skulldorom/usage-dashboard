@@ -33,6 +33,7 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
+| `POSTGRES_IMAGE` | PostgreSQL image used by Compose. Defaults to `postgres:18-alpine`; the Compose volume is mounted at `/var/lib/postgresql` for the 18+ image layout. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
 | `ADMIN_TOKEN` | Required bearer token for dashboard config, usage, polling, and homepage API routes. Generate a long random value and enter it in the frontend Admin token dialog. |
 | `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
