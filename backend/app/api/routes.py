@@ -74,7 +74,7 @@ async def delete_config(config_id: int, session: AsyncSession = Depends(get_sess
 async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
     try:
         adapter_cls = get_adapter_class(config.provider)
-        adapter = adapter_cls(_crypto().decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds)
+        adapter = adapter_cls(_crypto().decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds, extra=config.extra)
         usage = await adapter.fetch_usage()
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
     except Exception as exc:
