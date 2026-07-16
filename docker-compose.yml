@@ -20,9 +20,10 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://usage_dashboard:${POSTGRES_PASSWORD:-change-me}@db:5432/usage_dashboard}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env. See .env.example.}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:?Set ADMIN_TOKEN in .env. See .env.example.}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS:-http://localhost:${NGINX_HTTP_PORT:-3000},http://127.0.0.1:${NGINX_HTTP_PORT:-3000}}
       SNAPSHOT_RETENTION_DAYS: ${SNAPSHOT_RETENTION_DAYS:-90}
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMEPAGE_ALLOWED_HOSTS:-}
     depends_on:
       db:
         condition: service_healthy

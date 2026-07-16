@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -14,10 +14,26 @@ class Settings(BaseSettings):
     request_timeout_seconds: float = 20.0
     snapshot_retention_days: int = 90
     custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")
+    homepage_allowed_hosts_raw: str = Field(default="", alias="HOMEPAGE_ALLOWED_HOSTS")
+
+    @field_validator("admin_token", mode="before")
+    @classmethod
+    def _blank_admin_token_to_none(cls, value: str | None) -> str | None:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+    @staticmethod
+    def _parse_hosts(value: str) -> set[str]:
+        return {host.strip().rstrip(".").lower() for host in value.split(",") if host.strip()}
 
     @property
     def custom_http_allowed_hosts(self) -> set[str]:
-        return {host.strip().rstrip(".").lower() for host in self.custom_http_allowed_hosts_raw.split(",") if host.strip()}
+        return self._parse_hosts(self.custom_http_allowed_hosts_raw)
+
+    @property
+    def homepage_allowed_hosts(self) -> set[str]:
+        return self._parse_hosts(self.homepage_allowed_hosts_raw)
 
     @property
     def cors_origins(self) -> list[str]:

@@ -12,14 +12,54 @@ export function setAdminToken(token) {
   else localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
+async function parseErrorResponse(res) {
+  const text = await res.text()
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json') && text) {
+    try {
+      const payload = JSON.parse(text)
+      return payload.detail || payload.message || text
+    } catch {
+      return text
+    }
+  }
+  return text || `${res.status} ${res.statusText}`
+}
+
+async function parseJsonResponse(res, path) {
+  const text = await res.text()
+  if (!text) return null
+
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.includes('application/json')) {
+    const looksLikeHtml = text.trimStart().startsWith('<')
+    throw new Error(
+      looksLikeHtml
+        ? `API request for ${V1}${path} returned HTML instead of JSON. Check VITE_API_BASE_URL/nginx proxy routing; the frontend is probably hitting the SPA fallback.`
+        : `API request for ${V1}${path} returned ${contentType || 'an unknown content type'} instead of JSON.`,
+    )
+  }
+
+  try {
+    return JSON.parse(text)
+  } catch (err) {
+    throw new Error(`API request for ${V1}${path} returned invalid JSON: ${err.message}`)
+  }
+}
+
 async function request(path, options = {}) {
   const token = getAdminToken()
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
-  const res = await fetch(`${V1}${path}`, { headers: { 'Content-Type': 'application/json', ...authHeaders, ...(options.headers || {}) }, ...options })
-  if (!res.ok) throw new Error(await res.text() || `${res.status} ${res.statusText}`)
+  const { headers: optionHeaders = {}, ...fetchOptions } = options
+  const res = await fetch(`${V1}${path}`, {
+    ...fetchOptions,
+    headers: { 'Content-Type': 'application/json', ...authHeaders, ...optionHeaders },
+  })
+  if (!res.ok) throw new Error(await parseErrorResponse(res))
   if (res.status === 204) return null
-  return res.json()
+  return parseJsonResponse(res, path)
 }
+
 export const api = {
   providers: () => request('/providers'),
   configs: () => request('/configs'),

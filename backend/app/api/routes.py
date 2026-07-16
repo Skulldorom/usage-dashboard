@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import require_admin_auth
+from app.core.auth import homepage_auth, require_admin_auth
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.database import get_session
@@ -172,7 +172,7 @@ async def usage(session: AsyncSession = Depends(get_session)):
     return payload
 
 
-@router.get("/homepage", response_model=HomepagePayload, dependencies=[Depends(require_admin_auth)])
+@router.get("/homepage", response_model=HomepagePayload, dependencies=[Depends(homepage_auth)])
 async def homepage(session: AsyncSession = Depends(get_session)):
     rows = await usage(session)
     configured = len(rows)

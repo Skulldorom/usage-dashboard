@@ -33,15 +33,24 @@ export default function SettingsPage() {
   const isAnthropic = form.provider === 'anthropic'
 
   const load = useCallback(async () => {
+    setError('')
     try {
-      const [p, c] = await Promise.all([api.providers(), api.configs()])
+      const p = await api.providers()
       setProviders(p)
-      setConfigs(c)
       setForm((current) => {
         if (p.length && !p.some((provider) => provider.id === current.provider)) return { ...initialForm, provider: p[0].id }
         return current
       })
     } catch (err) {
+      setProviders([])
+      setError(err.message)
+      return
+    }
+
+    try {
+      setConfigs(await api.configs())
+    } catch (err) {
+      setConfigs([])
       setError(err.message)
     }
   }, [])
@@ -105,7 +114,7 @@ export default function SettingsPage() {
   const testDisabled = testing || !form.label || !form.api_key || (isCustom && (!form.base_url || !form.custom_path))
 
   return (
-    <Stack gap={3}>
+    <Stack spacing={3}>
       <Stack direction="row" alignItems="center" justifyContent="space-between">
         <Box>
           <Typography variant="h4">Settings</Typography>
@@ -121,7 +130,7 @@ export default function SettingsPage() {
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Add API provider</DialogTitle>
         <DialogContent>
-          <Stack gap={2} sx={{ mt: 1 }}>
+          <Stack spacing={2} sx={{ mt: 1 }}>
             <FormControl fullWidth>
               <InputLabel>Provider</InputLabel>
               <Select label="Provider" value={form.provider} onChange={(e) => setForm({ ...initialForm, provider: e.target.value })}>
@@ -134,7 +143,7 @@ export default function SettingsPage() {
             <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(e) => setForm({ ...form, api_key: e.target.value })} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; do not put secrets in URLs.' : ''} />
             <TextField label="Base URL override" value={form.base_url} onChange={(e) => setForm({ ...form, base_url: e.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional'} required={isCustom} />
             {isCustom && (
-              <Stack gap={2}>
+              <Stack spacing={2}>
                 <FormControl fullWidth>
                   <InputLabel>HTTP method</InputLabel>
                   <Select label="HTTP method" value={form.custom_method} onChange={(e) => setForm({ ...form, custom_method: e.target.value })}>
