@@ -134,7 +134,7 @@ function Shell() {
       <main className="main-content"><Routes><Route path="/" element={<DashboardPage />} /><Route path="/settings" element={<SettingsPage />} /></Routes></main>
       <Navigation mobile />
       <Dialog open={authOpen} onClose={() => setAuthOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle><Typography variant="overline" color="primary.main">Secure access</Typography><Typography variant="h5">Admin authentication</Typography></DialogTitle>
+        <DialogTitle><Typography component="span" display="block" variant="overline" color="primary.main">Secure access</Typography><Typography component="span" display="block" variant="h5">Admin authentication</Typography></DialogTitle>
         <DialogContent>
           <Typography color="text.secondary" sx={{ mb: 2 }}>Authenticate this browser to load sensitive usage and provider data.</Typography>
           <TextField autoFocus fullWidth label="Admin token" type="password" value={token} onChange={(event) => setToken(event.target.value)} helperText="Stored in this browser and sent as a Bearer token." />

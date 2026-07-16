@@ -90,7 +90,9 @@ function Sparkline({ points }) {
     })
     ctx.stroke()
   }, [points])
-  return <canvas ref={canvasRef} style={{ width: '100%', height: 120, display: 'block' }} aria-label="Usage history sparkline" />
+  const first = points[0]?.value
+  const last = points[points.length - 1]?.value
+  return <canvas ref={canvasRef} style={{ width: '100%', height: 120, display: 'block' }} role="img" aria-label={`Usage history trend with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}.`} />
 }
 
 function UsageHistory({ config, latest }) {
@@ -154,7 +156,7 @@ function UsageCard({ item }) {
       <CardContent>
         <Stack className="provider-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
           <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
-            <div className="provider-logo">{providerInitials}</div>
+            <div className="provider-logo" aria-hidden="true">{providerInitials}</div>
             <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
           </Stack>
           <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
@@ -208,7 +210,7 @@ export default function DashboardPage() {
       <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage, and provider health—one sharp view, no spreadsheet séance required.</Typography></Box>
       <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
     </header>
-    {homepage && <Grid className="summary-grid" container spacing={2}>{summaries.map((summary) => <Grid size={{ xs: 6, md: 3 }} key={summary.label}><Box className={`summary-card glass-panel ${summary.className || ''}`}><div className="summary-label">{summary.label}</div><div className="summary-value">{summary.value}</div><div className="summary-icon">{summary.icon}</div></Box></Grid>)}</Grid>}
+    {homepage && <Grid className="summary-grid" container spacing={2}>{summaries.map((summary) => <Grid size={{ xs: summary.label === 'Network summary' ? 12 : 6, sm: 6, md: 3 }} key={summary.label}><Box className={`summary-card glass-panel ${summary.className || ''}`}><div className="summary-label">{summary.label}</div><div className="summary-value">{summary.value}</div><div className="summary-icon" aria-hidden="true">{summary.icon}</div></Box></Grid>)}</Grid>}
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
     {!loading && items.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">No providers connected</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Head to Settings and connect your first API provider.</Typography></Box>}
