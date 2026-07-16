@@ -1,49 +1,97 @@
 version: 2
+
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - github-actions
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: npm
     directory: /frontend
     schedule:
       interval: weekly
+      day: monday
+      time: "06:15"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - frontend
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: pip
     directory: /backend
     schedule:
       interval: weekly
+      day: monday
+      time: "06:30"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - backend
+    groups:
+      backend-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: docker
     directory: /backend
     schedule:
       interval: weekly
+      day: monday
+      time: "06:45"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - docker
+      - backend
 
   - package-ecosystem: docker
     directory: /frontend
     schedule:
       interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - docker
+      - frontend
 
   - package-ecosystem: docker-compose
     directory: /
     schedule:
       interval: weekly
+      day: monday
+      time: "07:15"
+      timezone: Africa/Johannesburg
+    open-pull-requests-limit: 5
     labels:
       - dependencies
       - docker
