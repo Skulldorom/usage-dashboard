@@ -1,6 +1,8 @@
+<p align="center"><img src="logo.svg" alt="Usage Dashboard logo" width="96" /></p>
+
 # Usage Dashboard
 
-Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI/Codex, Anthropic/Claude, OpenRouter, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
+Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
 
 ## Stack
 
@@ -44,6 +46,8 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |
 | `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins for the FastAPI API. |
 | `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
+| `AUTO_POLL_ENABLED` | Enables background provider polling. Defaults to `true`. |
+| `AUTO_POLL_INTERVAL_MINUTES` | Minutes between automatic provider polls. Defaults to `60`. |
 
 ## Providers
 
@@ -55,9 +59,9 @@ Uses `GET https://api.firecrawl.dev/v2/team/token-usage` and `GET https://api.fi
 
 Uses `GET https://api.deepseek.com/user/balance`.
 
-### OpenAI / Codex
+### OpenAI
 
-Uses `GET https://api.openai.com/v1/organization/costs`. This endpoint requires an organization admin key.
+Uses `GET https://api.openai.com/v1/organization/costs`. This endpoint requires an organization admin key. Personal Codex usage has no API and is not tracked separately.
 
 ### Anthropic / Claude
 
@@ -117,7 +121,7 @@ If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the front
           label: Degraded
 ```
 
-The `metrics` object contains flattened keys like `firecrawl_main_remaining_tokens` and `deepseek_main_total_balance` for extra mappings.
+The `metrics` object contains flattened keys like `firecrawl_main_credits_remaining` and `deepseek_main_total_balance` for extra mappings.
 
 ### Public homepage behind reverse-proxy auth
 

@@ -45,7 +45,7 @@ const PROVIDER_SETUP = {
   },
   openai: {
     title: 'OpenAI organization admin key',
-    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key—not a project or standard model API key.', 'Paste the admin key below; organization-level access is required by the Costs API.'],
+    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key—not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
     url: 'https://platform.openai.com/settings/organization/admin-keys',
     linkLabel: 'Open OpenAI Admin Keys',
     keyPlaceholder: 'sk-admin-…',
@@ -93,6 +93,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState(initialForm)
   const [error, setError] = useState('')
   const [testing, setTesting] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
   const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
@@ -124,14 +125,14 @@ export default function SettingsPage() {
   useEffect(() => { load() }, [load])
 
   function payloadFromForm() {
-    const payload = { provider: form.provider, label: form.label, api_key: form.api_key, base_url: form.base_url || null, is_enabled: true, extra: {} }
+    const payload = { provider: form.provider, label: form.label.trim() || null, api_key: form.api_key.trim(), base_url: form.base_url.trim() || null, is_enabled: true, extra: {} }
     if (isCustom) {
       payload.extra = {
         method: form.custom_method,
-        path: form.custom_path,
-        auth_header_name: form.custom_auth_header_name || 'Authorization',
-        auth_header_template: form.custom_auth_header_template || 'Bearer {api_key}',
-        metrics: [{ label: form.custom_metric_label, path: form.custom_metric_path, unit: form.custom_metric_unit || null, maximum_path: form.custom_metric_maximum_path || null }],
+        path: form.custom_path.trim(),
+        auth_header_name: form.custom_auth_header_name.trim() || 'Authorization',
+        auth_header_template: form.custom_auth_header_template.trim() || 'Bearer {api_key}',
+        metrics: [{ label: form.custom_metric_label.trim(), path: form.custom_metric_path.trim(), unit: form.custom_metric_unit.trim() || null, maximum_path: form.custom_metric_maximum_path.trim() || null }],
       }
     }
     return payload
@@ -139,12 +140,14 @@ export default function SettingsPage() {
 
   async function submit() {
     setError('')
+    setSaving(true)
     try {
       await api.createConfig(payloadFromForm())
       setOpen(false)
       setForm(initialForm)
       await load()
     } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
   }
 
   async function testConnection() {
@@ -159,7 +162,9 @@ export default function SettingsPage() {
 
   async function remove(id) { await api.deleteConfig(id); await load() }
   async function toggle(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
-  const testDisabled = testing || !form.label || !form.api_key || (isCustom && (!form.base_url || !form.custom_path))
+  const missingRequired = !form.api_key.trim() || (isCustom && (!form.base_url.trim() || !form.custom_path.trim() || !form.custom_metric_label.trim() || !form.custom_metric_path.trim()))
+  const testDisabled = testing || saving || missingRequired
+  const saveDisabled = testing || saving || missingRequired
 
   return <>
     <header className="page-heading">
@@ -180,7 +185,7 @@ export default function SettingsPage() {
       })}</div>}
     </Paper>
     <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-      <DialogTitle><Typography component="span" display="block" variant="overline" color="primary.main">New connection</Typography><Typography component="span" display="block" variant="h5">Add API provider</Typography></DialogTitle>
+      <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">New connection</Typography><Typography component="span" display="block" variant="h5">Add API provider</Typography></Stack></DialogTitle>
       <DialogContent>
         <Stack spacing={2.25} sx={{ mt: 1 }}>
           <FormControl fullWidth><InputLabel>Provider</InputLabel><Select label="Provider" value={form.provider} onChange={(event) => setForm({ ...initialForm, provider: event.target.value })}>{providers.map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.name}</MenuItem>)}</Select>{selectedProvider && <FormHelperText>{selectedProvider.description}</FormHelperText>}</FormControl>
@@ -190,7 +195,7 @@ export default function SettingsPage() {
             <ol>{setup.steps.map((step) => <li key={step}>{step}</li>)}</ol>
             {setup.url && <Button component="a" href={setup.url} target="_blank" rel="noreferrer" size="small" variant="outlined" endIcon={<LaunchRoundedIcon />} aria-label={`${setup.linkLabel} (opens in a new tab)`}>{setup.linkLabel}</Button>}
           </Box>}
-          <TextField label="Connection label" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Production" />
+          <TextField label="Connection label (optional)" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Auto-filled when blank" helperText="Leave blank to auto-fill a unique label." />
           <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : `Use the ${setup?.title || 'key'} described above.`} />
           <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional — provider default will be used'} required={isCustom} />
           {isCustom && <Stack spacing={2.25}>
@@ -209,7 +214,7 @@ export default function SettingsPage() {
           {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
         </Stack>
       </DialogContent>
-      <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit}>Save provider</Button></DialogActions>
+      <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)} disabled={testing || saving}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit} disabled={saveDisabled} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}>{saving ? 'Saving…' : 'Save provider'}</Button></DialogActions>
     </Dialog>
   </>
 }

@@ -24,7 +24,7 @@ import { api } from '../api.js'
 const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
   deepseek: ['total_balance', 'granted_balance', 'topped_up_balance'],
-  firecrawl: ['remaining_tokens', 'used_tokens', 'credits_this_period'],
+  firecrawl: ['credits_remaining', 'credits_used', 'plan_credits', 'remaining_tokens', 'used_tokens'],
   openai: ['cost_30d'],
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
 }
@@ -35,6 +35,12 @@ function metricPercent(metric) {
     : null
 }
 function formatMetricLabel(label) { return label.replaceAll('_', ' ') }
+function formatDateTime(value) {
+  if (!value) return 'Not scheduled'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date)
+}
 function numericMetric(metrics, label) {
   const metric = metrics.find((item) => item.label === label)
   return typeof metric?.value === 'number' ? metric : null
@@ -179,6 +185,7 @@ function UsageCard({ item }) {
 export default function DashboardPage() {
   const [items, setItems] = useState([])
   const [homepage, setHomepage] = useState(null)
+  const [pollStatus, setPollStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -187,9 +194,10 @@ export default function DashboardPage() {
     setError('')
     try {
       if (poll) await api.pollAll()
-      const [usage, hp] = await Promise.all([api.usage(), api.homepage()])
+      const [usage, hp, status] = await Promise.all([api.usage(), api.homepage(), api.pollStatus()])
       setItems(usage)
       setHomepage(hp)
+      setPollStatus(status)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -210,6 +218,7 @@ export default function DashboardPage() {
       <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage, and provider health—one sharp view, no spreadsheet séance required.</Typography></Box>
       <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
     </header>
+    {pollStatus && <Box className="poll-status glass-panel"><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5}><Box><Typography variant="overline" color="primary.main">Automatic polling</Typography><Typography variant="body2" color="text.secondary">{pollStatus.auto_poll_enabled ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}` : 'Auto polling disabled'}</Typography></Box><Typography variant="body2" color="text.secondary">{pollStatus.is_polling ? 'Polling now…' : pollStatus.last_polled_at ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}` : 'No automatic poll has run yet'}</Typography></Stack></Box>}
     {homepage && <Grid className="summary-grid" container spacing={2}>{summaries.map((summary) => <Grid size={{ xs: summary.label === 'Network summary' ? 12 : 6, sm: 6, md: 3 }} key={summary.label}><Box className={`summary-card glass-panel ${summary.className || ''}`}><div className="summary-label">{summary.label}</div><div className="summary-value">{summary.value}</div><div className="summary-icon" aria-hidden="true">{summary.icon}</div></Box></Grid>)}</Grid>}
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
