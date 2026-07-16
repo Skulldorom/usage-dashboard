@@ -50,15 +50,15 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
     config = await session.get(ProviderConfig, config_id)
     if not config:
         raise HTTPException(status_code=404, detail="Provider config not found")
-    if payload.label is not None:
+    if payload.has_update_for("label") and payload.label is not None:
         config.label = payload.label
-    if payload.api_key is not None:
+    if payload.has_update_for("api_key") and payload.api_key is not None:
         config.encrypted_api_key = _crypto().encrypt(payload.api_key)
-    if payload.base_url is not None:
+    if payload.has_update_for("base_url"):
         config.base_url = payload.base_url
-    if payload.extra is not None:
+    if payload.has_update_for("extra") and payload.extra is not None:
         config.extra = payload.extra
-    if payload.is_enabled is not None:
+    if payload.has_update_for("is_enabled") and payload.is_enabled is not None:
         config.is_enabled = payload.is_enabled
     await session.commit()
     await session.refresh(config)

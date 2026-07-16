@@ -22,6 +22,9 @@ class ProviderConfigUpdate(BaseModel):
     extra: dict | None = None
     is_enabled: bool | None = None
 
+    def has_update_for(self, field_name: str) -> bool:
+        return field_name in self.model_fields_set
+
 class ProviderConfigRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
