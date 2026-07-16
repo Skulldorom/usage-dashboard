@@ -55,6 +55,12 @@ class UsageSnapshotRead(BaseModel):
     error: str | None
     checked_at: datetime
 
+class ProviderUsageRead(BaseModel):
+    status: str
+    summary: str
+    metrics: list[UsageMetric]
+    raw: dict
+
 class DashboardConfigUsage(BaseModel):
     config: ProviderConfigRead
     latest: UsageSnapshotRead | None = None

@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     admin_token: str | None = Field(default=None, min_length=16)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
+    snapshot_retention_days: int = 90
     custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")
 
     @property
