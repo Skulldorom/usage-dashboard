@@ -27,6 +27,7 @@ export const api = {
   updateConfig: (id, payload) => request(`/configs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteConfig: (id) => request(`/configs/${id}`, { method: 'DELETE' }),
   usage: () => request('/usage'),
+  history: (id, params = {}) => request(`/configs/${id}/history?${new URLSearchParams(params)}`),
   pollAll: () => request('/poll', { method: 'POST' }),
   pollConfig: (id) => request(`/configs/${id}/poll`, { method: 'POST' }),
   homepage: () => request('/homepage'),
