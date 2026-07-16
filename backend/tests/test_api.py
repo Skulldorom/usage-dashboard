@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from app.core.config import settings
+from app.core.config import Settings, settings
 from app.database import get_session
 from app.main import app
 from app.models import Base, ProviderConfig, UsageSnapshot
@@ -23,6 +23,7 @@ TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
 @pytest_asyncio.fixture(autouse=True)
 async def sqlite_db(monkeypatch):
     monkeypatch.setattr(settings, "admin_token", "test-admin-token-123")
+    monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "")
     monkeypatch.setattr(settings, "snapshot_retention_days", 90)
     if DB.exists():
         DB.unlink()
@@ -108,6 +109,11 @@ async def test_patch_config_base_url_null_clears_override(sqlite_db):
     assert db_base_url is None
 
 
+def test_blank_admin_token_env_is_treated_as_unconfigured():
+    configured = Settings(ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="")
+    assert configured.admin_token is None
+
+
 @pytest.mark.asyncio
 async def test_protected_routes_require_admin_auth():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -117,8 +123,43 @@ async def test_protected_routes_require_admin_auth():
         bad_token = await client.get("/api/v1/usage", headers={"Authorization": "Bearer wrong-token"})
         assert bad_token.status_code == 401
 
+        homepage_without_auth = await client.get("/api/v1/homepage")
+        assert homepage_without_auth.status_code == 401
+
         authorized = await client.get("/api/v1/homepage", headers={"Authorization": "Bearer test-admin-token-123"})
         assert authorized.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_homepage_allows_configured_hosts_without_admin_auth(monkeypatch):
+    monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com,status.local")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://usage.example.com") as client:
+        whitelisted = await client.get("/api/v1/homepage")
+        assert whitelisted.status_code == 200, whitelisted.text
+
+        with_port = await client.get("/api/v1/homepage", headers={"host": "status.local:3000"})
+        assert with_port.status_code == 200, with_port.text
+
+        not_whitelisted = await client.get("/api/v1/homepage", headers={"host": "private.example.com"})
+        assert not_whitelisted.status_code == 401
+
+        configs = await client.get("/api/v1/configs", headers={"host": "usage.example.com"})
+        assert configs.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_missing_admin_token_returns_401_but_whitelisted_homepage_still_loads(monkeypatch):
+    monkeypatch.setattr(settings, "admin_token", None)
+    monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://usage.example.com") as client:
+        homepage = await client.get("/api/v1/homepage")
+        assert homepage.status_code == 200, homepage.text
+
+        configs = await client.get("/api/v1/configs")
+        assert configs.status_code == 401
+
+        homepage_from_other_host = await client.get("/api/v1/homepage", headers={"host": "admin.example.com"})
+        assert homepage_from_other_host.status_code == 401
 
 
 @pytest.mark.asyncio
