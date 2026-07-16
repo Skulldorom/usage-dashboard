@@ -7,6 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/alembic.ini ./alembic.ini
 COPY backend/alembic ./alembic
 COPY backend/app ./app
+COPY pytest.ini ./pytest.ini
 COPY backend/tests ./tests
 RUN chown -R app:app /app
 USER app
