@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid2 as Grid, LinearProgress, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Grid, LinearProgress, Stack, Typography } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import { api } from '../api.js'
 function metricPercent(metric) { return typeof metric.maximum === 'number' && metric.maximum > 0 && typeof metric.value === 'number' ? Math.min(100, Math.max(0, (metric.value / metric.maximum) * 100)) : null }
