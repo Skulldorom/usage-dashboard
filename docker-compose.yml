@@ -1,12 +1,14 @@
 services:
   db:
-    image: postgres:18-alpine
+    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-usage_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-usage_dashboard}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18+ expects the volume at the parent directory so it can
+      # manage major-version-specific data directories internally.
+      - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-usage_dashboard} -d ${POSTGRES_DB:-usage_dashboard}"]
       interval: 10s
