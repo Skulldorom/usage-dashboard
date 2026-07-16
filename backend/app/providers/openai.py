@@ -4,8 +4,8 @@ from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 class OpenAIAdapter(ProviderAdapter):
     id = "openai"
-    name = "OpenAI / Codex"
-    description = "OpenAI organization costs over the last 30 days. Requires an admin key."
+    name = "OpenAI"
+    description = "OpenAI organization costs over the last 30 days. Requires an organization admin key."
     default_base_url = "https://api.openai.com/v1"
     metric_names = ["cost_30d", "currency", "buckets"]
     async def fetch_usage(self) -> ProviderUsage:

@@ -84,6 +84,40 @@ async def test_config_crud_and_homepage():
 
 
 @pytest.mark.asyncio
+async def test_create_config_auto_fills_blank_labels():
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/v1/configs", json={"provider": "deepseek", "label": "", "api_key": "sk-test"}, headers=auth)
+        second = await client.post("/api/v1/configs", json={"provider": "deepseek", "api_key": "sk-test-2"}, headers=auth)
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["label"] == "main"
+    assert second.json()["label"] == "deepseek-2"
+
+
+@pytest.mark.asyncio
+async def test_poll_status_reports_auto_poll_schedule(monkeypatch):
+    from app.api import routes
+
+    monkeypatch.setattr(settings, "auto_poll_enabled", True)
+    monkeypatch.setattr(settings, "auto_poll_interval_minutes", 15)
+    monkeypatch.setattr(routes, "_last_auto_polled_at", datetime(2026, 8, 14, 12, 0, tzinfo=UTC))
+    monkeypatch.setattr(routes, "_next_auto_poll_at", datetime(2026, 8, 14, 12, 15, tzinfo=UTC))
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/poll/status", headers=auth)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["auto_poll_enabled"] is True
+    assert payload["interval_seconds"] == 900
+    assert payload["last_polled_at"] == "2026-08-14T12:00:00+00:00"
+    assert payload["next_poll_at"] == "2026-08-14T12:15:00+00:00"
+
+
+@pytest.mark.asyncio
 async def test_patch_config_base_url_null_clears_override(sqlite_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         auth = {"Authorization": "Bearer test-admin-token-123"}
