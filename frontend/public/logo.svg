@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Usage Dashboard logo</title>
+  <desc id="desc">A compact angular blue and purple mark with the initials UD.</desc>
+  <defs>
+    <linearGradient id="top" x1="18" y1="22" x2="100" y2="70" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#25D4F7"/>
+      <stop offset="0.58" stop-color="#4D74FF"/>
+      <stop offset="1" stop-color="#7B4DFF"/>
+    </linearGradient>
+    <linearGradient id="bottom" x1="26" y1="102" x2="94" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8E3DFF"/>
+      <stop offset="1" stop-color="#5E39E8"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Upper ribbon -->
+  <path d="M18 22H63L101 64H72L47 38H30Z" fill="url(#top)"/>
+
+  <!-- Lower ribbon -->
+  <path d="M28 106H61L101 64H72L45 92Z" fill="url(#bottom)"/>
+
+  <!-- Central fold -->
+  <path d="M63 39L101 64L61 89L48 64Z" fill="#7247F5" opacity="0.95"/>
+
+  <!-- UD lettering -->
+  <g fill="#FFFFFF">
+    <!-- U -->
+    <path d="M52 53h6v14c0 4.8 2.2 7 6.2 7s6.2-2.2 6.2-7V53h6v14.4c0 8.2-4.7 12.4-12.2 12.4S52 75.6 52 67.4Z"/>
+    <!-- D -->
+    <path d="M78 53h9.4c9.2 0 14.6 5 14.6 13.2S96.6 79.5 87.4 79.5H78Zm6 5.2v16.1h3.1c5.8 0 8.7-2.6 8.7-8.1s-2.9-8-8.7-8Z"/>
+  </g>
+</svg>

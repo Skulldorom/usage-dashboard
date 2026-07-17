@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class ProviderInfo(BaseModel):
     id: str
@@ -9,11 +9,19 @@ class ProviderInfo(BaseModel):
 
 class ProviderConfigCreate(BaseModel):
     provider: str = Field(..., examples=["firecrawl"])
-    label: str = Field(..., min_length=1, max_length=120)
+    label: str | None = Field(default=None, max_length=120)
     api_key: str = Field(..., min_length=1)
     base_url: str | None = None
     extra: dict = Field(default_factory=dict)
     is_enabled: bool = True
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def _blank_label_to_none(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
 
 class ProviderConfigUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=1, max_length=120)
@@ -72,3 +80,11 @@ class HomepagePayload(BaseModel):
     latest_check: str | None
     summary: str
     metrics: dict[str, float | int | str | bool | None]
+
+
+class PollStatusRead(BaseModel):
+    auto_poll_enabled: bool
+    interval_seconds: int
+    is_polling: bool
+    last_polled_at: str | None
+    next_poll_at: str | None

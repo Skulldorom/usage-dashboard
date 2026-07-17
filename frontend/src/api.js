@@ -71,5 +71,6 @@ export const api = {
   history: (id, params = {}) => request(`/configs/${id}/history?${new URLSearchParams(params)}`),
   pollAll: () => request('/poll', { method: 'POST' }),
   pollConfig: (id) => request(`/configs/${id}/poll`, { method: 'POST' }),
+  pollStatus: () => request('/poll/status'),
   homepage: () => request('/homepage'),
 }

@@ -7,9 +7,15 @@ from app.providers.firecrawl import FirecrawlAdapter
 from app.providers.openai import OpenAIAdapter
 from app.providers.openrouter import OpenRouterAdapter
 
-def test_firecrawl_parser():
-    usage = FirecrawlAdapter.parse_usage({"success": True, "data": {"remainingTokens": 1000, "planTokens": 5000}}, {"success": True, "periods": [{"totalCredits": 42}]})
+def test_firecrawl_parser_prefers_credit_usage_but_keeps_token_details():
+    usage = FirecrawlAdapter.parse_usage(
+        {"success": True, "data": {"remainingTokens": 1000, "planTokens": 5000}},
+        {"success": True, "data": {"creditsRemaining": 841, "planCredits": 1000, "planName": "Free", "nextRefreshAt": "2026-08-14T00:00:00Z"}},
+    )
     assert usage.status == "healthy"
+    assert usage.summary == "841 credits remaining. Free plan: 1,000 credits being refreshed on Aug 14, 2026"
+    assert any(m.label == "credits_remaining" and m.value == 841 and m.maximum == 1000 for m in usage.metrics)
+    assert any(m.label == "credits_used" and m.value == 159 for m in usage.metrics)
     assert any(m.label == "used_tokens" and m.value == 4000 for m in usage.metrics)
 
 def test_deepseek_parser_prefers_usd():

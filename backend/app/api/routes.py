@@ -4,17 +4,21 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import asc, delete, desc, func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.auth import homepage_auth, require_admin_auth
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
-from app.database import get_session
+from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import DashboardConfigUsage, HomepagePayload, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import DashboardConfigUsage, HomepagePayload, PollStatusRead, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
+_auto_poll_lock = asyncio.Lock()
+_auto_poll_task: asyncio.Task | None = None
+_last_auto_polled_at: datetime | None = None
+_next_auto_poll_at: datetime | None = None
 
 
 def _crypto() -> CryptoService:
@@ -23,6 +27,26 @@ def _crypto() -> CryptoService:
 
 def _config_read(config: ProviderConfig) -> ProviderConfigRead:
     return ProviderConfigRead.model_validate(config)
+
+
+def _slug(value: str) -> str:
+    return "-".join(value.lower().replace("_", "-").split()) or "provider"
+
+
+def _iso(value: datetime | None) -> str | None:
+    return value.astimezone(UTC).isoformat() if value else None
+
+
+async def _unique_label(session: AsyncSession, provider: str, requested: str | None) -> str:
+    base = (requested or "main").strip() or "main"
+    existing = set((await session.execute(select(ProviderConfig.label).where(ProviderConfig.provider == provider))).scalars().all())
+    if base not in existing:
+        return base
+    provider_slug = _slug(provider)
+    index = 2
+    while f"{provider_slug}-{index}" in existing:
+        index += 1
+    return f"{provider_slug}-{index}"
 
 
 @router.get("/providers", response_model=list[ProviderInfo])
@@ -43,7 +67,8 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
         encrypted = _crypto().encrypt(payload.api_key)
     except (ValueError, CryptoError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    config = ProviderConfig(provider=payload.provider, label=payload.label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled)
+    label = await _unique_label(session, payload.provider, payload.label)
+    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled)
     session.add(config)
     try:
         await session.commit()
@@ -131,13 +156,61 @@ async def _prune_old_snapshots(session: AsyncSession) -> None:
     await session.commit()
 
 
-async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
-    snapshot = await _snapshot_for_config(config)
-    session.add(snapshot)
-    await session.commit()
-    await session.refresh(snapshot)
-    await _prune_old_snapshots(session)
-    return snapshot
+async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
+    configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)))).scalars().all()
+    snapshots = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
+    if snapshots:
+        session.add_all(snapshots)
+        await session.commit()
+        for snapshot in snapshots:
+            await session.refresh(snapshot)
+        await _prune_old_snapshots(session)
+    return snapshots
+
+
+async def _run_auto_poll_once() -> None:
+    global _last_auto_polled_at
+    if _auto_poll_lock.locked():
+        return
+    async with _auto_poll_lock:
+        Session = async_sessionmaker(engine, expire_on_commit=False)
+        async with Session() as session:
+            await _poll_enabled_configs(session)
+        _last_auto_polled_at = datetime.now(UTC)
+
+
+async def auto_poll_loop() -> None:
+    global _next_auto_poll_at
+    if not settings.auto_poll_enabled:
+        _next_auto_poll_at = None
+        return
+    interval = timedelta(minutes=settings.auto_poll_interval_minutes)
+    while True:
+        _next_auto_poll_at = datetime.now(UTC) + interval
+        await asyncio.sleep(interval.total_seconds())
+        await _run_auto_poll_once()
+
+
+def start_auto_polling() -> None:
+    global _auto_poll_task, _next_auto_poll_at
+    if not settings.auto_poll_enabled:
+        _next_auto_poll_at = None
+        return
+    if _auto_poll_task is None or _auto_poll_task.done():
+        _next_auto_poll_at = datetime.now(UTC) + timedelta(minutes=settings.auto_poll_interval_minutes)
+        _auto_poll_task = asyncio.create_task(auto_poll_loop())
+
+
+async def stop_auto_polling() -> None:
+    global _auto_poll_task, _next_auto_poll_at
+    if _auto_poll_task:
+        _auto_poll_task.cancel()
+        try:
+            await _auto_poll_task
+        except asyncio.CancelledError:
+            pass
+    _auto_poll_task = None
+    _next_auto_poll_at = None
 
 
 @router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_admin_auth)])
@@ -150,16 +223,30 @@ async def poll_config(config_id: int, session: AsyncSession = Depends(get_sessio
     return await _poll_one(config, session)
 
 
+async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
+    snapshot = await _snapshot_for_config(config)
+    session.add(snapshot)
+    await session.commit()
+    await session.refresh(snapshot)
+    await _prune_old_snapshots(session)
+    return snapshot
+
+
 @router.post("/poll", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
 async def poll_all(session: AsyncSession = Depends(get_session)):
-    configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)))).scalars().all()
-    snapshots = await asyncio.gather(*(_snapshot_for_config(config) for config in configs))
-    session.add_all(snapshots)
-    await session.commit()
-    for snapshot in snapshots:
-        await session.refresh(snapshot)
-    await _prune_old_snapshots(session)
-    return snapshots
+    async with _auto_poll_lock:
+        return await _poll_enabled_configs(session)
+
+
+@router.get("/poll/status", response_model=PollStatusRead, dependencies=[Depends(require_admin_auth)])
+async def poll_status():
+    return PollStatusRead(
+        auto_poll_enabled=settings.auto_poll_enabled,
+        interval_seconds=settings.auto_poll_interval_minutes * 60,
+        is_polling=_auto_poll_lock.locked(),
+        last_polled_at=_iso(_last_auto_polled_at),
+        next_poll_at=_iso(_next_auto_poll_at),
+    )
 
 
 @router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_admin_auth)])
