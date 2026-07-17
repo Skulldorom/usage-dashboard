@@ -73,6 +73,13 @@ class DashboardConfigUsage(BaseModel):
     config: ProviderConfigRead
     latest: UsageSnapshotRead | None = None
 
+class HomepageProviderRow(BaseModel):
+    provider: str
+    config_id: int
+    label: str
+    value: str
+    status: str
+
 class HomepagePayload(BaseModel):
     configured_providers: int
     healthy_providers: int
@@ -80,6 +87,7 @@ class HomepagePayload(BaseModel):
     latest_check: str | None
     summary: str
     metrics: dict[str, float | int | str | bool | None]
+    list: list[HomepageProviderRow]
 
 
 class PollStatusRead(BaseModel):

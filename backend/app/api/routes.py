@@ -12,7 +12,7 @@ from app.core.crypto import CryptoError, CryptoService
 from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import DashboardConfigUsage, HomepagePayload, PollStatusRead, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -35,6 +35,56 @@ def _slug(value: str) -> str:
 
 def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat() if value else None
+
+
+def _format_homepage_number(value: float | int | str | bool | None) -> str:
+    if isinstance(value, bool) or value is None:
+        return str(value)
+    if isinstance(value, int | float):
+        if abs(value) >= 1000:
+            return f"{value / 1000:.1f}k".rstrip("0").rstrip(".")
+        return f"{value:g}"
+    return str(value)
+
+
+def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
+    for metric in metrics:
+        label = str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_")
+        if "used" in label:
+            continue
+        if any(token in label for token in ("remaining", "left", "balance")):
+            value = _format_homepage_number(metric.get("value"))
+            unit = metric.get("unit") or ("credits" if "credit" in label else None)
+            suffix = f" {unit}" if unit and unit != "%" else ""
+            return f"{value}{suffix} left"
+
+    for metric in metrics:
+        label = str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_")
+        unit = metric.get("unit")
+        if unit == "%" or "percent" in label:
+            direction = "left" if any(token in label for token in ("remaining", "left")) else "used"
+            return f"{_format_homepage_number(metric.get('value'))}% {direction}"
+
+    return summary or "No usage snapshot yet"
+
+
+def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
+    provider_rows = []
+    for row in rows:
+        cfg = row["config"]
+        if not cfg.is_enabled:
+            continue
+        latest = row["latest"]
+        provider_rows.append(
+            HomepageProviderRow(
+                provider=cfg.provider,
+                config_id=cfg.id,
+                label=f"{cfg.provider} ({cfg.label})",
+                value=_homepage_usage_text(latest.metrics, latest.summary) if latest else "No usage snapshot yet",
+                status=latest.status if latest else "unknown",
+            )
+        )
+    return sorted(provider_rows, key=lambda row: (row.provider, row.label))
 
 
 async def _unique_label(session: AsyncSession, provider: str, requested: str | None) -> str:
@@ -279,4 +329,4 @@ async def homepage(session: AsyncSession = Depends(get_session)):
             key = f"{cfg.provider}_{cfg.label}_{metric.get('label')}".lower().replace(" ", "_")
             metrics[key] = metric.get("value")
     checked = latest_check.astimezone(UTC).isoformat() if latest_check else None
-    return HomepagePayload(configured_providers=configured, healthy_providers=healthy, degraded_providers=degraded, latest_check=checked, summary=f"{healthy}/{configured} providers healthy" if configured else "No providers configured", metrics=metrics)
+    return HomepagePayload(configured_providers=configured, healthy_providers=healthy, degraded_providers=degraded, latest_check=checked, summary=f"{healthy}/{configured} providers healthy" if configured else "No providers configured", metrics=metrics, list=_homepage_provider_rows(rows))
