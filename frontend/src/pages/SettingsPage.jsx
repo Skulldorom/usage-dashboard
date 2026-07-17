@@ -45,7 +45,7 @@ const PROVIDER_SETUP = {
   },
   openai: {
     title: 'OpenAI organization admin key',
-    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key—not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
+    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key -- not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
     url: 'https://platform.openai.com/settings/organization/admin-keys',
     linkLabel: 'Open OpenAI Admin Keys',
     keyPlaceholder: 'sk-admin-…',
@@ -197,7 +197,7 @@ export default function SettingsPage() {
           </Box>}
           <TextField label="Connection label (optional)" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Auto-filled when blank" helperText="Leave blank to auto-fill a unique label." />
           <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : `Use the ${setup?.title || 'key'} described above.`} />
-          <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional — provider default will be used'} required={isCustom} />
+          <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional -- provider default will be used'} required={isCustom} />
           {isCustom && <Stack spacing={2.25}>
             <Typography className="dialog-section-label">Custom request</Typography>
             <FormControl fullWidth><InputLabel>HTTP method</InputLabel><Select label="HTTP method" value={form.custom_method} onChange={(event) => setForm({ ...form, custom_method: event.target.value })}><MenuItem value="GET">GET</MenuItem><MenuItem value="POST">POST</MenuItem></Select></FormControl>
@@ -211,7 +211,7 @@ export default function SettingsPage() {
             <TextField label="Maximum JSON path (optional)" value={form.custom_metric_maximum_path} onChange={(event) => setForm({ ...form, custom_metric_maximum_path: event.target.value })} />
           </Stack>}
           {testError && <Alert severity="error">Test failed: {testError}</Alert>}
-          {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '—'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
+          {testResult && <Alert severity="success">Test succeeded: {testResult.summary}<br />{(testResult.metrics || []).map((metric) => `${metric.label}: ${metric.value ?? '-'}${metric.unit ? ` ${metric.unit}` : ''}`).join(' · ')}</Alert>}
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)} disabled={testing || saving}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit} disabled={saveDisabled} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}>{saving ? 'Saving…' : 'Save provider'}</Button></DialogActions>

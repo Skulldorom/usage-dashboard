@@ -172,7 +172,7 @@ function UsageCard({ item }) {
         <Stack>{(latest?.metrics || []).map((metric) => {
           const percent = metricPercent(metric)
           return <Box className="metric-row" key={metric.label}>
-            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '—')} {metric.unit || ''}{percent !== null ? ` (${formatPercent(percent)})` : ''}</Typography></Stack>
+            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '-')} {metric.unit || ''}{percent !== null ? ` (${formatPercent(percent)})` : ''}</Typography></Stack>
             {percent !== null && <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} />}
           </Box>
         })}</Stack>
@@ -216,7 +216,7 @@ export default function DashboardPage() {
 
   return <>
     <header className="page-heading">
-      <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage, and provider health—one sharp view, no spreadsheet séance required.</Typography></Box>
+      <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage, and provider health -- one sharp view, no spreadsheet séance required.</Typography></Box>
       <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
     </header>
     {pollStatus && <Box className="poll-status glass-panel"><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5}><Box><Typography variant="overline" color="primary.main">Automatic polling</Typography><Typography variant="body2" color="text.secondary">{pollStatus.auto_poll_enabled ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}` : 'Auto polling disabled'}</Typography></Box><Typography variant="body2" color="text.secondary">{pollStatus.is_polling ? 'Polling now…' : pollStatus.last_polled_at ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}` : 'No automatic poll has run yet'}</Typography></Stack></Box>}

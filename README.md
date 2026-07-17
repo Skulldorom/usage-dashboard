@@ -102,7 +102,7 @@ If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the front
 
 Two widget formats are supported. Pick one.
 
-#### Option A — Block display (scalar fields)
+#### Option A -- Block display (scalar fields)
 
 The default `block` display shows individual fields as labelled rows. Use this for a compact summary tile:
 
@@ -129,11 +129,11 @@ The default `block` display shows individual fields as labelled rows. Use this f
 
 Flattened `metrics` keys (e.g. `firecrawl_main_credits_remaining`, `deepseek_main_total_balance`) are also available as extra `field` mappings.
 
-#### Option B — Dynamic list (one row per provider)
+#### Option B -- Dynamic list (one row per provider)
 
 Requires Homepage ≥ 1.1.0. Set `display: dynamic-list` and use the object-style `mappings` below. Each enabled provider config becomes a row with its label on the left and usage text on the right.
 
-**`display: dynamic-list` is mandatory** — omitting it causes `TypeError: s.slice is not a function` because Homepage tries to treat the object-style mappings as a block-display array.
+**`display: dynamic-list` is mandatory** -- omitting it causes `TypeError: s.slice is not a function` because Homepage tries to treat the object-style mappings as a block-display array.
 
 ```yaml
 - API Usage:
