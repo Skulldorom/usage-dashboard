@@ -61,7 +61,7 @@ Uses `GET https://api.deepseek.com/user/balance`.
 
 ### OpenAI
 
-Uses `GET https://api.openai.com/v1/organization/costs`. This endpoint requires an organization admin key. Personal Codex usage has no API and is not tracked separately.
+Uses `GET https://api.openai.com/v1/organization/costs`. This endpoint requires an organization admin key
 
 ### Anthropic / Claude
 
