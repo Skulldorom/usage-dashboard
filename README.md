@@ -100,6 +100,41 @@ The Compose stack no longer has a separate `nginx` service. The `frontend` servi
 
 If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the frontend/proxy and is forwarded to the backend. For internal Docker calls that is usually `frontend` or your network alias; for public access it is your external hostname.
 
+Two widget formats are supported. Pick one.
+
+#### Option A — Block display (scalar fields)
+
+The default `block` display shows individual fields as labelled rows. Use this for a compact summary tile:
+
+```yaml
+- API Usage:
+    icon: mdi-api
+    widget:
+      type: customapi
+      url: http://frontend/api/v1/homepage
+      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend.
+      # headers:
+      #   Authorization: Bearer ***
+      refreshInterval: 300000
+      mappings:
+        - field: summary
+          label: Providers
+        - field: configured_providers
+          label: Configured
+        - field: healthy_providers
+          label: Healthy
+        - field: degraded_providers
+          label: Degraded
+```
+
+Flattened `metrics` keys (e.g. `firecrawl_main_credits_remaining`, `deepseek_main_total_balance`) are also available as extra `field` mappings.
+
+#### Option B — Dynamic list (one row per provider)
+
+Requires Homepage ≥ 1.1.0. Set `display: dynamic-list` and use the object-style `mappings` below. Each enabled provider config becomes a row with its label on the left and usage text on the right.
+
+**`display: dynamic-list` is mandatory** — omitting it causes `TypeError: s.slice is not a function` because Homepage tries to treat the object-style mappings as a block-display array.
+
 ```yaml
 - API Usage:
     icon: mdi-api
@@ -118,7 +153,11 @@ If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the front
         format: text
 ```
 
-The `list` field contains one flat row for each enabled provider config. Each row uses `label` for the left side, such as `firecrawl (main)`, and `value` for the right side, preferring remaining credits/usage or percent-used text over generic provider summaries. The existing scalar fields (`summary`, `configured_providers`, `healthy_providers`, `degraded_providers`) and flattened `metrics` object remain available for block-style widgets or extra mappings.
+The `list` array contains one flat object per enabled provider config:
+- `label` → left side (e.g. `deepseek (main)`)
+- `value` → right side (prefers remaining credits/usage, then percent-used, then summary fallback)
+
+The existing scalar fields (`summary`, `configured_providers`, `healthy_providers`, `degraded_providers`) and flattened `metrics` object remain in the response for use with Option A or extra mappings.
 
 ### Public homepage behind reverse-proxy auth
 
