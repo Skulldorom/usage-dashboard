@@ -24,7 +24,7 @@ import { api } from '../api.js'
 const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
   deepseek: ['total_balance', 'granted_balance', 'topped_up_balance'],
-  firecrawl: ['credits_remaining', 'credits_used', 'plan_credits', 'remaining_tokens', 'used_tokens'],
+  firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
 }
@@ -34,6 +34,7 @@ function metricPercent(metric) {
     ? Math.min(100, Math.max(0, (metric.value / metric.maximum) * 100))
     : null
 }
+function formatPercent(value) { return `${Math.round(value)}%` }
 function formatMetricLabel(label) { return label.replaceAll('_', ' ') }
 function formatDateTime(value) {
   if (!value) return 'Not scheduled'
@@ -171,7 +172,7 @@ function UsageCard({ item }) {
         <Stack>{(latest?.metrics || []).map((metric) => {
           const percent = metricPercent(metric)
           return <Box className="metric-row" key={metric.label}>
-            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '—')} {metric.unit || ''}</Typography></Stack>
+            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '—')} {metric.unit || ''}{percent !== null ? ` (${formatPercent(percent)})` : ''}</Typography></Stack>
             {percent !== null && <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} />}
           </Box>
         })}</Stack>
