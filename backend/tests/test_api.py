@@ -182,6 +182,66 @@ async def test_homepage_allows_configured_hosts_without_admin_auth(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqlite_db):
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        firecrawl = ProviderConfig(provider="firecrawl", label="main", encrypted_api_key="encrypted", is_enabled=True)
+        disabled = ProviderConfig(provider="deepseek", label="disabled", encrypted_api_key="encrypted", is_enabled=False)
+        no_snapshot = ProviderConfig(provider="fake", label="scratch", encrypted_api_key="encrypted", is_enabled=True)
+        session.add_all([firecrawl, disabled, no_snapshot])
+        await session.flush()
+        session.add_all([
+            UsageSnapshot(
+                provider_config_id=firecrawl.id,
+                provider="firecrawl",
+                status="healthy",
+                summary="generic account summary",
+                metrics=[
+                    {"label": "usage_percent", "value": 82, "unit": "%"},
+                    {"label": "credits_remaining", "value": 1200, "unit": "credits"},
+                ],
+                raw={},
+                checked_at=now,
+            ),
+            UsageSnapshot(
+                provider_config_id=disabled.id,
+                provider="deepseek",
+                status="healthy",
+                summary="should not render",
+                metrics=[{"label": "credits_remaining", "value": 999, "unit": "credits"}],
+                raw={},
+                checked_at=now,
+            ),
+        ])
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/homepage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["configured_providers"] == 3
+    assert payload["summary"] == "2/3 providers healthy"
+    assert payload["list"] == [
+        {
+            "provider": "fake",
+            "config_id": no_snapshot.id,
+            "label": "fake (scratch)",
+            "value": "No usage snapshot yet",
+            "status": "unknown",
+        },
+        {
+            "provider": "firecrawl",
+            "config_id": firecrawl.id,
+            "label": "firecrawl (main)",
+            "value": "1.2k credits left",
+            "status": "healthy",
+        },
+    ]
+
+
+@pytest.mark.asyncio
 async def test_missing_admin_token_returns_401_but_whitelisted_homepage_still_loads(monkeypatch):
     monkeypatch.setattr(settings, "admin_token", None)
     monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com")

@@ -106,22 +106,19 @@ If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the front
     widget:
       type: customapi
       url: http://frontend/api/v1/homepage
+      display: dynamic-list
       # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend.
       # headers:
-      #   Authorization: Bearer ${ADMIN_TOKEN}
+      #   Authorization: Bearer ***
       refreshInterval: 300000
       mappings:
-        - field: summary
-          label: Providers
-        - field: configured_providers
-          label: Configured
-        - field: healthy_providers
-          label: Healthy
-        - field: degraded_providers
-          label: Degraded
+        items: list
+        name: label
+        label: value
+        format: text
 ```
 
-The `metrics` object contains flattened keys like `firecrawl_main_credits_remaining` and `deepseek_main_total_balance` for extra mappings.
+The `list` field contains one flat row for each enabled provider config. Each row uses `label` for the left side, such as `firecrawl (main)`, and `value` for the right side, preferring remaining credits/usage or percent-used text over generic provider summaries. The existing scalar fields (`summary`, `configured_providers`, `healthy_providers`, `degraded_providers`) and flattened `metrics` object remain available for block-style widgets or extra mappings.
 
 ### Public homepage behind reverse-proxy auth
 
