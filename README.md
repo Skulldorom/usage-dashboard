@@ -53,7 +53,7 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 
 ### Firecrawl
 
-Uses `GET https://api.firecrawl.dev/v2/team/token-usage` and `GET https://api.firecrawl.dev/v2/team/credit-usage/historical`.
+Uses `GET https://api.firecrawl.dev/v2/team/credit-usage` for current remaining/plan credits and `GET https://api.firecrawl.dev/v2/team/credit-usage/historical` for usage consumed in the billing period.
 
 ### DeepSeek
 
