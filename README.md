@@ -10,6 +10,8 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claud
 - Frontend: Vite, React, MUI, React Router
 - Runtime: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
 
+<img width="1920" height="1080" alt="screenshot" src="https://github.com/user-attachments/assets/2cba2a2f-9464-47b0-825c-d0a4ad74907f" />
+
 ## Quick start
 
 ```bash
