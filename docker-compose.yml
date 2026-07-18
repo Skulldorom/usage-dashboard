@@ -1,6 +1,7 @@
 services:
   db:
     image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-usage_dashboard}
       POSTGRES_USER: ${POSTGRES_USER:-usage_dashboard}
@@ -17,6 +18,7 @@ services:
 
   backend:
     image: ${BACKEND_IMAGE:-ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG:-latest}}
+    restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://usage_dashboard:${POSTGRES_PASSWORD:-change-me}@db:5432/usage_dashboard}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY in .env. See .env.example.}
@@ -32,6 +34,7 @@ services:
 
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG:-latest}}
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
