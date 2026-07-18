@@ -14,6 +14,8 @@ class ProviderConfigCreate(BaseModel):
     base_url: str | None = None
     extra: dict = Field(default_factory=dict)
     is_enabled: bool = True
+    is_visible: bool = True
+    display_order: int | None = Field(default=None, ge=0)
 
     @field_validator("label", mode="before")
     @classmethod
@@ -29,6 +31,8 @@ class ProviderConfigUpdate(BaseModel):
     base_url: str | None = None
     extra: dict | None = None
     is_enabled: bool | None = None
+    is_visible: bool | None = None
+    display_order: int | None = Field(default=None, ge=0)
 
     def has_update_for(self, field_name: str) -> bool:
         return field_name in self.model_fields_set
@@ -41,9 +45,15 @@ class ProviderConfigRead(BaseModel):
     base_url: str | None
     extra: dict
     is_enabled: bool
+    is_visible: bool
+    display_order: int
     created_at: datetime
     updated_at: datetime
     api_key_masked: str = "••••••••"
+
+class ProviderConfigOrderUpdate(BaseModel):
+    config_ids: list[int] = Field(..., min_length=1)
+
 
 class UsageMetric(BaseModel):
     label: str

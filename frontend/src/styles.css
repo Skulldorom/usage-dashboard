@@ -98,14 +98,17 @@ button, input { font: inherit; }
 .settings-panel { border-radius: 21px !important; }
 .settings-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 21px 24px; border-bottom: 1px solid rgba(255,255,255,.075); }
 .config-list { padding: 5px 18px 18px; }
-.config-row { display: grid; grid-template-columns: minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(190px, 1.3fr) auto; gap: 24px; align-items: center; min-height: 88px; padding: 16px 6px; border-bottom: 1px solid rgba(255,255,255,.065); }
+.config-row { display: grid; grid-template-columns: auto minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(190px, 1.3fr) auto; gap: 20px; align-items: center; min-height: 88px; padding: 16px 6px; border-bottom: 1px solid rgba(255,255,255,.065); }
 .config-row:last-child { border-bottom: 0; }
 .config-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .config-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; }
 .config-identity span, .config-detail span { display: block; color: #968da0; font-size: .68rem; letter-spacing: .11em; text-transform: uppercase; margin-bottom: 4px; }
 .config-avatar { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 11px; color: #fff; font-weight: 800; background: linear-gradient(145deg, #59217d, #075d7b); border: 1px solid rgba(255,255,255,.1); }
 .config-detail { min-width: 0; color: #c4bdcb; font-size: .84rem; overflow-wrap: anywhere; }
-.config-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.config-order-controls { display: flex; flex-direction: column; gap: 2px; }
+.config-order-controls .MuiIconButton-root { width: 28px; height: 28px; color: #9eeaff; border: 1px solid rgba(6,200,255,.16); border-radius: 9px; }
+.config-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.config-switch { display: inline-flex; align-items: center; gap: 2px; color: #968da0; font-size: .66rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .dialog-section-label { color: #12cbfa; font-size: .72rem !important; font-weight: 800 !important; letter-spacing: .12em !important; text-transform: uppercase; }
 .provider-setup-guide { padding: 18px; border: 1px solid rgba(6,200,255,.18); border-radius: 14px; background: linear-gradient(135deg, rgba(6,200,255,.07), rgba(142,60,255,.06)); }
 .provider-setup-guide ol { margin: 12px 0 15px; padding-left: 21px; color: #c6becf; font-size: .86rem; line-height: 1.55; }
@@ -131,8 +134,9 @@ button, input { font: inherit; }
   .mobile-navigation .nav-link { flex: 1; justify-content: center; min-height: 50px; padding: 0 10px; }
   .mobile-navigation .nav-link.active { box-shadow: inset 0 -2px 0 #06c8ff; }
   .page-heading { align-items: flex-start; }
-  .config-row { grid-template-columns: minmax(150px, 1fr) minmax(140px, .8fr) auto; }
-  .config-row .config-detail:nth-of-type(3) { display: none; }
+  .config-row { grid-template-columns: auto minmax(150px, 1fr) minmax(140px, .8fr) auto; }
+  .config-row .config-detail:nth-of-type(4) { display: none; }
+  .config-actions { flex-wrap: wrap; }
 }
 
 @media (max-width: 600px) {
@@ -151,10 +155,11 @@ button, input { font: inherit; }
   .provider-usage-link { font-size: .66rem; padding: 0 8px; }
   .settings-panel-header { align-items: flex-start; padding: 18px; }
   .config-list { padding: 4px 14px 14px; }
-  .config-row { grid-template-columns: 1fr auto; gap: 12px; min-height: 98px; }
-  .config-row .config-detail { grid-column: 1 / -1; display: block; padding-left: 53px; }
-  .config-row .config-detail:nth-of-type(3) { display: block; }
-  .config-actions { gap: 0; }
+  .config-row { grid-template-columns: auto 1fr; gap: 12px; min-height: 98px; }
+  .config-order-controls { grid-row: span 3; align-self: start; }
+  .config-row .config-detail { grid-column: 2 / -1; display: block; padding-left: 53px; }
+  .config-row .config-detail:nth-of-type(4) { display: block; }
+  .config-actions { grid-column: 2 / -1; justify-content: flex-start; gap: 4px; flex-wrap: wrap; padding-left: 53px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
