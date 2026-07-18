@@ -29,6 +29,14 @@ const PREFERRED_METRICS = {
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
 }
 
+const PROVIDER_USAGE_URLS = {
+  anthropic: 'https://console.anthropic.com/settings/usage',
+  deepseek: 'https://platform.deepseek.com/usage',
+  firecrawl: 'https://www.firecrawl.dev/app',
+  openai: 'https://platform.openai.com/settings/organization/usage',
+  openrouter: 'https://openrouter.ai/settings/credits',
+}
+
 function metricPercent(metric) {
   return typeof metric.maximum === 'number' && metric.maximum > 0 && typeof metric.value === 'number'
     ? Math.min(100, Math.max(0, (metric.value / metric.maximum) * 100))
@@ -157,6 +165,7 @@ function UsageCard({ item }) {
   const { config, latest } = item
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
   const providerInitials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
+  const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
 
   return (
     <Card className="provider-card glass-panel" variant="outlined">
@@ -166,7 +175,10 @@ function UsageCard({ item }) {
             <div className="provider-logo" aria-hidden="true">{providerInitials}</div>
             <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
           </Stack>
-          <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
+          <div className="provider-actions">
+            {providerUsageUrl && <a className="provider-usage-link" href={providerUsageUrl} target="_blank" rel="noreferrer" aria-label={`Open ${config.provider} usage page`}>Usage <span aria-hidden="true">↗</span></a>}
+            <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
+          </div>
         </Stack>
         <Typography className="provider-summary" variant="body2">{latest?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
         <Stack>{(latest?.metrics || []).map((metric) => {
@@ -207,11 +219,15 @@ export default function DashboardPage() {
   }
   useEffect(() => { load() }, [])
 
+  const visibleItems = items.filter((item) => item.config.is_visible)
+  const visibleHealthy = visibleItems.filter((item) => item.latest?.status === 'healthy').length
+  const visibleDegraded = visibleItems.length - visibleHealthy
+
   const summaries = homepage ? [
-    { label: 'Configured', value: homepage.configured_providers, icon: <ApiRoundedIcon /> },
-    { label: 'Healthy', value: homepage.healthy_providers, className: 'highlight', icon: <CheckCircleRoundedIcon /> },
-    { label: 'Degraded', value: homepage.degraded_providers, className: homepage.degraded_providers ? 'warning' : '', icon: <WarningAmberRoundedIcon /> },
-    { label: 'Network summary', value: homepage.summary, icon: <DataUsageRoundedIcon /> },
+    { label: 'Configured', value: visibleItems.length, icon: <ApiRoundedIcon /> },
+    { label: 'Healthy', value: visibleHealthy, className: 'highlight', icon: <CheckCircleRoundedIcon /> },
+    { label: 'Degraded', value: visibleDegraded, className: visibleDegraded ? 'warning' : '', icon: <WarningAmberRoundedIcon /> },
+    { label: 'Network summary', value: visibleItems.length ? `${visibleHealthy}/${visibleItems.length} visible providers healthy` : 'No visible providers', icon: <DataUsageRoundedIcon /> },
   ] : []
 
   return <>
@@ -224,6 +240,7 @@ export default function DashboardPage() {
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
     {!loading && items.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">No providers connected</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Head to Settings and connect your first API provider.</Typography></Box>}
-    <Grid container spacing={2.5}>{items.map((item) => <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}><UsageCard item={item} /></Grid>)}</Grid>
+    {!loading && items.length > 0 && visibleItems.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">All providers are hidden</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Use Settings to show a provider on the main dashboard.</Typography></Box>}
+    <Grid container spacing={2.5}>{visibleItems.map((item) => <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}><UsageCard item={item} /></Grid>)}</Grid>
   </>
 }

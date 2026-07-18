@@ -225,20 +225,57 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
     assert payload["summary"] == "2/3 providers healthy"
     assert payload["list"] == [
         {
-            "provider": "fake",
-            "config_id": no_snapshot.id,
-            "label": "fake (scratch)",
-            "value": "No usage snapshot yet",
-            "status": "unknown",
-        },
-        {
             "provider": "firecrawl",
             "config_id": firecrawl.id,
             "label": "firecrawl (main)",
             "value": "1.2k credits left",
             "status": "healthy",
         },
+        {
+            "provider": "fake",
+            "config_id": no_snapshot.id,
+            "label": "fake (scratch)",
+            "value": "No usage snapshot yet",
+            "status": "unknown",
+        },
     ]
+
+
+@pytest.mark.asyncio
+async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlite_db):
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        first = ProviderConfig(provider="fake", label="first", encrypted_api_key="encrypted", is_enabled=True, is_visible=True, display_order=0)
+        second = ProviderConfig(provider="fake", label="second", encrypted_api_key="encrypted", is_enabled=True, is_visible=False, display_order=1)
+        third = ProviderConfig(provider="fake", label="third", encrypted_api_key="encrypted", is_enabled=False, is_visible=True, display_order=2)
+        session.add_all([first, second, third])
+        await session.flush()
+        session.add_all([
+            UsageSnapshot(provider_config_id=first.id, provider="fake", status="healthy", summary="first", metrics=[{"label": "remaining", "value": 1}], raw={}, checked_at=now),
+            UsageSnapshot(provider_config_id=second.id, provider="fake", status="healthy", summary="second", metrics=[{"label": "remaining", "value": 2}], raw={}, checked_at=now),
+            UsageSnapshot(provider_config_id=third.id, provider="fake", status="healthy", summary="third", metrics=[{"label": "remaining", "value": 3}], raw={}, checked_at=now),
+        ])
+        await session.commit()
+        ids = {"first": first.id, "second": second.id, "third": third.id}
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        reordered = await client.patch("/api/v1/configs/order", json={"config_ids": [ids["third"], ids["first"], ids["second"]]}, headers=auth)
+        assert reordered.status_code == 200, reordered.text
+        assert [row["label"] for row in reordered.json()] == ["third", "first", "second"]
+        assert [row["display_order"] for row in reordered.json()] == [0, 1, 2]
+
+        usage_response = await client.get("/api/v1/usage", headers=auth)
+        assert usage_response.status_code == 200, usage_response.text
+        usage_rows = usage_response.json()
+        assert [row["config"]["label"] for row in usage_rows] == ["third", "first", "second"]
+        assert usage_rows[0]["config"]["is_visible"] is True
+        assert usage_rows[2]["config"]["is_visible"] is False
+
+        homepage_response = await client.get("/api/v1/homepage", headers=auth)
+        assert homepage_response.status_code == 200, homepage_response.text
+        homepage_rows = homepage_response.json()["list"]
+        assert [row["label"] for row in homepage_rows] == ["fake (first)", "fake (second)"]
 
 
 @pytest.mark.asyncio

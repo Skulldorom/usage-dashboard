@@ -161,7 +161,19 @@ export default function SettingsPage() {
   }
 
   async function remove(id) { await api.deleteConfig(id); await load() }
-  async function toggle(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
+  async function toggleApi(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
+  async function toggleUi(config) { await api.updateConfig(config.id, { is_visible: !config.is_visible }); await load() }
+  async function moveConfig(configId, direction) {
+    const currentIndex = configs.findIndex((config) => config.id === configId)
+    const nextIndex = currentIndex + direction
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= configs.length) return
+    const nextConfigs = [...configs]
+    const [moved] = nextConfigs.splice(currentIndex, 1)
+    nextConfigs.splice(nextIndex, 0, moved)
+    setConfigs(nextConfigs)
+    try { setConfigs(await api.reorderConfigs(nextConfigs.map((config) => config.id))) }
+    catch (err) { setError(err.message); await load() }
+  }
   const missingRequired = !form.api_key.trim() || (isCustom && (!form.base_url.trim() || !form.custom_path.trim() || !form.custom_metric_label.trim() || !form.custom_metric_path.trim()))
   const testDisabled = testing || saving || missingRequired
   const saveDisabled = testing || saving || missingRequired
@@ -174,13 +186,21 @@ export default function SettingsPage() {
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     <Paper className="settings-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
-      {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config) => {
+      {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config, index) => {
         const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
         return <div className="config-row" key={config.id}>
+          <div className="config-order-controls" aria-label={`Reorder ${config.label}`}>
+            <IconButton size="small" onClick={() => moveConfig(config.id, -1)} disabled={index === 0} aria-label={`Move ${config.label} up`}>↑</IconButton>
+            <IconButton size="small" onClick={() => moveConfig(config.id, 1)} disabled={index === configs.length - 1} aria-label={`Move ${config.label} down`}>↓</IconButton>
+          </div>
           <div className="config-identity"><div className="config-avatar" aria-hidden="true">{initials}</div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography></div></div>
           <div className="config-detail"><span>Credential</span>{config.api_key_masked}</div>
           <div className="config-detail"><span>Endpoint</span>{config.base_url || 'Provider default'}</div>
-          <div className="config-actions"><Tooltip title={config.is_enabled ? 'Disable provider' : 'Enable provider'}><Switch checked={config.is_enabled} onChange={() => toggle(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} ${config.label}` }} /></Tooltip><Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip></div>
+          <div className="config-actions">
+            <label className="config-switch"><span>API</span><Tooltip title={config.is_enabled ? 'Disable API polling and Homepage output' : 'Enable API polling and Homepage output'}><Switch checked={config.is_enabled} onChange={() => toggleApi(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} API for ${config.label}` }} /></Tooltip></label>
+            <label className="config-switch"><span>UI</span><Tooltip title={config.is_visible ? 'Hide from main dashboard' : 'Show on main dashboard'}><Switch checked={config.is_visible} onChange={() => toggleUi(config)} color="primary" inputProps={{ 'aria-label': `${config.is_visible ? 'Hide' : 'Show'} ${config.label} on main dashboard` }} /></Tooltip></label>
+            <Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+          </div>
         </div>
       })}</div>}
     </Paper>

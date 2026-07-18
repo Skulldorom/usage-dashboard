@@ -66,6 +66,7 @@ export const api = {
   testConfig: (payload) => request('/configs/test', { method: 'POST', body: JSON.stringify(payload) }),
   createConfig: (payload) => request('/configs', { method: 'POST', body: JSON.stringify(payload) }),
   updateConfig: (id, payload) => request(`/configs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  reorderConfigs: (configIds) => request('/configs/order', { method: 'PATCH', body: JSON.stringify({ config_ids: configIds }) }),
   deleteConfig: (id) => request(`/configs/${id}`, { method: 'DELETE' }),
   usage: () => request('/usage'),
   history: (id, params = {}) => request(`/configs/${id}/history?${new URLSearchParams(params)}`),

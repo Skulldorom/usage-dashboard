@@ -21,6 +21,8 @@ class ProviderConfig(Base):
     base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     extra: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
+    display_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     snapshots: Mapped[list["UsageSnapshot"]] = relationship(back_populates="config", cascade="all, delete-orphan")

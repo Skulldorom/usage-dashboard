@@ -12,7 +12,7 @@ from app.core.crypto import CryptoError, CryptoService
 from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -27,6 +27,10 @@ def _crypto() -> CryptoService:
 
 def _config_read(config: ProviderConfig) -> ProviderConfigRead:
     return ProviderConfigRead.model_validate(config)
+
+
+def _config_ordering():
+    return (asc(ProviderConfig.display_order), asc(ProviderConfig.id))
 
 
 def _slug(value: str) -> str:
@@ -84,7 +88,7 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
                 status=latest.status if latest else "unknown",
             )
         )
-    return sorted(provider_rows, key=lambda row: (row.provider, row.label))
+    return provider_rows
 
 
 async def _unique_label(session: AsyncSession, provider: str, requested: str | None) -> str:
@@ -106,7 +110,7 @@ async def providers() -> list[dict]:
 
 @router.get("/configs", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
 async def list_configs(session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.provider, ProviderConfig.label))).scalars().all()
+    rows = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     return [_config_read(row) for row in rows]
 
 
@@ -118,7 +122,11 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     except (ValueError, CryptoError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     label = await _unique_label(session, payload.provider, payload.label)
-    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled)
+    display_order = payload.display_order
+    if display_order is None:
+        max_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
+        display_order = int(max_order or 0) + 1 if max_order is not None else 0
+    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled, is_visible=payload.is_visible, display_order=display_order)
     session.add(config)
     try:
         await session.commit()
@@ -140,6 +148,20 @@ async def test_config(payload: ProviderConfigCreate):
     return {"status": usage.status, "summary": usage.summary, "metrics": [asdict(metric) for metric in usage.metrics], "raw": usage.raw}
 
 
+@router.patch("/configs/order", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
+async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSession = Depends(get_session)):
+    existing = (await session.execute(select(ProviderConfig).where(ProviderConfig.id.in_(payload.config_ids)))).scalars().all()
+    by_id = {config.id: config for config in existing}
+    missing = [config_id for config_id in payload.config_ids if config_id not in by_id]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"Provider config not found: {missing[0]}")
+    for index, config_id in enumerate(payload.config_ids):
+        by_id[config_id].display_order = index
+    await session.commit()
+    rows = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
+    return [_config_read(row) for row in rows]
+
+
 @router.patch("/configs/{config_id}", response_model=ProviderConfigRead, dependencies=[Depends(require_admin_auth)])
 async def update_config(config_id: int, payload: ProviderConfigUpdate, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
@@ -155,6 +177,10 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.extra = payload.extra
     if payload.has_update_for("is_enabled") and payload.is_enabled is not None:
         config.is_enabled = payload.is_enabled
+    if payload.has_update_for("is_visible") and payload.is_visible is not None:
+        config.is_visible = payload.is_visible
+    if payload.has_update_for("display_order") and payload.display_order is not None:
+        config.display_order = payload.display_order
     await session.commit()
     await session.refresh(config)
     return _config_read(config)
@@ -207,7 +233,7 @@ async def _prune_old_snapshots(session: AsyncSession) -> None:
 
 
 async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
-    configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)))).scalars().all()
+    configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)).order_by(*_config_ordering()))).scalars().all()
     snapshots = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
     if snapshots:
         session.add_all(snapshots)
@@ -301,7 +327,7 @@ async def poll_status():
 
 @router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_admin_auth)])
 async def usage(session: AsyncSession = Depends(get_session)):
-    configs = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.provider, ProviderConfig.label))).scalars().all()
+    configs = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     payload = []
     for config in configs:
         latest = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(1))).scalar_one_or_none()
