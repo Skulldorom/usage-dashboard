@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -64,7 +64,15 @@ function selectHistoryMetric(provider, snapshots) {
 
 function Sparkline({ points }) {
   const canvasRef = useRef(null)
-  useEffect(() => {
+  const [hoverPoint, setHoverPoint] = useState(null)
+
+  const getPlotPoint = useCallback((point, index, width, height, min, span) => ({
+    ...point,
+    x: points.length > 1 ? (index / (points.length - 1)) * width : width / 2,
+    y: height - 18 - ((point.value - min) / span) * (height - 36),
+  }), [points.length])
+
+  const draw = useCallback((activePoint = null) => {
     const canvas = canvasRef.current
     if (!canvas) return
     const width = canvas.clientWidth || 320
@@ -98,16 +106,59 @@ function Sparkline({ points }) {
     ctx.lineWidth = 2.5
     ctx.beginPath()
     points.forEach((point, index) => {
-      const x = (index / (points.length - 1)) * width
-      const y = height - 18 - ((point.value - min) / span) * (height - 36)
+      const { x, y } = getPlotPoint(point, index, width, height, min, span)
       if (index === 0) ctx.moveTo(x, y)
       else ctx.lineTo(x, y)
     })
     ctx.stroke()
-  }, [points])
+    if (activePoint) {
+      ctx.shadowBlur = 0
+      ctx.strokeStyle = 'rgba(255,255,255,.3)'
+      ctx.lineWidth = 1
+      ctx.beginPath()
+      ctx.moveTo(activePoint.x, 10)
+      ctx.lineTo(activePoint.x, height - 10)
+      ctx.stroke()
+      ctx.fillStyle = '#06c8ff'
+      ctx.beginPath()
+      ctx.arc(activePoint.x, activePoint.y, 4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,.88)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
+  }, [getPlotPoint, points])
+
+  useEffect(() => { draw(hoverPoint) }, [draw, hoverPoint])
+
+  function showNearestPoint(pointerX) {
+    if (points.length < 2) return
+    const canvas = canvasRef.current
+    const width = canvas?.clientWidth || 320
+    const height = 120
+    const values = points.map((point) => point.value)
+    const min = Math.min(...values)
+    const max = Math.max(...values)
+    const span = max - min || 1
+    const plotted = points.map((point, index) => getPlotPoint(point, index, width, height, min, span))
+    setHoverPoint(plotted.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest))
+  }
+
+  function handlePointerMove(event) {
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    showNearestPoint(event.clientX - rect.left)
+  }
+
   const first = points[0]?.value
   const last = points[points.length - 1]?.value
-  return <canvas ref={canvasRef} style={{ width: '100%', height: 120, display: 'block' }} role="img" aria-label={`Usage history trend with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}.`} />
+  return <Box className="sparkline-wrap" tabIndex={points.length > 1 ? 0 : -1} onFocus={() => showNearestPoint(canvasRef.current?.clientWidth || 320)} onBlur={() => setHoverPoint(null)} onPointerMove={handlePointerMove} onPointerLeave={() => setHoverPoint(null)}>
+    <canvas ref={canvasRef} className="sparkline-canvas" role="img" aria-label={`Usage history trend with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}.`} />
+    {hoverPoint && <Box className="sparkline-tooltip" sx={{ left: `${Math.min(92, Math.max(8, (hoverPoint.x / (canvasRef.current?.clientWidth || 320)) * 100))}%` }}>
+      <strong>{String(hoverPoint.value)}</strong>
+      <span>{formatDateTime(hoverPoint.checked_at)}</span>
+    </Box>}
+  </Box>
 }
 
 function UsageHistory({ config, latest }) {
@@ -151,7 +202,7 @@ function UsageHistory({ config, latest }) {
           {error && <Alert severity="error">{error}</Alert>}
           {!loading && !error && !selected && <Typography variant="body2" color="text.secondary">Two numeric snapshots are required before the graph develops opinions.</Typography>}
           {selected && <Stack spacing={1}>
-            <Stack direction="row" justifyContent="space-between"><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label)}</Typography><Typography variant="caption" color="text.secondary">{points.length} snapshots</Typography></Stack>
+            <Stack direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
             <Sparkline points={points} />
             {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} → {String(last.value)}</Typography>}
           </Stack>}
