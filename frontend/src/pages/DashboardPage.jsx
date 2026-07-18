@@ -29,6 +29,14 @@ const PREFERRED_METRICS = {
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
 }
 
+const PROVIDER_USAGE_URLS = {
+  anthropic: 'https://console.anthropic.com/settings/usage',
+  deepseek: 'https://platform.deepseek.com/usage',
+  firecrawl: 'https://www.firecrawl.dev/app',
+  openai: 'https://platform.openai.com/settings/organization/usage',
+  openrouter: 'https://openrouter.ai/settings/credits',
+}
+
 function metricPercent(metric) {
   return typeof metric.maximum === 'number' && metric.maximum > 0 && typeof metric.value === 'number'
     ? Math.min(100, Math.max(0, (metric.value / metric.maximum) * 100))
@@ -157,6 +165,7 @@ function UsageCard({ item }) {
   const { config, latest } = item
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
   const providerInitials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
+  const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
 
   return (
     <Card className="provider-card glass-panel" variant="outlined">
@@ -166,7 +175,10 @@ function UsageCard({ item }) {
             <div className="provider-logo" aria-hidden="true">{providerInitials}</div>
             <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
           </Stack>
-          <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
+          <div className="provider-actions">
+            {providerUsageUrl && <a className="provider-usage-link" href={providerUsageUrl} target="_blank" rel="noreferrer" aria-label={`Open ${config.provider} usage page`}>Usage <span aria-hidden="true">↗</span></a>}
+            <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
+          </div>
         </Stack>
         <Typography className="provider-summary" variant="body2">{latest?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
         <Stack>{(latest?.metrics || []).map((metric) => {
