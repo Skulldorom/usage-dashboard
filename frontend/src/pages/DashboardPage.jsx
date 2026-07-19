@@ -62,6 +62,18 @@ function selectHistoryMetric(provider, snapshots) {
     .find((candidate) => candidate.values.length > 1) || null
 }
 
+function firecrawlSummary(metrics) {
+  const usagePercent = metrics.find((metric) => metric.label === 'usage_percent' && typeof metric.value === 'number')
+  const creditsRemaining = metrics.find((metric) => metric.label === 'credits_remaining' && metric.value !== null && metric.value !== undefined)
+  if (!usagePercent || !creditsRemaining) return null
+
+  return {
+    label: 'Firecrawl credits',
+    value: `used ${usagePercent.value}% • ${creditsRemaining.value} credits left`,
+    percent: Math.min(100, Math.max(0, usagePercent.value)),
+  }
+}
+
 function Sparkline({ points }) {
   const canvasRef = useRef(null)
   const [hoverPoint, setHoverPoint] = useState(null)
@@ -217,6 +229,8 @@ function UsageCard({ item }) {
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
   const providerInitials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
   const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
+  const metrics = latest?.metrics || []
+  const firecrawlComposite = config.provider === 'firecrawl' ? firecrawlSummary(metrics) : null
 
   return (
     <Card className="provider-card glass-panel" variant="outlined">
@@ -232,7 +246,10 @@ function UsageCard({ item }) {
           </div>
         </Stack>
         <Typography className="provider-summary" variant="body2">{latest?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
-        <Stack>{(latest?.metrics || []).map((metric) => {
+        <Stack>{firecrawlComposite ? <Box className="metric-row">
+          <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{firecrawlComposite.label}</Typography><Typography className="metric-value" variant="body2">{firecrawlComposite.value}</Typography></Stack>
+          <LinearProgress variant="determinate" value={firecrawlComposite.percent} sx={{ mt: 1 }} />
+        </Box> : metrics.map((metric) => {
           const percent = metricPercent(metric)
           return <Box className="metric-row" key={metric.label}>
             <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '-')} {metric.unit || ''}{percent !== null ? ` (${formatPercent(percent)})` : ''}</Typography></Stack>
