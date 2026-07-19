@@ -251,7 +251,7 @@ function Navigation({ mobile = false }) {
         ))}
       </div>
       {!mobile && <SidebarActions />}
-      <span>© {new Date().getFullYear()} Skulldorom</span>
+      {!mobile && <span className="sidebar-copyright">© {new Date().getFullYear()} Skulldorom</span>}
     </nav>
   );
 }

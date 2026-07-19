@@ -43,6 +43,7 @@ button, input { font: inherit; }
 .sidebar-action { height: 46px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; color: #d8d2de; background: rgba(255,255,255,.025); cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
 .sidebar-action:hover { color: #fff; border-color: rgba(6,200,255,.48); background: rgba(6,200,255,.08); }
 .sidebar-action svg { width: 19px; height: 19px; }
+.sidebar-copyright { margin-top: 14px; color: #5e566a; font-size: .65rem; text-align: center; }
 
 .topbar { position: fixed; z-index: 15; top: 0; right: 0; left: var(--sidebar-width); height: var(--topbar-height); display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 clamp(24px, 4vw, 58px); background: rgba(8, 5, 15, .72); border-bottom: 1px solid rgba(255,255,255,.07); backdrop-filter: blur(22px); }
 .topbar-context { display: flex; align-items: center; gap: 13px; color: #81798b; font-size: .78rem; }

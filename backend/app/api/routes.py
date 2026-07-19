@@ -52,6 +52,17 @@ def _format_homepage_number(value: float | int | str | bool | None) -> str:
 
 
 def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
+    labeled_metrics = {
+        str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_"): metric
+        for metric in metrics
+    }
+    usage_percent = labeled_metrics.get("usage_percent")
+    credits_remaining = labeled_metrics.get("credits_remaining")
+    if usage_percent and credits_remaining:
+        usage_value = _format_homepage_number(usage_percent.get("value"))
+        remaining_value = _format_homepage_number(credits_remaining.get("value"))
+        return f"used {usage_value}% • {remaining_value} credits left"
+
     for metric in metrics:
         label = str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_")
         if "used" in label:
