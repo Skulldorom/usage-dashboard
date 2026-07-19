@@ -61,7 +61,7 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
     if usage_percent and credits_remaining:
         usage_value = _format_homepage_number(usage_percent.get("value"))
         remaining_value = _format_homepage_number(credits_remaining.get("value"))
-        return f"used {usage_value}% • {remaining_value} credits left"
+        return f"{usage_value}% • {remaining_value} credits left"
 
     for metric in metrics:
         label = str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_")
@@ -77,8 +77,8 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
         label = str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_")
         unit = metric.get("unit")
         if unit == "%" or "percent" in label:
-            direction = "left" if any(token in label for token in ("remaining", "left")) else "used"
-            return f"{_format_homepage_number(metric.get('value'))}% {direction}"
+            value = f"{_format_homepage_number(metric.get('value'))}%"
+            return f"{value} left" if any(token in label for token in ("remaining", "left")) else value
 
     return summary or "No usage snapshot yet"
 

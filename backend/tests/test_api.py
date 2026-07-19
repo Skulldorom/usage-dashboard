@@ -228,7 +228,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
             "provider": "firecrawl",
             "config_id": firecrawl.id,
             "label": "firecrawl (main)",
-            "value": "used 82% • 1.2k credits left",
+            "value": "82% • 1.2k credits left",
             "status": "healthy",
         },
         {

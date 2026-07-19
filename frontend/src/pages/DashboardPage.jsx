@@ -69,7 +69,7 @@ function firecrawlSummary(metrics) {
 
   return {
     label: 'Firecrawl credits',
-    value: `used ${usagePercent.value}% • ${creditsRemaining.value} credits left`,
+    value: `${usagePercent.value}% • ${creditsRemaining.value} credits left`,
     percent: Math.min(100, Math.max(0, usagePercent.value)),
   }
 }
