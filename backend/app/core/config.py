@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./usage-dashboard.db"
     encryption_key: str = Field(..., min_length=32)
     admin_token: str | None = Field(default=None, min_length=16)
+    admin_session_expire_hours: int = Field(default=24, ge=1)
+    admin_recovery_code_expire_minutes: int = Field(default=30, ge=1)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
     snapshot_retention_days: int = 90

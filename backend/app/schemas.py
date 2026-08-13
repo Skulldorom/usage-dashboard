@@ -1,6 +1,21 @@
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+class AuthStatusRead(BaseModel):
+    is_configured: bool
+    setup_required: bool
+
+class AuthPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=12, max_length=1024)
+
+class AuthCodePasswordRequest(AuthPasswordRequest):
+    code: str = Field(..., min_length=1, max_length=128)
+
+class AuthTokenRead(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_at: datetime
+
 class ProviderInfo(BaseModel):
     id: str
     name: str
