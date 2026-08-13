@@ -23,6 +23,7 @@ import { api } from '../api.js'
 
 const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
+  codex: ['session_used_percent', 'weekly_used_percent', 'review_session_used_percent', 'review_weekly_used_percent', 'reset_credits_available'],
   deepseek: ['total_balance', 'granted_balance', 'topped_up_balance'],
   firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
@@ -31,6 +32,7 @@ const PREFERRED_METRICS = {
 
 const PROVIDER_USAGE_URLS = {
   anthropic: 'https://console.anthropic.com/settings/usage',
+  codex: 'https://chatgpt.com/codex',
   deepseek: 'https://platform.deepseek.com/usage',
   firecrawl: 'https://www.firecrawl.dev/app',
   openai: 'https://platform.openai.com/settings/organization/usage',

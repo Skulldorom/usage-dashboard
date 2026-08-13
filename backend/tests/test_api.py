@@ -1,4 +1,5 @@
 import asyncio
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
@@ -349,6 +350,89 @@ async def test_config_test_endpoint_returns_usage_without_persisting(monkeypatch
 
         configs = await client.get("/api/v1/configs", headers=auth)
         assert configs.json() == []
+
+
+@pytest.mark.asyncio
+async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
+    from app.api import routes
+    from app.core.crypto import CryptoService
+    from app.providers.codex import CodexCredentials
+
+    providers = await providers_payload()
+    assert any(provider["id"] == "codex" for provider in providers)
+
+    secret = CodexCredentials(
+        access_token="old-access-token",
+        refresh_token="refresh-token",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        account_id="acct_123",
+    ).to_secret_json()
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        leaked_extra = await client.post(
+            "/api/v1/configs/test",
+            json={"provider": "codex", "label": "codex", "api_key": secret, "extra": {"refresh_token": "plaintext"}},
+            headers=auth,
+        )
+        assert leaked_extra.status_code == 400
+        assert "plaintext extra" in leaked_extra.text
+
+        created = await client.post(
+            "/api/v1/configs",
+            json={"provider": "codex", "label": "codex", "api_key": secret, "extra": {"note": "safe metadata"}},
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        payload = created.json()
+        assert payload["api_key_masked"] == "••••••••"
+        assert "api_key" not in payload
+        assert payload["extra"] == {"note": "safe metadata"}
+
+    async with sqlite_db() as session:
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.id == payload["id"]))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
+        assert json.loads(stored_secret)["refresh_token"] == "refresh-token"
+        assert config.extra == {"note": "safe metadata"}
+
+    class RefreshingCodexAdapter(ProviderAdapter):
+        id = "codex"
+        name = "Codex"
+        description = "test"
+        default_base_url = "https://chatgpt.com"
+        metric_names = []
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.updated_secret = CodexCredentials(
+                access_token="new-access-token",
+                refresh_token="new-refresh-token",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                account_id="acct_123",
+            ).to_secret_json()
+
+        async def fetch_usage(self) -> ProviderUsage:
+            return ProviderUsage(status="healthy", summary="refreshed", metrics=[Metric("session_used_percent", 1, "%", 100)], raw={})
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setitem(ADAPTERS, "codex", RefreshingCodexAdapter)
+    try:
+        async with sqlite_db() as session:
+            config = await session.get(ProviderConfig, payload["id"])
+            snapshot = await routes._poll_one(config, session)
+            assert snapshot.summary == "refreshed"
+            stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
+            assert json.loads(stored_secret)["refresh_token"] == "new-refresh-token"
+            assert "refresh_token" not in config.extra
+    finally:
+        monkeypatch.undo()
+
+
+async def providers_payload():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/providers")
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
 @pytest.mark.asyncio

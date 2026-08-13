@@ -222,8 +222,12 @@ async def config_history(config_id: int, hours: int = 168, limit: int = 500, ses
 async def _snapshot_for_config(config: ProviderConfig) -> UsageSnapshot:
     try:
         adapter_cls = get_adapter_class(config.provider)
-        adapter = adapter_cls(_crypto().decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds, extra=config.extra)
+        crypto = _crypto()
+        adapter = adapter_cls(crypto.decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds, extra=config.extra)
         usage = await adapter.fetch_usage()
+        updated_secret = getattr(adapter, "updated_secret", None)
+        if updated_secret:
+            config.encrypted_api_key = crypto.encrypt(updated_secret)
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
     except Exception as exc:
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status="error", summary=f"{config.label}: polling failed", metrics=[], raw={}, error=str(exc))
