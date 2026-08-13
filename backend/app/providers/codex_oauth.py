@@ -1,7 +1,9 @@
 import base64
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from secrets import token_urlsafe
 from typing import Any
 
 import httpx
@@ -12,6 +14,8 @@ OPENAI_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_OAUTH_SCOPE = "openid profile email offline_access"
 OPENAI_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OPENAI_OAUTH_DEVICE_CODE_URL = "https://auth.openai.com/oauth/device/code"
+OPENAI_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
+OPENAI_OAUTH_REDIRECT_URI = "http://localhost:1455/auth/callback"
 CODEX_DEVICE_AUTH_SETTINGS_URL = "https://chatgpt.com/codex/settings/general#settings/Security"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
@@ -24,6 +28,89 @@ class CodexDeviceStart:
     verification_uri_complete: str | None
     expires_at: datetime
     interval_seconds: int
+
+
+@dataclass(slots=True)
+class CodexBrowserStart:
+    code_verifier: str
+    state: str
+    authorization_url: str
+    expires_at: datetime
+
+
+def public_browser_payload(flow_id: str, browser: CodexBrowserStart) -> dict[str, Any]:
+    return {
+        "flow_id": flow_id,
+        "authorization_url": browser.authorization_url,
+        "redirect_uri": OPENAI_OAUTH_REDIRECT_URI,
+        "expires_at": browser.expires_at.astimezone(UTC).isoformat(),
+    }
+
+
+def start_browser_authorization() -> CodexBrowserStart:
+    code_verifier = _pkce_token(64)
+    state = _pkce_token(32)
+    challenge = _code_challenge(code_verifier)
+    params = {
+        "response_type": "code",
+        "client_id": OPENAI_OAUTH_CLIENT_ID,
+        "redirect_uri": OPENAI_OAUTH_REDIRECT_URI,
+        "scope": OPENAI_OAUTH_SCOPE,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+        "state": state,
+        "prompt": "login",
+        "id_token_add_organizations": "true",
+        "codex_cli_simplified_flow": "true",
+    }
+    from urllib.parse import urlencode
+
+    return CodexBrowserStart(
+        code_verifier=code_verifier,
+        state=state,
+        authorization_url=f"{OPENAI_OAUTH_AUTHORIZE_URL}?{urlencode(params)}",
+        expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    )
+
+
+def authorization_code_from_callback(callback: str, *, expected_state: str) -> str:
+    from urllib.parse import parse_qs, urlparse
+
+    value = _clean_string(callback)
+    if not value:
+        raise ValueError("Paste the full callback URL or authorization code from OpenAI")
+    parsed = urlparse(value)
+    query = parsed.query if parsed.query else value
+    params = parse_qs(query, keep_blank_values=False)
+    if "error" in params:
+        error = params.get("error_description", params.get("error", ["OpenAI authorization failed"]))[0]
+        raise ValueError(_truncate(error))
+    state = params.get("state", [None])[0]
+    if state and state != expected_state:
+        raise ValueError("OpenAI OAuth state mismatch; start a new Codex login")
+    if "code" in params and params["code"]:
+        return params["code"][0]
+    if "?" not in value and "=" not in value:
+        return value
+    raise ValueError("Could not find an OAuth code in the pasted callback URL")
+
+
+async def exchange_browser_authorization_code(code: str, code_verifier: str, *, timeout: float = 20.0) -> str:
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        response = await client.post(
+            OPENAI_OAUTH_TOKEN_URL,
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "client_id": OPENAI_OAUTH_CLIENT_ID,
+                "redirect_uri": OPENAI_OAUTH_REDIRECT_URI,
+                "code_verifier": code_verifier,
+            },
+            headers={"Accept": "application/json"},
+        )
+    if not response.is_success:
+        raise ValueError(f"Codex browser authorization failed: {_safe_oauth_error(response)}")
+    return _secret_from_token_response(response.json())
 
 
 def public_device_payload(flow_id: str, device: CodexDeviceStart) -> dict[str, Any]:
@@ -139,6 +226,15 @@ def _extract_account_id(id_token: str) -> str | None:
     return None
 
 
+def _pkce_token(byte_count: int) -> str:
+    return token_urlsafe(byte_count).rstrip("=")
+
+
+def _code_challenge(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).decode().rstrip("=")
+
+
 def _oauth_error_payload(response: httpx.Response) -> dict[str, Any]:
     try:
         data = response.json()
@@ -148,6 +244,8 @@ def _oauth_error_payload(response: httpx.Response) -> dict[str, Any]:
 
 
 def _safe_oauth_error(response: httpx.Response) -> str:
+    if response.headers.get("cf-mitigated") == "challenge":
+        return "OpenAI returned a Cloudflare challenge to this server. Use the browser login fallback instead of device-code login."
     if response.status_code == 403:
         return (
             "HTTP 403. Enable device code authentication for Codex in ChatGPT security settings "

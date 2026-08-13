@@ -529,6 +529,67 @@ async def test_codex_device_oauth_poll_hides_raw_oauth_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_encrypted_provider(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.core.crypto import CryptoService
+    from app.providers.codex import CodexCredentials
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        assert code == "browser-code"
+        assert code_verifier
+        assert timeout == settings.request_timeout_seconds
+        return CodexCredentials(
+            access_token="browser-access-token",
+            refresh_token="browser-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            account_id="acct_browser",
+        ).to_secret_json()
+
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert started.status_code == 200, started.text
+        start_payload = started.json()
+        assert start_payload["flow_id"]
+        assert start_payload["authorization_url"].startswith("https://auth.openai.com/oauth/authorize?")
+        assert "code_challenge=" in start_payload["authorization_url"]
+        assert "code_verifier" not in started.text
+        assert "browser-access-token" not in started.text
+        flow = routes._codex_browser_flows[start_payload["flow_id"]]
+
+        completed = await client.post(
+            f"/api/v1/codex/oauth/browser/{start_payload['flow_id']}/complete",
+            json={"label": "codex-browser", "callback": f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"},
+            headers=auth,
+        )
+        assert completed.status_code == 200, completed.text
+        completed_payload = completed.json()
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["config"]["provider"] == "codex"
+        assert completed_payload["config"]["label"] == "codex-browser"
+        assert "browser-access-token" not in completed.text
+        assert "browser-refresh-token" not in completed.text
+
+    async with sqlite_db() as session:
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.provider == "codex"))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
+        assert json.loads(stored_secret)["refresh_token"] == "browser-refresh-token"
+        assert config.extra == {"auth_method": "browser_pkce"}
+
+
+def test_codex_browser_oauth_rejects_state_mismatch():
+    from app.providers import codex_oauth
+
+    with pytest.raises(ValueError, match="state mismatch"):
+        codex_oauth.authorization_code_from_callback(
+            "http://localhost:1455/auth/callback?code=browser-code&state=wrong",
+            expected_state="expected",
+        )
+
+
+@pytest.mark.asyncio
 async def test_codex_device_oauth_start_403_explains_device_auth_setting(monkeypatch):
     from app.providers import codex_oauth
 

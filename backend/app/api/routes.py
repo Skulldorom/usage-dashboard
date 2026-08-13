@@ -14,7 +14,7 @@ from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -22,6 +22,7 @@ _auto_poll_task: asyncio.Task | None = None
 _last_auto_polled_at: datetime | None = None
 _next_auto_poll_at: datetime | None = None
 _codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
+_codex_browser_flows: dict[str, codex_oauth.CodexBrowserStart] = {}
 _codex_device_lock = asyncio.Lock()
 
 
@@ -50,6 +51,9 @@ def _prune_codex_device_flows(now: datetime | None = None) -> None:
     expired = [flow_id for flow_id, flow in _codex_device_flows.items() if flow.expires_at <= current]
     for flow_id in expired:
         _codex_device_flows.pop(flow_id, None)
+    expired_browser = [flow_id for flow_id, flow in _codex_browser_flows.items() if flow.expires_at <= current]
+    for flow_id in expired_browser:
+        _codex_browser_flows.pop(flow_id, None)
 
 
 def _format_homepage_number(value: float | int | str | bool | None) -> str:
@@ -220,6 +224,52 @@ async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest 
     async with _codex_device_lock:
         _codex_device_flows.pop(flow_id, None)
     return {"status": "completed", "interval_seconds": None, "error": None, "config": _config_read(config)}
+
+
+@router.post("/codex/oauth/browser/start", response_model=CodexBrowserStartRead, dependencies=[Depends(require_admin_auth)])
+async def start_codex_browser_oauth():
+    browser = codex_oauth.start_browser_authorization()
+    flow_id = token_urlsafe(32)
+    async with _codex_device_lock:
+        _prune_codex_device_flows()
+        _codex_browser_flows[flow_id] = browser
+    return codex_oauth.public_browser_payload(flow_id, browser)
+
+
+@router.post("/codex/oauth/browser/{flow_id}/complete", response_model=CodexBrowserCompleteRead, dependencies=[Depends(require_admin_auth)])
+async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserCompleteRequest, session: AsyncSession = Depends(get_session)):
+    async with _codex_device_lock:
+        _prune_codex_device_flows()
+        browser = _codex_browser_flows.get(flow_id)
+    if not browser:
+        raise HTTPException(status_code=404, detail="Codex browser authorization flow was not found or expired")
+    if browser.expires_at <= datetime.now(UTC):
+        async with _codex_device_lock:
+            _codex_browser_flows.pop(flow_id, None)
+        return {"status": "expired", "error": "Codex browser login expired. Start a new connection.", "config": None}
+    try:
+        code = codex_oauth.authorization_code_from_callback(payload.callback, expected_state=browser.state)
+        secret = await codex_oauth.exchange_browser_authorization_code(code, browser.code_verifier, timeout=settings.request_timeout_seconds)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    label = await _unique_label(session, "codex", payload.label)
+    display_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
+    config = ProviderConfig(
+        provider="codex",
+        label=label,
+        encrypted_api_key=_crypto().encrypt(secret),
+        extra={"auth_method": "browser_pkce"},
+        is_enabled=True,
+        is_visible=True,
+        display_order=int(display_order or 0) + 1 if display_order is not None else 0,
+    )
+    session.add(config)
+    await session.commit()
+    await session.refresh(config)
+    async with _codex_device_lock:
+        _codex_browser_flows.pop(flow_id, None)
+    return {"status": "completed", "error": None, "config": _config_read(config)}
 
 
 @router.patch("/configs/order", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])

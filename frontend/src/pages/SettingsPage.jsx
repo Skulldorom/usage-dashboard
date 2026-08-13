@@ -45,7 +45,7 @@ const PROVIDER_SETUP = {
   },
   codex: {
     title: 'Codex device login',
-    steps: ['Use Start Codex device login to generate a one-time code and OpenAI authorization link; no Codex CLI is required.', 'Open the link, enter the code, then return here while the dashboard polls for completion.', 'Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.'],
+    steps: ['Try Start Codex device login first. If OpenAI Cloudflare blocks your Docker/server IP, use Start browser login instead.', 'Browser login opens OpenAI in your browser, then asks you to paste the localhost callback URL from the failed browser redirect.', 'Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.'],
     url: 'https://chatgpt.com/codex/settings/general#settings/Security',
     linkLabel: 'Open Codex security settings',
     keyPlaceholder: '{"access_token":"…","refresh_token":"…","expires_at":"…","account_id":"…"}',
@@ -102,6 +102,8 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [codexDeviceFlow, setCodexDeviceFlow] = useState(null)
+  const [codexBrowserFlow, setCodexBrowserFlow] = useState(null)
+  const [codexCallback, setCodexCallback] = useState('')
   const [codexDeviceStatus, setCodexDeviceStatus] = useState('')
   const [codexDeviceBusy, setCodexDeviceBusy] = useState(false)
   const [testResult, setTestResult] = useState(null)
@@ -194,10 +196,58 @@ export default function SettingsPage() {
     try {
       const flow = await api.startCodexDeviceOAuth()
       setCodexDeviceFlow(flow)
+      setCodexBrowserFlow(null)
+      setCodexCallback('')
       setCodexDeviceStatus('Open the link, enter the code, then leave this dialog open while polling completes.')
       if (flow.verification_uri_complete) window.open(flow.verification_uri_complete, '_blank', 'noopener,noreferrer')
     } catch (err) {
       setCodexDeviceStatus('')
+      setTestError(err.message)
+    } finally {
+      setCodexDeviceBusy(false)
+    }
+  }
+
+  async function startCodexBrowserLogin() {
+    setError('')
+    setTestError('')
+    setTestResult(null)
+    setCodexDeviceStatus('Creating browser login link…')
+    setCodexDeviceBusy(true)
+    try {
+      const flow = await api.startCodexBrowserOAuth()
+      setCodexBrowserFlow(flow)
+      setCodexDeviceFlow(null)
+      setCodexCallback('')
+      setCodexDeviceStatus('Open the login link. After OpenAI redirects to localhost, copy the full browser URL and paste it below.')
+      window.open(flow.authorization_url, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setCodexDeviceStatus('')
+      setTestError(err.message)
+    } finally {
+      setCodexDeviceBusy(false)
+    }
+  }
+
+  async function completeCodexBrowserLogin() {
+    if (!codexBrowserFlow?.flow_id || !codexCallback.trim()) return
+    setError('')
+    setTestError('')
+    setCodexDeviceBusy(true)
+    try {
+      const result = await api.completeCodexBrowserOAuth(codexBrowserFlow.flow_id, { label: form.label.trim() || null, callback: codexCallback.trim() })
+      if (result.status === 'completed') {
+        setCodexDeviceStatus(`Codex connected as ${result.config?.label || 'codex'}.`)
+        setCodexBrowserFlow(null)
+        setCodexCallback('')
+        setOpen(false)
+        setForm(initialForm)
+        await load()
+      } else {
+        setCodexDeviceStatus('')
+        setTestError(result.error || 'Codex browser authorization did not complete.')
+      }
+    } catch (err) {
       setTestError(err.message)
     } finally {
       setCodexDeviceBusy(false)
@@ -237,7 +287,7 @@ export default function SettingsPage() {
   return <>
     <header className="page-heading">
       <Box><div className="page-kicker">Connections</div><Typography component="h1" variant="h2">Provider settings</Typography><Typography component="p">Manage credentials and custom endpoints. Secrets are encrypted before storage and never returned in full.</Typography></Box>
-      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError(''); setCodexDeviceFlow(null); setCodexDeviceStatus('') }}>Add provider</Button>
+      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError(''); setCodexDeviceFlow(null); setCodexBrowserFlow(null); setCodexCallback(''); setCodexDeviceStatus('') }}>Add provider</Button>
     </header>
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     <Paper className="settings-panel glass-panel" variant="outlined">
@@ -276,12 +326,19 @@ export default function SettingsPage() {
             <Typography component="h3" variant="subtitle2">Connect without Codex CLI</Typography>
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button variant="contained" onClick={startCodexDeviceLogin} disabled={codexDeviceBusy} startIcon={codexDeviceBusy ? <CircularProgress size={16} color="inherit" /> : null}>Start Codex device login</Button>
+              <Button variant="outlined" onClick={startCodexBrowserLogin} disabled={codexDeviceBusy}>Start browser login fallback</Button>
               {codexDeviceFlow && <Button variant="outlined" onClick={pollCodexDeviceLogin} disabled={codexDeviceBusy}>I authorized it — check now</Button>}
             </Stack>
             {codexDeviceFlow && <Stack spacing={1} sx={{ mt: 1.5 }}>
               <Typography variant="body2">Open <a href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri} target="_blank" rel="noreferrer">{codexDeviceFlow.verification_uri}</a> and enter:</Typography>
               <Typography variant="h5" component="code" sx={{ letterSpacing: '.08em' }}>{codexDeviceFlow.user_code}</Typography>
               <Typography variant="caption" color="text.secondary">Expires at {new Date(codexDeviceFlow.expires_at).toLocaleString()}.</Typography>
+            </Stack>}
+            {codexBrowserFlow && <Stack spacing={1} sx={{ mt: 1.5 }}>
+              <Button component="a" href={codexBrowserFlow.authorization_url} target="_blank" rel="noreferrer" size="small" variant="outlined" endIcon={<LaunchRoundedIcon />}>Open OpenAI browser login</Button>
+              <Typography variant="caption" color="text.secondary">When your browser lands on a localhost error page, copy the full address bar URL and paste it here. The one-time code is exchanged server-side.</Typography>
+              <TextField label="OpenAI localhost callback URL" value={codexCallback} onChange={(event) => setCodexCallback(event.target.value)} placeholder="http://localhost:1455/auth/callback?code=…&state=…" multiline minRows={2} />
+              <Button variant="contained" onClick={completeCodexBrowserLogin} disabled={codexDeviceBusy || !codexCallback.trim()}>Complete browser login</Button>
             </Stack>}
             {codexDeviceStatus && <Alert severity="info" sx={{ mt: 1.5 }}>{codexDeviceStatus}</Alert>}
           </Box>}
