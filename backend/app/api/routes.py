@@ -4,17 +4,18 @@ from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.auth import homepage_auth, require_admin_auth
+from app.core.auth import auth_status, bearer_scheme, homepage_auth, login_admin, request_password_reset, require_admin_auth, reset_admin_password, revoke_admin_session, setup_admin_password
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -127,6 +128,44 @@ async def _unique_label(session: AsyncSession, provider: str, requested: str | N
     while f"{provider_slug}-{index}" in existing:
         index += 1
     return f"{provider_slug}-{index}"
+
+
+@router.get("/auth/status", response_model=AuthStatusRead)
+async def get_auth_status(session: AsyncSession = Depends(get_session)):
+    return await auth_status(session)
+
+
+@router.post("/auth/setup", response_model=AuthTokenRead)
+async def setup_auth(payload: AuthCodePasswordRequest, session: AsyncSession = Depends(get_session)):
+    token, expires_at = await setup_admin_password(payload.code, payload.password, session)
+    return AuthTokenRead(access_token=token, expires_at=expires_at)
+
+
+@router.post("/auth/login", response_model=AuthTokenRead)
+async def login_auth(payload: AuthPasswordRequest, session: AsyncSession = Depends(get_session)):
+    token, expires_at = await login_admin(payload.password, session)
+    return AuthTokenRead(access_token=token, expires_at=expires_at)
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_auth(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        await revoke_admin_session(credentials.credentials, session)
+
+
+@router.post("/auth/reset/request", status_code=status.HTTP_202_ACCEPTED)
+async def request_auth_reset(session: AsyncSession = Depends(get_session)):
+    await request_password_reset(session)
+    return {"status": "reset_code_logged"}
+
+
+@router.post("/auth/reset/complete", response_model=AuthTokenRead)
+async def complete_auth_reset(payload: AuthCodePasswordRequest, session: AsyncSession = Depends(get_session)):
+    token, expires_at = await reset_admin_password(payload.code, payload.password, session)
+    return AuthTokenRead(access_token=token, expires_at=expires_at)
 
 
 @router.get("/providers", response_model=list[ProviderInfo])

@@ -18,18 +18,18 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claud
 cp .env.example .env
 openssl rand -base64 32 | tr '+/' '-_'
 # paste that value into ENCRYPTION_KEY in .env
-# generate an admin token and paste it into ADMIN_TOKEN in .env
-# optional if you only expose /api/v1/homepage through HOMEPAGE_ALLOWED_HOSTS
-openssl rand -hex 32
 docker compose pull
 docker compose up -d
+# open the frontend, copy the one-time setup code from backend logs, and create the admin password
 ```
 
 Open through the frontend container, which also proxies API traffic to the backend:
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
-- Homepage payload: http://localhost:3000/api/v1/homepage (requires `Authorization: Bearer <ADMIN_TOKEN>`)
+- Homepage payload: http://localhost:3000/api/v1/homepage (requires login bearer auth unless `HOMEPAGE_ALLOWED_HOSTS` allows the request host)
+
+First-run admin setup is intentionally local-log based: `GET /api/v1/auth/status` generates and logs a one-time setup code from the backend when no password exists yet. The UI asks for that code and a new password. Password resets use the same pattern via **Reset password**, which logs a one-time reset code in the backend logs before accepting a new password. Docker Compose users can view codes with `docker compose logs backend`.
 
 Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is intentionally internal-only and is not published on the host. The default Compose stack pulls published images from GitHub Container Registry; set `IMAGE_TAG`, `BACKEND_IMAGE`, or `FRONTEND_IMAGE` to pin or override them.
 
@@ -40,7 +40,9 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
 | `POSTGRES_IMAGE` | PostgreSQL image used by Compose. Defaults to `postgres:18-alpine`; the Compose volume is mounted at `/var/lib/postgresql` for the 18+ image layout. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
-| `ADMIN_TOKEN` | Optional bearer token for dashboard config, usage, polling, and homepage API routes. Keep it set for the admin UI; it may be blank only when `HOMEPAGE_ALLOWED_HOSTS` is used for homepage-only access behind an external auth proxy. |
+| `ADMIN_TOKEN` | Optional legacy fallback bearer token for dashboard config, usage, polling, and homepage API routes. Password login is the primary admin flow. |
+| `ADMIN_SESSION_EXPIRE_HOURS` | Hours before password-login session tokens expire. Defaults to `24`. |
+| `ADMIN_RECOVERY_CODE_EXPIRE_MINUTES` | Minutes before setup/reset codes printed in backend logs expire. Defaults to `30`. |
 | `HOMEPAGE_ALLOWED_HOSTS` | Comma-separated hostnames that may access `GET /api/v1/homepage` without `ADMIN_TOKEN`; ports are ignored. All other API routes still require admin auth. |
 | `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |

@@ -11,6 +11,18 @@ def json_type():
 class Base(DeclarativeBase):
     pass
 
+class AdminCredential(Base):
+    __tablename__ = "admin_credentials"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    password_hash: Mapped[str] = mapped_column(Text)
+    session_tokens: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
+    setup_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    setup_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reset_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reset_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
     __table_args__ = (UniqueConstraint("provider", "label", name="uq_provider_label"),)
