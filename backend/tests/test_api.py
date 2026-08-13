@@ -189,9 +189,10 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
     now = datetime.now(UTC)
     async with sqlite_db() as session:
         firecrawl = ProviderConfig(provider="firecrawl", label="main", encrypted_api_key="encrypted", is_enabled=True)
+        codex = ProviderConfig(provider="codex", label="cloud", encrypted_api_key="encrypted", is_enabled=True)
         disabled = ProviderConfig(provider="deepseek", label="disabled", encrypted_api_key="encrypted", is_enabled=False)
         no_snapshot = ProviderConfig(provider="fake", label="scratch", encrypted_api_key="encrypted", is_enabled=True)
-        session.add_all([firecrawl, disabled, no_snapshot])
+        session.add_all([firecrawl, codex, disabled, no_snapshot])
         await session.flush()
         session.add_all([
             UsageSnapshot(
@@ -203,6 +204,15 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
                     {"label": "usage_percent", "value": 82, "unit": "%"},
                     {"label": "credits_remaining", "value": 1200, "unit": "credits"},
                 ],
+                raw={},
+                checked_at=now,
+            ),
+            UsageSnapshot(
+                provider_config_id=codex.id,
+                provider="codex",
+                status="healthy",
+                summary="Pro - 54% session left",
+                metrics=[{"label": "session_remaining_percent", "value": 54, "unit": "%", "maximum": 100}],
                 raw={},
                 checked_at=now,
             ),
@@ -224,14 +234,21 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    assert payload["configured_providers"] == 3
-    assert payload["summary"] == "2/3 providers healthy"
+    assert payload["configured_providers"] == 4
+    assert payload["summary"] == "3/4 providers healthy"
     assert payload["list"] == [
         {
             "provider": "firecrawl",
             "config_id": firecrawl.id,
             "label": "firecrawl (main)",
             "value": "82% • 1.2k credits left",
+            "status": "healthy",
+        },
+        {
+            "provider": "codex",
+            "config_id": codex.id,
+            "label": "codex (cloud)",
+            "value": "54% left",
             "status": "healthy",
         },
         {
