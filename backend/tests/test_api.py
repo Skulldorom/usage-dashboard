@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -586,6 +587,39 @@ def test_codex_browser_oauth_rejects_state_mismatch():
             "http://localhost:1455/auth/callback?code=browser-code&state=wrong",
             expected_state="expected",
         )
+
+
+@pytest.mark.asyncio
+async def test_codex_device_oauth_start_403_explains_device_auth_setting(monkeypatch):
+    from app.providers import codex_oauth
+
+    original_async_client = httpx.AsyncClient
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="Forbidden")
+
+    monkeypatch.setattr(codex_oauth.httpx, "AsyncClient", lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs))
+
+    with pytest.raises(ValueError, match="Enable device code authentication for Codex"):
+        await codex_oauth.start_device_authorization(timeout=1)
+
+
+@pytest.mark.asyncio
+async def test_codex_device_oauth_poll_403_explains_device_auth_setting(monkeypatch):
+    from app.providers import codex_oauth
+
+    original_async_client = httpx.AsyncClient
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(403, text="Forbidden")
+
+    monkeypatch.setattr(codex_oauth.httpx, "AsyncClient", lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs))
+
+    result = await codex_oauth.poll_device_authorization("server-only-device-code", timeout=1)
+
+    assert result["status"] == "failed"
+    assert "Enable device code authentication for Codex" in result["error"]
+    assert "server-only-device-code" not in result["error"]
 
 
 async def providers_payload():

@@ -16,6 +16,7 @@ OPENAI_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OPENAI_OAUTH_DEVICE_CODE_URL = "https://auth.openai.com/oauth/device/code"
 OPENAI_OAUTH_AUTHORIZE_URL = "https://auth.openai.com/oauth/authorize"
 OPENAI_OAUTH_REDIRECT_URI = "http://localhost:1455/auth/callback"
+CODEX_DEVICE_AUTH_SETTINGS_URL = "https://chatgpt.com/codex/settings/general#settings/Security"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
 
@@ -245,6 +246,12 @@ def _oauth_error_payload(response: httpx.Response) -> dict[str, Any]:
 def _safe_oauth_error(response: httpx.Response) -> str:
     if response.headers.get("cf-mitigated") == "challenge":
         return "OpenAI returned a Cloudflare challenge to this server. Use the browser login fallback instead of device-code login."
+    if response.status_code == 403:
+        return (
+            "HTTP 403. Enable device code authentication for Codex in ChatGPT security settings "
+            f"({CODEX_DEVICE_AUTH_SETTINGS_URL}), then start a new Codex device login. "
+            "For workspace accounts, an admin may need to allow device code authentication."
+        )
     data = _oauth_error_payload(response)
     description = _clean_string(data.get("error_description"))
     oauth_error = _clean_string(data.get("error"))
