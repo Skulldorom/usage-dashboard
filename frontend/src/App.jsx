@@ -183,7 +183,7 @@ function SidebarActions() {
   return (
     <div className="sidebar-actions" aria-label="Project shortcuts">
       <a
-        className="sidebar-action"
+        className="sidebar-action sidebar-action-wide"
         href="https://github.com/Skulldorom/usage-dashboard"
         target="_blank"
         rel="noreferrer"
@@ -191,12 +191,13 @@ function SidebarActions() {
         title="Open GitHub"
       >
         <GitHubLogo />
+        <span>GitHub Repository</span>
       </a>
     </div>
   );
 }
 
-function Navigation({ mobile = false }) {
+function Navigation({ mobile = false, isAuthenticated = true }) {
   return (
     <nav
       className={mobile ? "mobile-navigation" : "side-navigation"}
@@ -211,19 +212,21 @@ function Navigation({ mobile = false }) {
           </div>
         </div>
       )}
-      <div className="nav-links">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === "/"}
-            className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
-          >
-            {item.icon}
-            <span>{item.label}</span>
-          </NavLink>
-        ))}
-      </div>
+      {isAuthenticated && (
+        <div className="nav-links">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              end={item.to === "/"}
+              className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
       {!mobile && <SidebarActions />}
       {!mobile && <span className="sidebar-copyright">© {new Date().getFullYear()} Skulldorom</span>}
     </nav>
@@ -374,19 +377,78 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
   );
 }
 
+function LandingPage({ authStatus, onLogin }) {
+  const setupRequired = authStatus?.setup_required;
+  return (
+    <section className="landing-page">
+      <div className="landing-hero glass-panel">
+        <div className="landing-orb" aria-hidden="true" />
+        <Stack spacing={2.4} className="landing-copy">
+          <Typography className="page-kicker" component="span">
+            Private telemetry command center
+          </Typography>
+          <Typography variant="h1">Usage intelligence, locked down.</Typography>
+          <Typography color="text.secondary" className="landing-description">
+            Monitor provider balances, polling health, and Homepage widget data from one self-hosted dashboard. Sign in to unlock sensitive API usage and provider configuration.
+          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+            <Button variant="contained" size="large" startIcon={<KeyRoundedIcon />} onClick={onLogin}>
+              {setupRequired ? "Create admin password" : "Log in to dashboard"}
+            </Button>
+            <Button variant="outlined" color="inherit" size="large" href="https://github.com/Skulldorom/usage-dashboard" target="_blank" rel="noreferrer">
+              View project
+            </Button>
+          </Stack>
+          <div className="landing-hint">
+            {setupRequired
+              ? "First run detected. Grab the one-time setup code from the backend logs."
+              : "Password resets are protected by one-time codes printed in backend logs."}
+          </div>
+        </Stack>
+        <div className="landing-card-stack" aria-hidden="true">
+          <div className="landing-stat-card primary">
+            <span>Access</span>
+            <strong>Secured</strong>
+          </div>
+          <div className="landing-stat-card">
+            <span>Provider telemetry</span>
+            <strong>Encrypted</strong>
+          </div>
+          <div className="landing-stat-card">
+            <span>Recovery</span>
+            <strong>Log codes</strong>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Shell() {
   const [authOpen, setAuthOpen] = useState(!getAdminToken());
   const [authStatus, setAuthStatus] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
 
   async function loadAuthStatus() {
     setAuthLoading(true);
     try {
       const status = await api.authStatus();
       setAuthStatus(status);
-      if (status.setup_required || !getAdminToken()) setAuthOpen(true);
+      if (status.setup_required) {
+        setIsAuthenticated(false);
+        setAuthOpen(true);
+      } else if (!getAdminToken()) {
+        setIsAuthenticated(false);
+        setAuthOpen(false);
+      } else {
+        setIsAuthenticated(true);
+      }
     } catch {
-      if (!getAdminToken()) setAuthOpen(true);
+      if (!getAdminToken()) {
+        setIsAuthenticated(false);
+        setAuthOpen(false);
+      }
     } finally {
       setAuthLoading(false);
     }
@@ -403,7 +465,8 @@ function Shell() {
       // Token may already be expired; clear local state anyway.
     }
     clearAdminToken();
-    setAuthOpen(true);
+    setIsAuthenticated(false);
+    setAuthOpen(false);
   }
 
   return (
@@ -411,7 +474,7 @@ function Shell() {
       <CssBaseline />
       <NetworkBackdrop />
       <aside className="sidebar">
-        <Navigation />
+        <Navigation isAuthenticated={isAuthenticated} />
       </aside>
       <header className="topbar">
         <div className="mobile-brand">
@@ -421,19 +484,21 @@ function Shell() {
         <div className="topbar-context">
           <span className="eyebrow">API OPERATIONS</span>
           <span className="topbar-divider" />
-          <span>{authStatus?.setup_required ? "Password setup required" : "Live provider telemetry"}</span>
+          <span>{isAuthenticated ? "Live provider telemetry" : authStatus?.setup_required ? "Password setup required" : "Authentication required"}</span>
         </div>
         <Stack direction="row" spacing={1}>
-          <Button
-            className="token-button"
-            variant="outlined"
-            color="inherit"
-            startIcon={<KeyRoundedIcon />}
-            onClick={() => setAuthOpen(true)}
-          >
-            {authStatus?.setup_required ? "Set password" : "Admin login"}
-          </Button>
-          {getAdminToken() && (
+          {!isAuthenticated && (
+            <Button
+              className="token-button"
+              variant="outlined"
+              color="inherit"
+              startIcon={<KeyRoundedIcon />}
+              onClick={() => setAuthOpen(true)}
+            >
+              {authStatus?.setup_required ? "Set password" : "Admin login"}
+            </Button>
+          )}
+          {isAuthenticated && (
             <Button className="token-button" variant="outlined" color="inherit" onClick={logout}>
               Log out
             </Button>
@@ -443,6 +508,8 @@ function Shell() {
       <main className="main-content">
         {authLoading ? (
           <div className="loading-state"><Typography color="text.secondary">Checking authentication…</Typography></div>
+        ) : !isAuthenticated ? (
+          <LandingPage authStatus={authStatus} onLogin={() => setAuthOpen(true)} />
         ) : (
           <Routes>
             <Route path="/" element={<DashboardPage />} />
@@ -450,16 +517,17 @@ function Shell() {
           </Routes>
         )}
       </main>
-      <Navigation mobile />
+      {isAuthenticated && <Navigation mobile isAuthenticated={isAuthenticated} />}
       <AuthDialog
         open={authOpen}
         authStatus={authStatus}
         onAuthenticated={() => {
+          setIsAuthenticated(true);
           setAuthOpen(false);
           loadAuthStatus();
         }}
         onClose={() => {
-          if (getAdminToken() && !authStatus?.setup_required) setAuthOpen(false);
+          if (isAuthenticated && !authStatus?.setup_required) setAuthOpen(false);
         }}
       />
     </Box>
