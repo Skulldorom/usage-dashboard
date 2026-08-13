@@ -86,7 +86,7 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
         if any(token in label for token in ("remaining", "left", "balance")):
             value = _format_homepage_number(metric.get("value"))
             unit = metric.get("unit") or ("credits" if "credit" in label else None)
-            suffix = f" {unit}" if unit and unit != "%" else ""
+            suffix = "%" if unit == "%" else f" {unit}" if unit else ""
             return f"{value}{suffix} left"
 
     for metric in metrics:
