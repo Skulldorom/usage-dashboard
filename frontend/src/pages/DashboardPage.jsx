@@ -32,7 +32,7 @@ const PREFERRED_METRICS = {
 
 const PROVIDER_USAGE_URLS = {
   anthropic: 'https://console.anthropic.com/settings/usage',
-  codex: 'https://chatgpt.com/codex',
+  codex: 'https://chatgpt.com/codex/cloud/settings/analytics',
   deepseek: 'https://platform.deepseek.com/usage',
   firecrawl: 'https://www.firecrawl.dev/app',
   openai: 'https://platform.openai.com/settings/organization/usage',

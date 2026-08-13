@@ -103,23 +103,36 @@ button, input { font: inherit; }
 .loading-state { min-height: 220px; display: grid; place-items: center; }
 
 .settings-panel { border-radius: 21px !important; }
+.settings-panel + .settings-panel { margin-top: 24px; }
 .settings-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 21px 24px; border-bottom: 1px solid rgba(255,255,255,.075); }
 .config-list { padding: 5px 18px 18px; }
-.config-row { display: grid; grid-template-columns: auto minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(190px, 1.3fr) auto; gap: 20px; align-items: center; min-height: 88px; padding: 16px 6px; border-bottom: 1px solid rgba(255,255,255,.065); }
-.config-row:last-child { border-bottom: 0; }
+.config-row { display: grid; grid-template-columns: auto minmax(170px, 1.1fr) minmax(150px, 1fr) minmax(190px, 1.3fr) auto; gap: 20px; align-items: center; min-height: 88px; padding: 16px 6px; border-bottom: 1px solid rgba(255,255,255,.065); border-radius: 15px; cursor: grab; transition: transform .22s cubic-bezier(.2,.8,.2,1), opacity .18s ease, background .18s ease, border-color .18s ease, box-shadow .22s ease; }
+.config-row:last-child { border-bottom-color: transparent; }
+.config-row:hover { background: rgba(255,255,255,.025); border-color: rgba(6,200,255,.16); transform: translateY(-1px); }
+.config-row.is-dragging { opacity: .58; cursor: grabbing; background: rgba(6,200,255,.08); border-color: rgba(6,200,255,.35); box-shadow: 0 18px 40px rgba(0,0,0,.28); transform: scale(.992); }
+.config-row.is-drag-over { background: linear-gradient(90deg, rgba(6,200,255,.12), rgba(143,60,255,.08)); border-color: rgba(6,200,255,.38); transform: translateY(3px); }
 .config-identity { display: flex; align-items: center; gap: 13px; min-width: 0; }
 .config-identity strong { display: block; overflow: hidden; text-overflow: ellipsis; }
 .config-identity span, .config-detail span { display: block; color: #968da0; font-size: .68rem; letter-spacing: .11em; text-transform: uppercase; margin-bottom: 4px; }
 .config-avatar { width: 40px; height: 40px; flex: 0 0 auto; display: grid; place-items: center; border-radius: 11px; color: #fff; font-weight: 800; background: linear-gradient(145deg, #59217d, #075d7b); border: 1px solid rgba(255,255,255,.1); }
 .config-detail { min-width: 0; color: #c4bdcb; font-size: .84rem; overflow-wrap: anywhere; }
-.config-order-controls { display: flex; flex-direction: column; gap: 2px; }
-.config-order-controls .MuiIconButton-root { width: 28px; height: 28px; color: #9eeaff; border: 1px solid rgba(6,200,255,.16); border-radius: 9px; }
+.config-order-controls { display: flex; flex-direction: column; gap: 4px; }
+.config-order-controls .MuiIconButton-root, .config-drag-handle { width: 28px; height: 28px; color: #9eeaff; border: 1px solid rgba(6,200,255,.16); border-radius: 9px; background: rgba(6,200,255,.035); }
+.config-drag-handle { display: grid; place-items: center; padding: 0; cursor: grab; }
+.config-drag-handle svg { font-size: 19px; }
+.config-drag-handle:hover, .config-order-controls .MuiIconButton-root:hover { color: #fff; border-color: rgba(6,200,255,.45); background: rgba(6,200,255,.11); }
 .config-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
 .config-switch { display: inline-flex; align-items: center; gap: 2px; color: #968da0; font-size: .66rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
 .dialog-section-label { color: #12cbfa; font-size: .72rem !important; font-weight: 800 !important; letter-spacing: .12em !important; text-transform: uppercase; }
-.provider-setup-guide { padding: 18px; border: 1px solid rgba(6,200,255,.18); border-radius: 14px; background: linear-gradient(135deg, rgba(6,200,255,.07), rgba(142,60,255,.06)); }
+.provider-setup-guide, .homepage-guide { padding: 18px; border: 1px solid rgba(6,200,255,.18); border-radius: 14px; background: linear-gradient(135deg, rgba(6,200,255,.07), rgba(142,60,255,.06)); }
 .provider-setup-guide ol { margin: 12px 0 15px; padding-left: 21px; color: #c6becf; font-size: .86rem; line-height: 1.55; }
 .provider-setup-guide li + li { margin-top: 6px; }
+.homepage-guide { margin: 18px 24px 0; }
+.homepage-guide code { color: #9eeaff; }
+.homepage-config-grid { display: grid; grid-template-columns: minmax(260px, .86fr) minmax(320px, 1.14fr); gap: 22px; padding: 22px 24px 24px; }
+.homepage-yaml-preview { min-width: 0; padding: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; background: rgba(0,0,0,.22); }
+.homepage-yaml-preview pre { min-height: 430px; max-height: 620px; margin: 0; padding: 18px; overflow: auto; border: 1px solid rgba(6,200,255,.14); border-radius: 13px; color: #e9f8ff; background: rgba(3, 8, 13, .74); font-size: .82rem; line-height: 1.55; white-space: pre; }
+.homepage-token-switch { justify-content: space-between; padding: 6px 0 0; }
 
 .app-footer { margin-left: var(--sidebar-width); padding: 0 clamp(24px, 4vw, 58px) 30px; display: flex; align-items: center; justify-content: flex-end; gap: 12px; color: #82798e; font-size: .78rem; }
 .github-project-link { width: 36px; height: 36px; display: inline-grid; place-items: center; border: 1px solid rgba(255,255,255,.1); border-radius: 12px; color: #d8d2de; background: rgba(255,255,255,.025); transition: color .18s ease, border-color .18s ease, background .18s ease, transform .18s ease; }
@@ -141,6 +154,7 @@ button, input { font: inherit; }
   .mobile-navigation .nav-link { flex: 1; justify-content: center; min-height: 50px; padding: 0 10px; }
   .page-heading { align-items: flex-start; }
   .config-row { grid-template-columns: auto minmax(150px, 1fr) minmax(140px, .8fr) auto; }
+  .homepage-config-grid { grid-template-columns: 1fr; }
   .config-row .config-detail:nth-of-type(4) { display: none; }
   .config-actions { flex-wrap: wrap; }
 }
@@ -163,6 +177,9 @@ button, input { font: inherit; }
   .config-list { padding: 4px 14px 14px; }
   .config-row { grid-template-columns: auto 1fr; gap: 12px; min-height: 98px; }
   .config-order-controls { grid-row: span 3; align-self: start; }
+  .homepage-guide { margin: 14px 18px 0; }
+  .homepage-config-grid { padding: 18px; }
+  .homepage-yaml-preview pre { min-height: 320px; }
   .config-row .config-detail { grid-column: 2 / -1; display: block; padding-left: 53px; }
   .config-row .config-detail:nth-of-type(4) { display: block; }
   .config-actions { grid-column: 2 / -1; justify-content: flex-start; gap: 4px; flex-wrap: wrap; padding-left: 53px; }

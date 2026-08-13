@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -22,7 +22,10 @@ import {
   Typography,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
+import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
@@ -78,6 +81,66 @@ const PROVIDER_SETUP = {
   },
 }
 
+
+const HOMEPAGE_WIDGET_FIELDS = [
+  ['summary', 'Summary'],
+  ['configured_providers', 'Configured'],
+  ['healthy_providers', 'Healthy'],
+  ['degraded_providers', 'Degraded'],
+]
+
+const initialHomepageForm = {
+  dashboardUrl: '',
+  displayName: 'Usage Dashboard',
+  group: 'Monitoring',
+  icon: 'si-openai',
+  description: 'AI provider usage and credit monitoring',
+  apiPath: '/api/v1/homepage',
+  authMode: 'bearer',
+  token: '',
+  includeToken: false,
+}
+
+function yamlQuote(value) {
+  const text = String(value ?? '').trim()
+  if (!text) return '""'
+  if (/^[A-Za-z0-9_./:@-]+$/.test(text)) return text
+  return JSON.stringify(text)
+}
+
+function joinUrl(base, path) {
+  const safeBase = (base || 'https://usage-dashboard.example.com').trim().replace(/\/+$/, '')
+  const safePath = (path || '/api/v1/homepage').trim()
+  return `${safeBase}${safePath.startsWith('/') ? safePath : `/${safePath}`}`
+}
+
+function homepageYaml(form) {
+  const dashboardUrl = (form.dashboardUrl || 'https://usage-dashboard.example.com').trim().replace(/\/+$/, '')
+  const apiUrl = joinUrl(dashboardUrl, form.apiPath)
+  const tokenValue = form.includeToken && form.token.trim() ? form.token.trim() : 'REPLACE_WITH_ADMIN_OR_HOMEPAGE_TOKEN'
+  const lines = [
+    `- ${yamlQuote(form.group || 'Monitoring')}:`,
+    `    - ${yamlQuote(form.displayName || 'Usage Dashboard')}:`,
+    `        href: ${yamlQuote(dashboardUrl)}`,
+    `        description: ${yamlQuote(form.description || 'AI provider usage and credit monitoring')}`,
+  ]
+  if (form.icon.trim()) lines.push(`        icon: ${yamlQuote(form.icon)}`)
+  lines.push('        widget:')
+  lines.push('          type: customapi')
+  lines.push(`          url: ${yamlQuote(apiUrl)}`)
+  lines.push('          method: GET')
+  if (form.authMode === 'bearer') {
+    lines.push('          headers:')
+    lines.push(`            Authorization: ${yamlQuote(`Bearer ${tokenValue}`)}`)
+  }
+  lines.push('          mappings:')
+  HOMEPAGE_WIDGET_FIELDS.forEach(([field, label]) => {
+    lines.push(`            - field: ${field}`)
+    lines.push(`              label: ${label}`)
+  })
+  return `${lines.join('\n')}\n`
+}
+
 const initialForm = {
   provider: 'firecrawl',
   label: '',
@@ -108,6 +171,15 @@ export default function SettingsPage() {
   const [codexDeviceBusy, setCodexDeviceBusy] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
+  const [homepageForm, setHomepageForm] = useState(() => ({
+    ...initialHomepageForm,
+    dashboardUrl: typeof window !== 'undefined' ? window.location.origin : '',
+  }))
+  const [homepageCopied, setHomepageCopied] = useState(false)
+  const [draggingConfigId, setDraggingConfigId] = useState(null)
+  const [dragOverConfigId, setDragOverConfigId] = useState(null)
+  const dragCommitRef = useRef(null)
+  const homepagePreview = useMemo(() => homepageYaml(homepageForm), [homepageForm])
   const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
   const isCodex = form.provider === 'codex'
@@ -174,8 +246,28 @@ export default function SettingsPage() {
   }
 
   async function remove(id) { await api.deleteConfig(id); await load() }
+  function updateHomepageForm(patch) {
+    setHomepageCopied(false)
+    setHomepageForm((current) => ({ ...current, ...patch }))
+  }
+  async function copyHomepageYaml() {
+    setHomepageCopied(false)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(homepagePreview)
+      else window.prompt('Copy Homepage YAML', homepagePreview)
+      setHomepageCopied(true)
+      window.setTimeout(() => setHomepageCopied(false), 2200)
+    } catch {
+      window.prompt('Copy Homepage YAML', homepagePreview)
+    }
+  }
   async function toggleApi(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
   async function toggleUi(config) { await api.updateConfig(config.id, { is_visible: !config.is_visible }); await load() }
+  async function persistConfigOrder(nextConfigs) {
+    setConfigs(nextConfigs)
+    try { setConfigs(await api.reorderConfigs(nextConfigs.map((config) => config.id))) }
+    catch (err) { setError(err.message); await load() }
+  }
   async function moveConfig(configId, direction) {
     const currentIndex = configs.findIndex((config) => config.id === configId)
     const nextIndex = currentIndex + direction
@@ -183,9 +275,27 @@ export default function SettingsPage() {
     const nextConfigs = [...configs]
     const [moved] = nextConfigs.splice(currentIndex, 1)
     nextConfigs.splice(nextIndex, 0, moved)
-    setConfigs(nextConfigs)
-    try { setConfigs(await api.reorderConfigs(nextConfigs.map((config) => config.id))) }
-    catch (err) { setError(err.message); await load() }
+    await persistConfigOrder(nextConfigs)
+  }
+  function reorderConfigToTarget(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return
+    const sourceIndex = configs.findIndex((config) => config.id === sourceId)
+    const targetIndex = configs.findIndex((config) => config.id === targetId)
+    if (sourceIndex < 0 || targetIndex < 0) return
+    const nextConfigs = [...configs]
+    const [moved] = nextConfigs.splice(sourceIndex, 1)
+    nextConfigs.splice(targetIndex, 0, moved)
+    persistConfigOrder(nextConfigs)
+  }
+  function scheduleDragReorder(sourceId, targetId) {
+    window.clearTimeout(dragCommitRef.current)
+    if (!sourceId || !targetId || sourceId === targetId) return
+    dragCommitRef.current = window.setTimeout(() => reorderConfigToTarget(sourceId, targetId), 90)
+  }
+  function endConfigDrag() {
+    window.clearTimeout(dragCommitRef.current)
+    setDraggingConfigId(null)
+    setDragOverConfigId(null)
   }
   async function startCodexDeviceLogin() {
     setError('')
@@ -294,8 +404,20 @@ export default function SettingsPage() {
       <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
       {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config, index) => {
         const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
-        return <div className="config-row" key={config.id}>
+        const dragging = draggingConfigId === config.id
+        const dragOver = dragOverConfigId === config.id && draggingConfigId !== config.id
+        return <div
+          className={`config-row${dragging ? ' is-dragging' : ''}${dragOver ? ' is-drag-over' : ''}`}
+          key={config.id}
+          draggable
+          onDragStart={(event) => { event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', String(config.id)); setDraggingConfigId(config.id) }}
+          onDragEnter={(event) => { event.preventDefault(); setDragOverConfigId(config.id); scheduleDragReorder(draggingConfigId, config.id) }}
+          onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'move' }}
+          onDrop={(event) => { event.preventDefault(); reorderConfigToTarget(Number(event.dataTransfer.getData('text/plain')), config.id); endConfigDrag() }}
+          onDragEnd={endConfigDrag}
+        >
           <div className="config-order-controls" aria-label={`Reorder ${config.label}`}>
+            <Tooltip title="Drag to reorder"><button type="button" className="config-drag-handle" aria-label={`Drag ${config.label} to reorder`}><DragIndicatorRoundedIcon /></button></Tooltip>
             <IconButton size="small" onClick={() => moveConfig(config.id, -1)} disabled={index === 0} aria-label={`Move ${config.label} up`}>↑</IconButton>
             <IconButton size="small" onClick={() => moveConfig(config.id, 1)} disabled={index === configs.length - 1} aria-label={`Move ${config.label} down`}>↓</IconButton>
           </div>
@@ -309,6 +431,36 @@ export default function SettingsPage() {
           </div>
         </div>
       })}</div>}
+    </Paper>
+    <Paper className="settings-panel homepage-integration-panel glass-panel" variant="outlined">
+      <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
+      <Box className="homepage-guide">
+        <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
+        <Typography variant="body2" color="text.secondary">Paste the generated block into Homepage's <code>services.yaml</code>. The first line creates or reuses the selected group, and the nested service points Homepage's <code>customapi</code> widget at Usage Dashboard's existing <code>/api/v1/homepage</code> endpoint.</Typography>
+        <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use an admin/homepage token.</Typography>
+      </Box>
+      <Box className="homepage-config-grid">
+        <Stack spacing={2}>
+          <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach." />
+          <TextField label="Display name" value={homepageForm.displayName} onChange={(event) => updateHomepageForm({ displayName: event.target.value })} />
+          <TextField label="Group / category" value={homepageForm.group} onChange={(event) => updateHomepageForm({ group: event.target.value })} helperText="Creates the top-level Homepage services group." />
+          <TextField label="Icon" value={homepageForm.icon} onChange={(event) => updateHomepageForm({ icon: event.target.value })} placeholder="si-openai" helperText="Use any Homepage-supported icon name, or leave blank." />
+          <TextField label="Description" value={homepageForm.description} onChange={(event) => updateHomepageForm({ description: event.target.value })} />
+          <TextField label="API path" value={homepageForm.apiPath} onChange={(event) => updateHomepageForm({ apiPath: event.target.value })} helperText="Defaults to Usage Dashboard's Homepage payload endpoint." />
+          <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
+          {homepageForm.authMode === 'bearer' && <>
+            <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
+            <label className="config-switch homepage-token-switch"><span>Include token in YAML</span><Tooltip title="Off keeps a placeholder so copied YAML does not leak secrets on screen."><Switch checked={homepageForm.includeToken} onChange={(event) => updateHomepageForm({ includeToken: event.target.checked })} color="warning" inputProps={{ 'aria-label': 'Include token in generated YAML' }} /></Tooltip></label>
+          </>}
+        </Stack>
+        <Box className="homepage-yaml-preview">
+          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+            <Box><Typography variant="overline" color="primary.main">Live YAML preview</Typography><Typography variant="caption" color="text.secondary" display="block">Updates as you type; copy, paste, done.</Typography></Box>
+            <Button variant="contained" size="small" onClick={copyHomepageYaml} startIcon={homepageCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{homepageCopied ? 'Copied' : 'Copy YAML'}</Button>
+          </Stack>
+          <pre><code>{homepagePreview}</code></pre>
+        </Box>
+      </Box>
     </Paper>
     <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
       <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">New connection</Typography><Typography component="span" display="block" variant="h5">Add API provider</Typography></Stack></DialogTitle>
