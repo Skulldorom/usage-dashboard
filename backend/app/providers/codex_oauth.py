@@ -12,6 +12,7 @@ OPENAI_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 OPENAI_OAUTH_SCOPE = "openid profile email offline_access"
 OPENAI_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 OPENAI_OAUTH_DEVICE_CODE_URL = "https://auth.openai.com/oauth/device/code"
+CODEX_DEVICE_AUTH_SETTINGS_URL = "https://chatgpt.com/codex/settings/general#settings/Security"
 DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
 
@@ -147,6 +148,12 @@ def _oauth_error_payload(response: httpx.Response) -> dict[str, Any]:
 
 
 def _safe_oauth_error(response: httpx.Response) -> str:
+    if response.status_code == 403:
+        return (
+            "HTTP 403. Enable device code authentication for Codex in ChatGPT security settings "
+            f"({CODEX_DEVICE_AUTH_SETTINGS_URL}), then start a new Codex device login. "
+            "For workspace accounts, an admin may need to allow device code authentication."
+        )
     data = _oauth_error_payload(response)
     description = _clean_string(data.get("error_description"))
     oauth_error = _clean_string(data.get("error"))
