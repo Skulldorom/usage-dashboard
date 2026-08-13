@@ -1,6 +1,7 @@
 import asyncio
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
+from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import asc, delete, desc, func, select
@@ -11,14 +12,17 @@ from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.database import engine, get_session
 from app.models import ProviderConfig, UsageSnapshot
+from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
 _auto_poll_task: asyncio.Task | None = None
 _last_auto_polled_at: datetime | None = None
 _next_auto_poll_at: datetime | None = None
+_codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
+_codex_device_lock = asyncio.Lock()
 
 
 def _crypto() -> CryptoService:
@@ -39,6 +43,13 @@ def _slug(value: str) -> str:
 
 def _iso(value: datetime | None) -> str | None:
     return value.astimezone(UTC).isoformat() if value else None
+
+
+def _prune_codex_device_flows(now: datetime | None = None) -> None:
+    current = now or datetime.now(UTC)
+    expired = [flow_id for flow_id, flow in _codex_device_flows.items() if flow.expires_at <= current]
+    for flow_id in expired:
+        _codex_device_flows.pop(flow_id, None)
 
 
 def _format_homepage_number(value: float | int | str | bool | None) -> str:
@@ -157,6 +168,58 @@ async def test_config(payload: ProviderConfigCreate):
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": usage.status, "summary": usage.summary, "metrics": [asdict(metric) for metric in usage.metrics], "raw": usage.raw}
+
+
+@router.post("/codex/oauth/device/start", response_model=CodexDeviceStartRead, dependencies=[Depends(require_admin_auth)])
+async def start_codex_device_oauth():
+    try:
+        device = await codex_oauth.start_device_authorization(timeout=settings.request_timeout_seconds)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    flow_id = token_urlsafe(32)
+    async with _codex_device_lock:
+        _prune_codex_device_flows()
+        _codex_device_flows[flow_id] = device
+    return codex_oauth.public_device_payload(flow_id, device)
+
+
+@router.post("/codex/oauth/device/{flow_id}/poll", response_model=CodexDevicePollRead, dependencies=[Depends(require_admin_auth)])
+async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest | None = None, session: AsyncSession = Depends(get_session)):
+    async with _codex_device_lock:
+        _prune_codex_device_flows()
+        device = _codex_device_flows.get(flow_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Codex device authorization flow was not found or expired")
+    if device.expires_at <= datetime.now(UTC):
+        async with _codex_device_lock:
+            _codex_device_flows.pop(flow_id, None)
+        return {"status": "expired", "error": "Codex device code expired. Start a new connection.", "interval_seconds": None, "config": None}
+
+    result = await codex_oauth.poll_device_authorization(device.device_code, timeout=settings.request_timeout_seconds)
+    if result.get("status") != "completed":
+        return {"status": result.get("status", "failed"), "interval_seconds": result.get("interval_seconds"), "error": result.get("error"), "config": None}
+
+    secret = result.get("secret")
+    if not isinstance(secret, str) or not secret.strip():
+        return {"status": "failed", "error": "Codex device authorization completed without usable tokens", "interval_seconds": None, "config": None}
+
+    label = await _unique_label(session, "codex", payload.label if payload else None)
+    display_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
+    config = ProviderConfig(
+        provider="codex",
+        label=label,
+        encrypted_api_key=_crypto().encrypt(secret),
+        extra={"auth_method": "device_code"},
+        is_enabled=True,
+        is_visible=True,
+        display_order=int(display_order or 0) + 1 if display_order is not None else 0,
+    )
+    session.add(config)
+    await session.commit()
+    await session.refresh(config)
+    async with _codex_device_lock:
+        _codex_device_flows.pop(flow_id, None)
+    return {"status": "completed", "interval_seconds": None, "error": None, "config": _config_read(config)}
 
 
 @router.patch("/configs/order", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
