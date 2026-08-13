@@ -6,7 +6,7 @@ import pytest
 from app.providers.codex import CodexAdapter, CodexCredentials
 
 
-def test_codex_parser_extracts_session_weekly_review_and_reset_credits():
+def test_codex_parser_reports_session_weekly_review_and_reset_credits_left():
     data = {
         "plan_type": "Pro",
         "rate_limits_by_limit_id": {
@@ -27,14 +27,28 @@ def test_codex_parser_extracts_session_weekly_review_and_reset_credits():
     usage = CodexAdapter.parse_usage(data)
 
     assert usage.status == "healthy"
-    assert usage.summary == "Pro — 42.4% session used, 88% weekly used"
+    assert usage.summary == "Pro - 57.6% session left, 12% weekly left"
     assert any(m.label == "plan_type" and m.value == "Pro" for m in usage.metrics)
-    assert any(m.label == "session_used_percent" and m.value == 42.4 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
-    assert any(m.label == "weekly_used_percent" and m.value == 88 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
+    assert any(m.label == "session_remaining_percent" and m.value == 57.6 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
+    assert any(m.label == "weekly_remaining_percent" and m.value == 12 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
     assert any(m.label == "session_reset_at" and m.value == "2026-08-14T12:30:00Z" for m in usage.metrics)
-    assert any(m.label == "review_session_used_percent" and m.value == 12 for m in usage.metrics)
+    assert any(m.label == "review_session_remaining_percent" and m.value == 88 for m in usage.metrics)
     assert any(m.label == "review_limit_reached" and m.value is True for m in usage.metrics)
     assert any(m.label == "reset_credits_available" and m.value == 2 for m in usage.metrics)
+
+
+def test_codex_parser_reports_weekly_left_without_session_usage():
+    usage = CodexAdapter.parse_usage({
+        "plan_type": "Pro",
+        "rate_limit": {
+            "secondary_window": {"used_percent": 73, "reset_at": "2026-08-20T00:00:00Z"},
+        },
+    })
+
+    assert usage.status == "healthy"
+    assert usage.summary == "Pro - 27% weekly left"
+    assert not any(m.label == "session_remaining_percent" for m in usage.metrics)
+    assert any(m.label == "weekly_remaining_percent" and m.value == 27 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
 
 
 def test_codex_credentials_require_refresh_token_inside_encrypted_secret():

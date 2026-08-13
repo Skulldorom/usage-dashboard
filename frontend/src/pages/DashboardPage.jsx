@@ -23,7 +23,7 @@ import { api } from '../api.js'
 
 const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
-  codex: ['session_used_percent', 'weekly_used_percent', 'review_session_used_percent', 'review_weekly_used_percent', 'reset_credits_available'],
+  codex: ['session_remaining_percent', 'weekly_remaining_percent', 'review_session_remaining_percent', 'review_weekly_remaining_percent', 'reset_credits_available'],
   deepseek: ['total_balance', 'granted_balance', 'topped_up_balance'],
   firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
@@ -218,7 +218,7 @@ function UsageHistory({ config, latest }) {
           {selected && <Stack spacing={1}>
             <Stack direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
             <Sparkline points={points} />
-            {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} → {String(last.value)}</Typography>}
+            {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} to {String(last.value)}</Typography>}
           </Stack>}
         </Box>
       </Collapse>
@@ -302,7 +302,7 @@ export default function DashboardPage() {
 
   return <>
     <header className="page-heading">
-      <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage, and provider health -- one sharp view, no spreadsheet séance required.</Typography></Box>
+      <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage left, and provider health -- one sharp view, no spreadsheet séance required.</Typography></Box>
       <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
     </header>
     {pollStatus && <Box className="poll-status glass-panel"><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5}><Box><Typography variant="overline" color="primary.main">Automatic polling</Typography><Typography variant="body2" color="text.secondary">{pollStatus.auto_poll_enabled ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}` : 'Auto polling disabled'}</Typography></Box><Typography variant="body2" color="text.secondary">{pollStatus.is_polling ? 'Polling now…' : pollStatus.last_polled_at ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}` : 'No automatic poll has run yet'}</Typography></Stack></Box>}

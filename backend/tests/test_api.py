@@ -414,7 +414,7 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
             ).to_secret_json()
 
         async def fetch_usage(self) -> ProviderUsage:
-            return ProviderUsage(status="healthy", summary="refreshed", metrics=[Metric("session_used_percent", 1, "%", 100)], raw={})
+            return ProviderUsage(status="healthy", summary="refreshed", metrics=[Metric("session_remaining_percent", 99, "%", 100)], raw={})
 
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setitem(ADAPTERS, "codex", RefreshingCodexAdapter)
