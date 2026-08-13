@@ -39,13 +39,28 @@ const PROVIDER_USAGE_URLS = {
   openrouter: 'https://openrouter.ai/settings/credits',
 }
 
-function metricPercent(metric) {
+function isCodexPercentMetric(provider, metric) {
+  return provider === 'codex' && metric.unit === '%' && typeof metric.value === 'number'
+}
+function codexRemainingValue(metric) {
+  if (metric.label.includes('used_percent')) return Math.min(100, Math.max(0, 100 - metric.value))
+  return Math.min(100, Math.max(0, metric.value))
+}
+function metricPercent(metric, provider) {
+  if (isCodexPercentMetric(provider, metric)) return codexRemainingValue(metric)
   return typeof metric.maximum === 'number' && metric.maximum > 0 && typeof metric.value === 'number'
     ? Math.min(100, Math.max(0, (metric.value / metric.maximum) * 100))
     : null
 }
 function formatPercent(value) { return `${Math.round(value)}%` }
-function formatMetricLabel(label) { return label.replaceAll('_', ' ') }
+function formatMetricLabel(label, provider) {
+  if (provider === 'codex') return label.replace('used_percent', 'remaining_percent').replaceAll('_', ' ')
+  return label.replaceAll('_', ' ')
+}
+function formatMetricValue(metric, provider, percent) {
+  if (isCodexPercentMetric(provider, metric)) return `${formatPercent(codexRemainingValue(metric))} left`
+  return `${String(metric.value ?? '-')} ${metric.unit || ''}${percent !== null ? ` (${formatPercent(percent)})` : ''}`
+}
 function formatDateTime(value) {
   if (!value) return 'Not scheduled'
   const date = new Date(value)
@@ -216,7 +231,7 @@ function UsageHistory({ config, latest }) {
           {error && <Alert severity="error">{error}</Alert>}
           {!loading && !error && !selected && <Typography variant="body2" color="text.secondary">Two numeric snapshots are required before the graph develops opinions.</Typography>}
           {selected && <Stack spacing={1}>
-            <Stack direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
+            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label, config.provider)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
             <Sparkline points={points} />
             {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} to {String(last.value)}</Typography>}
           </Stack>}
@@ -252,9 +267,9 @@ function UsageCard({ item }) {
           <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{firecrawlComposite.label}</Typography><Typography className="metric-value" variant="body2">{firecrawlComposite.value}</Typography></Stack>
           <LinearProgress variant="determinate" value={firecrawlComposite.percent} sx={{ mt: 1 }} />
         </Box> : metrics.map((metric) => {
-          const percent = metricPercent(metric)
+          const percent = metricPercent(metric, config.provider)
           return <Box className="metric-row" key={metric.label}>
-            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label)}</Typography><Typography className="metric-value" variant="body2">{String(metric.value ?? '-')} {metric.unit || ''}{percent !== null ? ` (${formatPercent(percent)})` : ''}</Typography></Stack>
+            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label, config.provider)}</Typography><Typography className="metric-value" variant="body2">{formatMetricValue(metric, config.provider, percent)}</Typography></Stack>
             {percent !== null && <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} />}
           </Box>
         })}</Stack>
