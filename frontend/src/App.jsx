@@ -191,7 +191,6 @@ function SidebarActions() {
         title="Open GitHub"
       >
         <GitHubLogo />
-        <span>GitHub Repository</span>
       </a>
     </div>
   );
@@ -470,12 +469,14 @@ function Shell() {
   }
 
   return (
-    <Box className="app-shell">
+    <Box className={`app-shell${isAuthenticated ? "" : " unauthenticated"}`}>
       <CssBaseline />
       <NetworkBackdrop />
-      <aside className="sidebar">
-        <Navigation isAuthenticated={isAuthenticated} />
-      </aside>
+      {isAuthenticated && (
+        <aside className="sidebar">
+          <Navigation isAuthenticated={isAuthenticated} />
+        </aside>
+      )}
       <header className="topbar">
         <div className="mobile-brand">
           <BrandMark />
@@ -495,7 +496,7 @@ function Shell() {
               startIcon={<KeyRoundedIcon />}
               onClick={() => setAuthOpen(true)}
             >
-              {authStatus?.setup_required ? "Set password" : "Admin login"}
+              {authStatus?.setup_required ? "Set password" : "Log in"}
             </Button>
           )}
           {isAuthenticated && (

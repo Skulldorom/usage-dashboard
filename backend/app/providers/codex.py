@@ -64,14 +64,14 @@ class CodexAdapter(ProviderAdapter):
     default_base_url = "https://chatgpt.com"
     metric_names = [
         "plan_type",
-        "session_used_percent",
+        "session_remaining_percent",
         "session_reset_at",
-        "weekly_used_percent",
+        "weekly_remaining_percent",
         "weekly_reset_at",
         "limit_reached",
         "reset_credits_available",
-        "review_session_used_percent",
-        "review_weekly_used_percent",
+        "review_session_remaining_percent",
+        "review_weekly_remaining_percent",
     ]
 
     def __init__(
@@ -101,7 +101,7 @@ class CodexAdapter(ProviderAdapter):
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             response = await client.get(f"{self.base_url}/backend-api/wham/usage", headers=headers)
             if response.status_code in (401, 403):
-                raise ValueError("Codex token expired or was rejected — re-authorize the Codex provider")
+                raise ValueError("Codex token expired or was rejected - re-authorize the Codex provider")
             response.raise_for_status()
             data = response.json()
         return self.parse_usage(data)
@@ -111,7 +111,7 @@ class CodexAdapter(ProviderAdapter):
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             response = await client.post(OPENAI_OAUTH_TOKEN_URL, data=payload, headers={"Accept": "application/json"})
             if response.status_code in (400, 401, 403):
-                raise ValueError("Codex refresh token expired or was rejected — re-authorize the Codex provider")
+                raise ValueError("Codex refresh token expired or was rejected - re-authorize the Codex provider")
             response.raise_for_status()
             data = response.json()
         access_token = _clean_string(data.get("access_token"))
@@ -138,11 +138,11 @@ class CodexAdapter(ProviderAdapter):
         review_weekly = _window(review_limit, "secondary_window")
         metrics = [Metric("plan_type", plan)]
         if session["used_percent"] is not None:
-            metrics.append(Metric("session_used_percent", session["used_percent"], "%", 100))
+            metrics.append(Metric("session_remaining_percent", _remaining_percent(session["used_percent"]), "%", 100))
         if session["reset_at"]:
             metrics.append(Metric("session_reset_at", session["reset_at"]))
         if weekly["used_percent"] is not None:
-            metrics.append(Metric("weekly_used_percent", weekly["used_percent"], "%", 100))
+            metrics.append(Metric("weekly_remaining_percent", _remaining_percent(weekly["used_percent"]), "%", 100))
         if weekly["reset_at"]:
             metrics.append(Metric("weekly_reset_at", weekly["reset_at"]))
         metrics.append(Metric("limit_reached", bool(codex_limit.get("limit_reached"))))
@@ -152,20 +152,27 @@ class CodexAdapter(ProviderAdapter):
         if review_limit:
             metrics.append(Metric("review_limit_reached", bool(review_limit.get("limit_reached"))))
             if review_session["used_percent"] is not None:
-                metrics.append(Metric("review_session_used_percent", review_session["used_percent"], "%", 100))
+                metrics.append(Metric("review_session_remaining_percent", _remaining_percent(review_session["used_percent"]), "%", 100))
             if review_session["reset_at"]:
                 metrics.append(Metric("review_session_reset_at", review_session["reset_at"]))
             if review_weekly["used_percent"] is not None:
-                metrics.append(Metric("review_weekly_used_percent", review_weekly["used_percent"], "%", 100))
+                metrics.append(Metric("review_weekly_remaining_percent", _remaining_percent(review_weekly["used_percent"]), "%", 100))
             if review_weekly["reset_at"]:
                 metrics.append(Metric("review_weekly_reset_at", review_weekly["reset_at"]))
         summary_parts = []
         if session["used_percent"] is not None:
-            summary_parts.append(f"{_format_number(session['used_percent'])}% session used")
+            summary_parts.append(f"{_format_number(_remaining_percent(session['used_percent']))}% session left")
         if weekly["used_percent"] is not None:
-            summary_parts.append(f"{_format_number(weekly['used_percent'])}% weekly used")
-        summary = f"{plan} — {', '.join(summary_parts)}" if summary_parts else f"{plan} Codex usage available"
+            summary_parts.append(f"{_format_number(_remaining_percent(weekly['used_percent']))}% weekly left")
+        summary = f"{plan} - {', '.join(summary_parts)}" if summary_parts else f"{plan} Codex usage available"
         return ProviderUsage(status="healthy", summary=summary, metrics=metrics, raw=data)
+
+
+def _remaining_percent(used_percent: float | int) -> float | int:
+    remaining = max(0, min(100, 100 - used_percent))
+    if isinstance(used_percent, int) or remaining.is_integer():
+        return int(remaining)
+    return remaining
 
 
 def _clean_string(value: Any) -> str | None:

@@ -55,14 +55,14 @@ const PROVIDER_SETUP = {
   },
   openai: {
     title: 'OpenAI organization admin key',
-    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key -- not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
+    steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key - not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
     url: 'https://platform.openai.com/settings/organization/admin-keys',
     linkLabel: 'Open OpenAI Admin Keys',
     keyPlaceholder: 'sk-admin-…',
   },
   anthropic: {
     title: 'Anthropic Admin API key',
-    steps: ['Use a Claude Platform organization account; the Admin API is unavailable to individual accounts.', 'As an organization admin, open Settings → Admin keys.', 'Create and paste an Admin API key beginning with sk-ant-admin. A normal inference key cannot read usage reports.'],
+    steps: ['Use a Claude Platform organization account; the Admin API is unavailable to individual accounts.', 'As an organization admin, open Settings > Admin keys.', 'Create and paste an Admin API key beginning with sk-ant-admin. A normal inference key cannot read usage reports.'],
     url: 'https://platform.claude.com/settings/admin-keys',
     linkLabel: 'Open Anthropic Admin keys',
     keyPlaceholder: 'sk-ant-admin…',
@@ -92,7 +92,7 @@ const HOMEPAGE_WIDGET_FIELDS = [
 const initialHomepageForm = {
   dashboardUrl: '',
   refreshInterval: '300000',
-  displayMode: 'summary',
+  displayMode: 'dynamic-list',
   authMode: 'bearer',
   token: '',
   includeToken: false,
@@ -440,14 +440,14 @@ export default function SettingsPage() {
       <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
       <Box className="homepage-guide">
         <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
-        <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Choose summary cards for top-level stats or dynamic list for one provider row per configured API.</Typography>
+        <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Dynamic provider list is the default because it renders one row per enabled API. Switch to summary cards only when you want top-level stats.</Typography>
         <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use an admin/homepage token.</Typography>
       </Box>
       <Box className="homepage-config-grid">
         <Stack spacing={2}>
           <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach. The API path is fixed to /api/v1/homepage." />
           <TextField label="Refresh interval (ms)" value={homepageForm.refreshInterval} onChange={(event) => updateHomepageForm({ refreshInterval: event.target.value })} placeholder="300000" helperText="Homepage refresh interval in milliseconds. Leave blank to omit." />
-          <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="summary">Summary cards</MenuItem><MenuItem value="dynamic-list">Dynamic provider list</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
+          <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="dynamic-list">Dynamic provider list</MenuItem><MenuItem value="summary">Summary cards</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
           <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
           {homepageForm.authMode === 'bearer' && <>
             <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
@@ -480,7 +480,7 @@ export default function SettingsPage() {
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               <Button variant="contained" onClick={startCodexDeviceLogin} disabled={codexDeviceBusy} startIcon={codexDeviceBusy ? <CircularProgress size={16} color="inherit" /> : null}>Start Codex device login</Button>
               <Button variant="outlined" onClick={startCodexBrowserLogin} disabled={codexDeviceBusy}>Start browser login fallback</Button>
-              {codexDeviceFlow && <Button variant="outlined" onClick={pollCodexDeviceLogin} disabled={codexDeviceBusy}>I authorized it — check now</Button>}
+              {codexDeviceFlow && <Button variant="outlined" onClick={pollCodexDeviceLogin} disabled={codexDeviceBusy}>I authorized it - check now</Button>}
             </Stack>
             {codexDeviceFlow && <Stack spacing={1} sx={{ mt: 1.5 }}>
               <Typography variant="body2">Open <a href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri} target="_blank" rel="noreferrer">{codexDeviceFlow.verification_uri}</a> and enter:</Typography>
