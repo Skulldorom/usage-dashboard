@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
@@ -426,6 +427,104 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
             assert "refresh_token" not in config.extra
     finally:
         monkeypatch.undo()
+
+
+@pytest.mark.asyncio
+async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encrypted_provider(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.core.crypto import CryptoService
+    from app.providers.codex import CodexCredentials
+
+    @dataclass(slots=True)
+    class FakeDeviceStart:
+        device_code: str = "server-only-device-code"
+        user_code: str = "ABCD-1234"
+        verification_uri: str = "https://auth.openai.com/codex/device"
+        verification_uri_complete: str | None = "https://auth.openai.com/codex/device?user_code=ABCD-1234"
+        expires_at: datetime = datetime.now(UTC) + timedelta(minutes=15)
+        interval_seconds: int = 5
+
+    async def fake_start_device_authorization(*, timeout: float):
+        assert timeout == settings.request_timeout_seconds
+        return FakeDeviceStart()
+
+    async def fake_poll_device_authorization(device_code: str, *, timeout: float):
+        assert device_code == "server-only-device-code"
+        assert timeout == settings.request_timeout_seconds
+        return {
+            "status": "completed",
+            "secret": CodexCredentials(
+                access_token="device-access-token",
+                refresh_token="device-refresh-token",
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
+                account_id="acct_from_device",
+            ).to_secret_json(),
+        }
+
+    monkeypatch.setattr(routes.codex_oauth, "start_device_authorization", fake_start_device_authorization)
+    monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
+        assert started.status_code == 200, started.text
+        start_payload = started.json()
+        assert start_payload["flow_id"]
+        assert start_payload["user_code"] == "ABCD-1234"
+        assert start_payload["verification_uri"] == "https://auth.openai.com/codex/device"
+        assert "device_code" not in started.text
+        assert "access_token" not in started.text
+        assert "refresh_token" not in started.text
+
+        completed = await client.post(
+            f"/api/v1/codex/oauth/device/{start_payload['flow_id']}/poll",
+            json={"label": "codex-live"},
+            headers=auth,
+        )
+        assert completed.status_code == 200, completed.text
+        completed_payload = completed.json()
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["config"]["provider"] == "codex"
+        assert completed_payload["config"]["label"] == "codex-live"
+        assert "access_token" not in completed.text
+        assert "refresh_token" not in completed.text
+
+    async with sqlite_db() as session:
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.provider == "codex"))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
+        assert json.loads(stored_secret)["refresh_token"] == "device-refresh-token"
+        assert config.extra == {"auth_method": "device_code"}
+
+
+@pytest.mark.asyncio
+async def test_codex_device_oauth_poll_hides_raw_oauth_errors(monkeypatch):
+    from app.api import routes
+
+    async def fake_start_device_authorization(*, timeout: float):
+        return routes.codex_oauth.CodexDeviceStart(
+            device_code="device-code",
+            user_code="WXYZ-9876",
+            verification_uri="https://auth.openai.com/codex/device",
+            verification_uri_complete=None,
+            expires_at=datetime.now(UTC) + timedelta(minutes=15),
+            interval_seconds=5,
+        )
+
+    async def fake_poll_device_authorization(device_code: str, *, timeout: float):
+        return {"status": "pending", "interval_seconds": 5}
+
+    monkeypatch.setattr(routes.codex_oauth, "start_device_authorization", fake_start_device_authorization)
+    monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
+
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
+        assert started.status_code == 200, started.text
+        polled = await client.post(f"/api/v1/codex/oauth/device/{started.json()['flow_id']}/poll", headers=auth)
+
+    assert polled.status_code == 200, polled.text
+    assert polled.json() == {"status": "pending", "interval_seconds": 5, "error": None, "config": None}
+    assert "device-code" not in polled.text
 
 
 async def providers_payload():

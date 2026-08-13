@@ -44,10 +44,10 @@ const PROVIDER_SETUP = {
     keyPlaceholder: 'sk-…',
   },
   codex: {
-    title: 'Codex OAuth token bundle',
-    steps: ['Use an OAuth token bundle from Codex/ChatGPT tooling; standard OpenAI API keys and organization admin keys will not work.', 'Paste JSON containing access_token, refresh_token, optional expires_at, and optional account_id. The whole bundle is encrypted at rest.', 'Do not put access_token or refresh_token in Extra metadata or URLs. The backend rejects plaintext token metadata.'],
-    url: 'https://chatgpt.com/codex',
-    linkLabel: 'Open ChatGPT Codex',
+    title: 'Codex device login',
+    steps: ['Use Start Codex device login to generate a one-time code and OpenAI authorization link; no Codex CLI is required.', 'Open the link, enter the code, then return here while the dashboard polls for completion.', 'Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.'],
+    url: 'https://chatgpt.com/codex/settings/general#settings/Security',
+    linkLabel: 'Open Codex security settings',
     keyPlaceholder: '{"access_token":"…","refresh_token":"…","expires_at":"…","account_id":"…"}',
   },
   openai: {
@@ -101,10 +101,14 @@ export default function SettingsPage() {
   const [error, setError] = useState('')
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [codexDeviceFlow, setCodexDeviceFlow] = useState(null)
+  const [codexDeviceStatus, setCodexDeviceStatus] = useState('')
+  const [codexDeviceBusy, setCodexDeviceBusy] = useState(false)
   const [testResult, setTestResult] = useState(null)
   const [testError, setTestError] = useState('')
   const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
+  const isCodex = form.provider === 'codex'
   const setup = PROVIDER_SETUP[form.provider]
 
   const load = useCallback(async () => {
@@ -181,14 +185,59 @@ export default function SettingsPage() {
     try { setConfigs(await api.reorderConfigs(nextConfigs.map((config) => config.id))) }
     catch (err) { setError(err.message); await load() }
   }
-  const missingRequired = !form.api_key.trim() || (isCustom && (!form.base_url.trim() || !form.custom_path.trim() || !form.custom_metric_label.trim() || !form.custom_metric_path.trim()))
+  async function startCodexDeviceLogin() {
+    setError('')
+    setTestError('')
+    setTestResult(null)
+    setCodexDeviceStatus('Requesting device code…')
+    setCodexDeviceBusy(true)
+    try {
+      const flow = await api.startCodexDeviceOAuth()
+      setCodexDeviceFlow(flow)
+      setCodexDeviceStatus('Open the link, enter the code, then leave this dialog open while polling completes.')
+      if (flow.verification_uri_complete) window.open(flow.verification_uri_complete, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setCodexDeviceStatus('')
+      setTestError(err.message)
+    } finally {
+      setCodexDeviceBusy(false)
+    }
+  }
+
+  async function pollCodexDeviceLogin() {
+    if (!codexDeviceFlow?.flow_id) return
+    setError('')
+    setTestError('')
+    setCodexDeviceBusy(true)
+    try {
+      const result = await api.pollCodexDeviceOAuth(codexDeviceFlow.flow_id, { label: form.label.trim() || null })
+      if (result.status === 'completed') {
+        setCodexDeviceStatus(`Codex connected as ${result.config?.label || 'codex'}.`)
+        setCodexDeviceFlow(null)
+        setOpen(false)
+        setForm(initialForm)
+        await load()
+      } else if (result.status === 'pending' || result.status === 'slow_down') {
+        setCodexDeviceStatus(`Still waiting for OpenAI authorization. Try again in ${result.interval_seconds || codexDeviceFlow.interval_seconds || 5}s.`)
+      } else {
+        setCodexDeviceStatus('')
+        setTestError(result.error || 'Codex device authorization did not complete.')
+      }
+    } catch (err) {
+      setTestError(err.message)
+    } finally {
+      setCodexDeviceBusy(false)
+    }
+  }
+
+  const missingRequired = (!isCodex && !form.api_key.trim()) || (isCustom && (!form.base_url.trim() || !form.custom_path.trim() || !form.custom_metric_label.trim() || !form.custom_metric_path.trim()))
   const testDisabled = testing || saving || missingRequired
-  const saveDisabled = testing || saving || missingRequired
+  const saveDisabled = testing || saving || missingRequired || (isCodex && !form.api_key.trim())
 
   return <>
     <header className="page-heading">
       <Box><div className="page-kicker">Connections</div><Typography component="h1" variant="h2">Provider settings</Typography><Typography component="p">Manage credentials and custom endpoints. Secrets are encrypted before storage and never returned in full.</Typography></Box>
-      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError('') }}>Add provider</Button>
+      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError(''); setCodexDeviceFlow(null); setCodexDeviceStatus('') }}>Add provider</Button>
     </header>
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     <Paper className="settings-panel glass-panel" variant="outlined">
@@ -223,7 +272,20 @@ export default function SettingsPage() {
             {setup.url && <Button component="a" href={setup.url} target="_blank" rel="noreferrer" size="small" variant="outlined" endIcon={<LaunchRoundedIcon />} aria-label={`${setup.linkLabel} (opens in a new tab)`}>{setup.linkLabel}</Button>}
           </Box>}
           <TextField label="Connection label (optional)" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Auto-filled when blank" helperText="Leave blank to auto-fill a unique label." />
-          <TextField label={form.provider === 'codex' ? 'Encrypted OAuth token bundle' : isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" multiline={form.provider === 'codex'} minRows={form.provider === 'codex' ? 3 : undefined} onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : form.provider === 'codex' ? 'Paste JSON; access and refresh tokens are encrypted together and never returned.' : `Use the ${setup?.title || 'key'} described above.`} />
+          {isCodex && <Box className="provider-setup-guide">
+            <Typography component="h3" variant="subtitle2">Connect without Codex CLI</Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              <Button variant="contained" onClick={startCodexDeviceLogin} disabled={codexDeviceBusy} startIcon={codexDeviceBusy ? <CircularProgress size={16} color="inherit" /> : null}>Start Codex device login</Button>
+              {codexDeviceFlow && <Button variant="outlined" onClick={pollCodexDeviceLogin} disabled={codexDeviceBusy}>I authorized it — check now</Button>}
+            </Stack>
+            {codexDeviceFlow && <Stack spacing={1} sx={{ mt: 1.5 }}>
+              <Typography variant="body2">Open <a href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri} target="_blank" rel="noreferrer">{codexDeviceFlow.verification_uri}</a> and enter:</Typography>
+              <Typography variant="h5" component="code" sx={{ letterSpacing: '.08em' }}>{codexDeviceFlow.user_code}</Typography>
+              <Typography variant="caption" color="text.secondary">Expires at {new Date(codexDeviceFlow.expires_at).toLocaleString()}.</Typography>
+            </Stack>}
+            {codexDeviceStatus && <Alert severity="info" sx={{ mt: 1.5 }}>{codexDeviceStatus}</Alert>}
+          </Box>}
+          <TextField label={isCodex ? 'Manual OAuth token bundle fallback' : isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" multiline={isCodex} minRows={isCodex ? 3 : undefined} onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : isCodex ? 'Optional fallback only. Prefer device login above; pasted JSON is still encrypted at rest.' : `Use the ${setup?.title || 'key'} described above.`} />
           <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional -- provider default will be used'} required={isCustom} />
           {isCustom && <Stack spacing={2.25}>
             <Typography className="dialog-section-label">Custom request</Typography>

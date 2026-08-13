@@ -55,6 +55,34 @@ class ProviderConfigOrderUpdate(BaseModel):
     config_ids: list[int] = Field(..., min_length=1)
 
 
+class CodexDevicePollRequest(BaseModel):
+    label: str | None = Field(default=None, max_length=120)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def _blank_label_to_none(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
+class CodexDeviceStartRead(BaseModel):
+    flow_id: str
+    user_code: str
+    verification_uri: str
+    verification_uri_complete: str | None = None
+    expires_at: str
+    interval_seconds: int
+
+
+class CodexDevicePollRead(BaseModel):
+    status: str
+    interval_seconds: int | None = None
+    error: str | None = None
+    config: ProviderConfigRead | None = None
+
+
 class UsageMetric(BaseModel):
     label: str
     value: float | int | str | bool | None

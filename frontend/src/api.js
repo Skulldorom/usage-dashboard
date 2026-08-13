@@ -64,6 +64,8 @@ export const api = {
   providers: () => request('/providers'),
   configs: () => request('/configs'),
   testConfig: (payload) => request('/configs/test', { method: 'POST', body: JSON.stringify(payload) }),
+  startCodexDeviceOAuth: () => request('/codex/oauth/device/start', { method: 'POST' }),
+  pollCodexDeviceOAuth: (flowId, payload = {}) => request(`/codex/oauth/device/${encodeURIComponent(flowId)}/poll`, { method: 'POST', body: JSON.stringify(payload) }),
   createConfig: (payload) => request('/configs', { method: 'POST', body: JSON.stringify(payload) }),
   updateConfig: (id, payload) => request(`/configs/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   reorderConfigs: (configIds) => request('/configs/order', { method: 'PATCH', body: JSON.stringify({ config_ids: configIds }) }),
