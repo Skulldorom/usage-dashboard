@@ -218,7 +218,9 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
               key={item.to}
               to={item.to}
               end={item.to === "/"}
-              className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}
+              className={({ isActive }) =>
+                `nav-link${isActive ? " active" : ""}`
+              }
             >
               {item.icon}
               <span>{item.label}</span>
@@ -227,7 +229,11 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
         </div>
       )}
       {!mobile && <SidebarActions />}
-      {!mobile && <span className="sidebar-copyright">© {new Date().getFullYear()} Skulldorom</span>}
+      {!mobile && (
+        <span className="sidebar-copyright">
+          © {new Date().getFullYear()} Skulldorom
+        </span>
+      )}
     </nav>
   );
 }
@@ -270,11 +276,12 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
     setSubmitting(true);
     try {
       const payload = needsCode ? { code, password } : { password };
-      const result = activeMode === "setup"
-        ? await api.setupAuth(payload)
-        : activeMode === "reset"
-          ? await api.completePasswordReset(payload)
-          : await api.login(payload);
+      const result =
+        activeMode === "setup"
+          ? await api.setupAuth(payload)
+          : activeMode === "reset"
+            ? await api.completePasswordReset(payload)
+            : await api.login(payload);
       setAdminToken(result.access_token);
       onAuthenticated();
     } catch (err) {
@@ -291,7 +298,9 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
     try {
       await api.requestPasswordReset();
       resetForm("reset");
-      setMessage("Reset code generated. Check the backend logs, then enter it below.");
+      setMessage(
+        "Reset code generated. Check the backend logs, then enter it below.",
+      );
     } catch (err) {
       setError(err.message || "Could not request a reset code.");
     } finally {
@@ -299,19 +308,30 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
     }
   }
 
-  const title = activeMode === "setup" ? "Create admin password" : activeMode === "reset" ? "Reset admin password" : "Admin login";
-  const helper = activeMode === "setup"
-    ? "A one-time setup code has been printed in the backend logs. Use it to create the dashboard password."
-    : activeMode === "reset"
-      ? "Enter the reset code from the backend logs and choose a new password."
-      : "Enter the dashboard admin password.";
+  const title =
+    activeMode === "setup"
+      ? "Create admin password"
+      : activeMode === "reset"
+        ? "Reset admin password"
+        : "Admin login";
+  const helper =
+    activeMode === "setup"
+      ? "A one-time setup code has been printed in the backend logs. Use it to create the dashboard password."
+      : activeMode === "reset"
+        ? "Enter the reset code from the backend logs and choose a new password."
+        : "Enter the dashboard admin password.";
 
   return (
     <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
       <Box component="form" onSubmit={handleSubmit}>
         <DialogTitle>
           <Stack spacing={0.75}>
-            <Typography component="span" display="block" variant="overline" color="primary.main">
+            <Typography
+              component="span"
+              display="block"
+              variant="overline"
+              color="primary.main"
+            >
               Secure access
             </Typography>
             <Typography component="span" display="block" variant="h5">
@@ -358,17 +378,29 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>
           {!setupRequired && activeMode === "login" && (
-            <Button color="inherit" onClick={requestResetCode} disabled={submitting}>
+            <Button
+              color="inherit"
+              onClick={requestResetCode}
+              disabled={submitting}
+            >
               Reset password
             </Button>
           )}
           {!setupRequired && activeMode === "reset" && (
-            <Button color="inherit" onClick={() => resetForm("login")} disabled={submitting}>
+            <Button
+              color="inherit"
+              onClick={() => resetForm("login")}
+              disabled={submitting}
+            >
               Back to login
             </Button>
           )}
           <Button variant="contained" type="submit" disabled={submitting}>
-            {activeMode === "login" ? "Log in" : activeMode === "setup" ? "Create password" : "Reset password"}
+            {activeMode === "login"
+              ? "Log in"
+              : activeMode === "setup"
+                ? "Create password"
+                : "Reset password"}
           </Button>
         </DialogActions>
       </Box>
@@ -386,23 +418,38 @@ function LandingPage({ authStatus, onLogin }) {
           <Typography className="page-kicker" component="span">
             Private telemetry command center
           </Typography>
-          <Typography variant="h1">Usage intelligence, locked down.</Typography>
+          <Typography variant="h1">Usage Dashboard</Typography>
           <Typography color="text.secondary" className="landing-description">
-            Monitor provider balances, polling health, and Homepage widget data from one self-hosted dashboard. Sign in to unlock sensitive API usage and provider configuration.
+            Monitor provider balances, polling health, and Homepage widget data
+            from one self-hosted dashboard. Sign in to unlock sensitive API
+            usage and provider configuration.
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-            <Button variant="contained" size="large" startIcon={<KeyRoundedIcon />} onClick={onLogin}>
-              {setupRequired ? "Create admin password" : "Log in to dashboard"}
+            <Button
+              variant="contained"
+              size="large"
+              startIcon={<KeyRoundedIcon />}
+              onClick={onLogin}
+            >
+              {setupRequired ? "Create admin password" : "Log in"}
             </Button>
-            <Button variant="outlined" color="inherit" size="large" href="https://github.com/Skulldorom/usage-dashboard" target="_blank" rel="noreferrer">
+            <Button
+              variant="outlined"
+              color="inherit"
+              size="large"
+              href="https://github.com/Skulldorom/usage-dashboard"
+              target="_blank"
+              rel="noreferrer"
+            >
               View project
             </Button>
           </Stack>
-          <div className="landing-hint">
-            {setupRequired
-              ? "First run detected. Grab the one-time setup code from the backend logs."
-              : "Password resets are protected by one-time codes printed in backend logs."}
-          </div>
+          {setupRequired && (
+            <div className="landing-hint">
+              First run detected. Grab the one-time setup code from the backend
+              logs.
+            </div>
+          )}
         </Stack>
         <div className="landing-card-stack" aria-hidden="true">
           <div className="landing-stat-card primary">
@@ -427,7 +474,9 @@ function Shell() {
   const [authOpen, setAuthOpen] = useState(!getAdminToken());
   const [authStatus, setAuthStatus] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(getAdminToken()));
+  const [isAuthenticated, setIsAuthenticated] = useState(
+    Boolean(getAdminToken()),
+  );
 
   async function loadAuthStatus() {
     setAuthLoading(true);
@@ -485,7 +534,13 @@ function Shell() {
         <div className="topbar-context">
           <span className="eyebrow">API OPERATIONS</span>
           <span className="topbar-divider" />
-          <span>{isAuthenticated ? "Live provider telemetry" : authStatus?.setup_required ? "Password setup required" : "Authentication required"}</span>
+          <span>
+            {isAuthenticated
+              ? "Live provider telemetry"
+              : authStatus?.setup_required
+                ? "Password setup required"
+                : "Authentication required"}
+          </span>
         </div>
         <Stack direction="row" spacing={1}>
           {!isAuthenticated && (
@@ -500,7 +555,12 @@ function Shell() {
             </Button>
           )}
           {isAuthenticated && (
-            <Button className="token-button" variant="outlined" color="inherit" onClick={logout}>
+            <Button
+              className="token-button"
+              variant="outlined"
+              color="inherit"
+              onClick={logout}
+            >
               Log out
             </Button>
           )}
@@ -508,9 +568,16 @@ function Shell() {
       </header>
       <main className="main-content">
         {authLoading ? (
-          <div className="loading-state"><Typography color="text.secondary">Checking authentication…</Typography></div>
+          <div className="loading-state">
+            <Typography color="text.secondary">
+              Checking authentication…
+            </Typography>
+          </div>
         ) : !isAuthenticated ? (
-          <LandingPage authStatus={authStatus} onLogin={() => setAuthOpen(true)} />
+          <LandingPage
+            authStatus={authStatus}
+            onLogin={() => setAuthOpen(true)}
+          />
         ) : (
           <Routes>
             <Route path="/" element={<DashboardPage />} />
@@ -518,7 +585,9 @@ function Shell() {
           </Routes>
         )}
       </main>
-      {isAuthenticated && <Navigation mobile isAuthenticated={isAuthenticated} />}
+      {isAuthenticated && (
+        <Navigation mobile isAuthenticated={isAuthenticated} />
+      )}
       <AuthDialog
         open={authOpen}
         authStatus={authStatus}
@@ -528,7 +597,8 @@ function Shell() {
           loadAuthStatus();
         }}
         onClose={() => {
-          if (isAuthenticated && !authStatus?.setup_required) setAuthOpen(false);
+          if (isAuthenticated && !authStatus?.setup_required)
+            setAuthOpen(false);
         }}
       />
     </Box>
