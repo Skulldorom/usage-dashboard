@@ -12,6 +12,10 @@ export function setAdminToken(token) {
   else localStorage.removeItem(TOKEN_STORAGE_KEY)
 }
 
+export function clearAdminToken() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
+}
+
 async function parseErrorResponse(res) {
   const text = await res.text()
   const contentType = res.headers.get('content-type') || ''
@@ -60,7 +64,17 @@ async function request(path, options = {}) {
   return parseJsonResponse(res, path)
 }
 
+async function authRequest(path, payload) {
+  return request(path, { method: 'POST', body: JSON.stringify(payload) })
+}
+
 export const api = {
+  authStatus: () => request('/auth/status'),
+  setupAuth: (payload) => authRequest('/auth/setup', payload),
+  login: (payload) => authRequest('/auth/login', payload),
+  requestPasswordReset: () => request('/auth/reset/request', { method: 'POST' }),
+  completePasswordReset: (payload) => authRequest('/auth/reset/complete', payload),
+  logout: () => request('/auth/logout', { method: 'POST' }),
   providers: () => request('/providers'),
   configs: () => request('/configs'),
   testConfig: (payload) => request('/configs/test', { method: 'POST', body: JSON.stringify(payload) }),

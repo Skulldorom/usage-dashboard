@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import {
+  Alert,
   Box,
   Button,
   CssBaseline,
@@ -20,7 +21,7 @@ import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import { getAdminToken, setAdminToken } from "./api.js";
+import { api, clearAdminToken, getAdminToken, setAdminToken } from "./api.js";
 import "./styles.css";
 
 const theme = createTheme({
@@ -256,13 +257,180 @@ function Navigation({ mobile = false }) {
   );
 }
 
+function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
+  const [mode, setMode] = useState("login");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const setupRequired = authStatus?.setup_required;
+  const activeMode = setupRequired ? "setup" : mode;
+  const needsCode = activeMode === "setup" || activeMode === "reset";
+  const needsConfirm = activeMode === "setup" || activeMode === "reset";
+
+  useEffect(() => {
+    if (setupRequired) setMode("setup");
+  }, [setupRequired]);
+
+  function resetForm(nextMode) {
+    setMode(nextMode);
+    setCode("");
+    setPassword("");
+    setConfirmPassword("");
+    setError("");
+    setMessage("");
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (needsConfirm && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const payload = needsCode ? { code, password } : { password };
+      const result = activeMode === "setup"
+        ? await api.setupAuth(payload)
+        : activeMode === "reset"
+          ? await api.completePasswordReset(payload)
+          : await api.login(payload);
+      setAdminToken(result.access_token);
+      onAuthenticated();
+    } catch (err) {
+      setError(err.message || "Authentication failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function requestResetCode() {
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      await api.requestPasswordReset();
+      resetForm("reset");
+      setMessage("Reset code generated. Check the backend logs, then enter it below.");
+    } catch (err) {
+      setError(err.message || "Could not request a reset code.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const title = activeMode === "setup" ? "Create admin password" : activeMode === "reset" ? "Reset admin password" : "Admin login";
+  const helper = activeMode === "setup"
+    ? "A one-time setup code has been printed in the backend logs. Use it to create the dashboard password."
+    : activeMode === "reset"
+      ? "Enter the reset code from the backend logs and choose a new password."
+      : "Enter the dashboard admin password.";
+
+  return (
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <Box component="form" onSubmit={handleSubmit}>
+        <DialogTitle>
+          <Stack spacing={0.75}>
+            <Typography component="span" display="block" variant="overline" color="primary.main">
+              Secure access
+            </Typography>
+            <Typography component="span" display="block" variant="h5">
+              {title}
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2}>
+            <Typography color="text.secondary">{helper}</Typography>
+            {message && <Alert severity="info">{message}</Alert>}
+            {error && <Alert severity="error">{error}</Alert>}
+            {needsCode && (
+              <TextField
+                autoFocus
+                fullWidth
+                label={activeMode === "setup" ? "Setup code" : "Reset code"}
+                value={code}
+                onChange={(event) => setCode(event.target.value)}
+                required
+              />
+            )}
+            <TextField
+              autoFocus={!needsCode}
+              fullWidth
+              label={activeMode === "login" ? "Password" : "New password"}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              helperText="Minimum 12 characters. Stored as a salted PBKDF2 hash on the backend."
+              required
+            />
+            {needsConfirm && (
+              <TextField
+                fullWidth
+                label="Confirm password"
+                type="password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                required
+              />
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          {!setupRequired && activeMode === "login" && (
+            <Button color="inherit" onClick={requestResetCode} disabled={submitting}>
+              Reset password
+            </Button>
+          )}
+          {!setupRequired && activeMode === "reset" && (
+            <Button color="inherit" onClick={() => resetForm("login")} disabled={submitting}>
+              Back to login
+            </Button>
+          )}
+          <Button variant="contained" type="submit" disabled={submitting}>
+            {activeMode === "login" ? "Log in" : activeMode === "setup" ? "Create password" : "Reset password"}
+          </Button>
+        </DialogActions>
+      </Box>
+    </Dialog>
+  );
+}
+
 function Shell() {
   const [authOpen, setAuthOpen] = useState(!getAdminToken());
-  const [token, setToken] = useState(getAdminToken());
+  const [authStatus, setAuthStatus] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  function saveToken() {
-    setAdminToken(token);
-    setAuthOpen(false);
+  async function loadAuthStatus() {
+    setAuthLoading(true);
+    try {
+      const status = await api.authStatus();
+      setAuthStatus(status);
+      if (status.setup_required || !getAdminToken()) setAuthOpen(true);
+    } catch {
+      if (!getAdminToken()) setAuthOpen(true);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadAuthStatus();
+  }, []);
+
+  async function logout() {
+    try {
+      await api.logout();
+    } catch {
+      // Token may already be expired; clear local state anyway.
+    }
+    clearAdminToken();
+    setAuthOpen(true);
   }
 
   return (
@@ -280,75 +448,47 @@ function Shell() {
         <div className="topbar-context">
           <span className="eyebrow">API OPERATIONS</span>
           <span className="topbar-divider" />
-          <span>Live provider telemetry</span>
+          <span>{authStatus?.setup_required ? "Password setup required" : "Live provider telemetry"}</span>
         </div>
-        <Button
-          className="token-button"
-          variant="outlined"
-          color="inherit"
-          startIcon={<KeyRoundedIcon />}
-          onClick={() => setAuthOpen(true)}
-        >
-          Admin token
-        </Button>
+        <Stack direction="row" spacing={1}>
+          <Button
+            className="token-button"
+            variant="outlined"
+            color="inherit"
+            startIcon={<KeyRoundedIcon />}
+            onClick={() => setAuthOpen(true)}
+          >
+            {authStatus?.setup_required ? "Set password" : "Admin login"}
+          </Button>
+          {getAdminToken() && (
+            <Button className="token-button" variant="outlined" color="inherit" onClick={logout}>
+              Log out
+            </Button>
+          )}
+        </Stack>
       </header>
       <main className="main-content">
-        <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Routes>
+        {authLoading ? (
+          <div className="loading-state"><Typography color="text.secondary">Checking authentication…</Typography></div>
+        ) : (
+          <Routes>
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Routes>
+        )}
       </main>
       <Navigation mobile />
-      <Dialog
+      <AuthDialog
         open={authOpen}
-        onClose={() => setAuthOpen(false)}
-        fullWidth
-        maxWidth="xs"
-      >
-        <DialogTitle>
-          <Stack spacing={0.75}>
-            <Typography
-              component="span"
-              display="block"
-              variant="overline"
-              color="primary.main"
-            >
-              Secure access
-            </Typography>
-            <Typography component="span" display="block" variant="h5">
-              Admin authentication
-            </Typography>
-          </Stack>
-        </DialogTitle>
-        <DialogContent>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Authenticate this browser to load sensitive usage and provider data.
-          </Typography>
-          <TextField
-            autoFocus
-            fullWidth
-            label="Admin token"
-            type="password"
-            value={token}
-            onChange={(event) => setToken(event.target.value)}
-            helperText="Stored in this browser and sent as a Bearer token."
-          />
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
-          <Button
-            color="inherit"
-            onClick={() => {
-              setToken("");
-              setAdminToken("");
-            }}
-          >
-            Clear
-          </Button>
-          <Button variant="contained" onClick={saveToken}>
-            Authenticate
-          </Button>
-        </DialogActions>
-      </Dialog>
+        authStatus={authStatus}
+        onAuthenticated={() => {
+          setAuthOpen(false);
+          loadAuthStatus();
+        }}
+        onClose={() => {
+          if (getAdminToken() && !authStatus?.setup_required) setAuthOpen(false);
+        }}
+      />
     </Box>
   );
 }
