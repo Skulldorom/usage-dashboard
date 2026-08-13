@@ -91,11 +91,8 @@ const HOMEPAGE_WIDGET_FIELDS = [
 
 const initialHomepageForm = {
   dashboardUrl: '',
-  displayName: 'Usage Dashboard',
-  group: 'Monitoring',
-  icon: 'si-openai',
-  description: 'AI provider usage and credit monitoring',
-  apiPath: '/api/v1/homepage',
+  refreshInterval: '300000',
+  displayMode: 'summary',
   authMode: 'bearer',
   token: '',
   includeToken: false,
@@ -116,28 +113,35 @@ function joinUrl(base, path) {
 
 function homepageYaml(form) {
   const dashboardUrl = (form.dashboardUrl || 'https://usage-dashboard.example.com').trim().replace(/\/+$/, '')
-  const apiUrl = joinUrl(dashboardUrl, form.apiPath)
+  const apiUrl = joinUrl(dashboardUrl, '/api/v1/homepage')
   const tokenValue = form.includeToken && form.token.trim() ? form.token.trim() : 'REPLACE_WITH_ADMIN_OR_HOMEPAGE_TOKEN'
+  const refreshInterval = String(form.refreshInterval || '').trim()
   const lines = [
-    `- ${yamlQuote(form.group || 'Monitoring')}:`,
-    `    - ${yamlQuote(form.displayName || 'Usage Dashboard')}:`,
-    `        href: ${yamlQuote(dashboardUrl)}`,
-    `        description: ${yamlQuote(form.description || 'AI provider usage and credit monitoring')}`,
+    '- Usage Dashboard:',
+    `    href: ${yamlQuote(dashboardUrl)}`,
+    '    widget:',
+    '      type: customapi',
+    `      url: ${yamlQuote(apiUrl)}`,
+    '      method: GET',
   ]
-  if (form.icon.trim()) lines.push(`        icon: ${yamlQuote(form.icon)}`)
-  lines.push('        widget:')
-  lines.push('          type: customapi')
-  lines.push(`          url: ${yamlQuote(apiUrl)}`)
-  lines.push('          method: GET')
+  if (refreshInterval) lines.push(`      refreshInterval: ${yamlQuote(refreshInterval)}`)
+  if (form.displayMode === 'dynamic-list') lines.push('      display: dynamic-list')
   if (form.authMode === 'bearer') {
-    lines.push('          headers:')
-    lines.push(`            Authorization: ${yamlQuote(`Bearer ${tokenValue}`)}`)
+    lines.push('      headers:')
+    lines.push(`        Authorization: ${yamlQuote(`Bearer ${tokenValue}`)}`)
   }
-  lines.push('          mappings:')
-  HOMEPAGE_WIDGET_FIELDS.forEach(([field, label]) => {
-    lines.push(`            - field: ${field}`)
-    lines.push(`              label: ${label}`)
-  })
+  lines.push('      mappings:')
+  if (form.displayMode === 'dynamic-list') {
+    lines.push('        items: list')
+    lines.push('        name: label')
+    lines.push('        label: value')
+    lines.push('        format: text')
+  } else {
+    HOMEPAGE_WIDGET_FIELDS.forEach(([field, label]) => {
+      lines.push(`        - field: ${field}`)
+      lines.push(`          label: ${label}`)
+    })
+  }
   return `${lines.join('\n')}\n`
 }
 
@@ -436,17 +440,14 @@ export default function SettingsPage() {
       <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
       <Box className="homepage-guide">
         <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
-        <Typography variant="body2" color="text.secondary">Paste the generated block into Homepage's <code>services.yaml</code>. The first line creates or reuses the selected group, and the nested service points Homepage's <code>customapi</code> widget at Usage Dashboard's existing <code>/api/v1/homepage</code> endpoint.</Typography>
+        <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Choose summary cards for top-level stats or dynamic list for one provider row per configured API.</Typography>
         <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use an admin/homepage token.</Typography>
       </Box>
       <Box className="homepage-config-grid">
         <Stack spacing={2}>
-          <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach." />
-          <TextField label="Display name" value={homepageForm.displayName} onChange={(event) => updateHomepageForm({ displayName: event.target.value })} />
-          <TextField label="Group / category" value={homepageForm.group} onChange={(event) => updateHomepageForm({ group: event.target.value })} helperText="Creates the top-level Homepage services group." />
-          <TextField label="Icon" value={homepageForm.icon} onChange={(event) => updateHomepageForm({ icon: event.target.value })} placeholder="si-openai" helperText="Use any Homepage-supported icon name, or leave blank." />
-          <TextField label="Description" value={homepageForm.description} onChange={(event) => updateHomepageForm({ description: event.target.value })} />
-          <TextField label="API path" value={homepageForm.apiPath} onChange={(event) => updateHomepageForm({ apiPath: event.target.value })} helperText="Defaults to Usage Dashboard's Homepage payload endpoint." />
+          <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach. The API path is fixed to /api/v1/homepage." />
+          <TextField label="Refresh interval (ms)" value={homepageForm.refreshInterval} onChange={(event) => updateHomepageForm({ refreshInterval: event.target.value })} placeholder="300000" helperText="Homepage refresh interval in milliseconds. Leave blank to omit." />
+          <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="summary">Summary cards</MenuItem><MenuItem value="dynamic-list">Dynamic provider list</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
           <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
           {homepageForm.authMode === 'bearer' && <>
             <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />

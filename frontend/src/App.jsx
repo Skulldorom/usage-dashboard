@@ -15,7 +15,6 @@ import {
   createTheme,
 } from "@mui/material";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
-import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
@@ -180,34 +179,8 @@ const navItems = [
 ];
 
 function SidebarActions() {
-  const [copyStatus, setCopyStatus] = useState("Copy Homepage API URL");
-
-  async function copyHomepageUrl() {
-    const url = `${window.location.origin || ""}/api/v1/homepage`;
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      } else {
-        window.prompt("Copy Homepage API URL", url);
-      }
-      setCopyStatus("Copied Homepage API URL");
-    } catch {
-      window.prompt("Copy Homepage API URL", url);
-      setCopyStatus("Copy Homepage API URL");
-    }
-  }
-
   return (
     <div className="sidebar-actions" aria-label="Project shortcuts">
-      <button
-        type="button"
-        className="sidebar-action"
-        onClick={copyHomepageUrl}
-        aria-label={copyStatus}
-        title={copyStatus}
-      >
-        <ContentCopyRoundedIcon />
-      </button>
       <a
         className="sidebar-action"
         href="https://github.com/Skulldorom/usage-dashboard"
