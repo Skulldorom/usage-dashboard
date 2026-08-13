@@ -45,7 +45,7 @@ const PROVIDER_SETUP = {
   },
   codex: {
     title: 'Codex device login',
-    steps: ['Use Start Codex device login to generate a one-time code and OpenAI authorization link; no Codex CLI is required.', 'Open the link, enter the code, then return here while the dashboard polls for completion.', 'Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.'],
+    steps: ['Try Start Codex device login first. If OpenAI Cloudflare blocks your Docker/server IP, use Start browser login instead.', 'Browser login opens OpenAI in your browser, then asks you to paste the localhost callback URL from the failed browser redirect.', 'Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.'],
     url: 'https://chatgpt.com/codex/settings/general#settings/Security',
     linkLabel: 'Open Codex security settings',
     keyPlaceholder: '{"access_token":"…","refresh_token":"…","expires_at":"…","account_id":"…"}',
@@ -102,6 +102,8 @@ export default function SettingsPage() {
   const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
   const [codexDeviceFlow, setCodexDeviceFlow] = useState(null)
+  const [codexBrowserFlow, setCodexBrowserFlow] = useState(null)
+  const [codexCallback, setCodexCallback] = useState('')
   const [codexDeviceStatus, setCodexDeviceStatus] = useState('')
   const [codexDeviceBusy, setCodexDeviceBusy] = useState(false)
   const [testResult, setTestResult] = useState(null)
@@ -194,6 +196,8 @@ export default function SettingsPage() {
     try {
       const flow = await api.startCodexDeviceOAuth()
       setCodexDeviceFlow(flow)
+      setCodexBrowserFlow(null)
+      setCodexCallback('')
       setCodexDeviceStatus('Open the link, enter the code, then leave this dialog open while polling completes.')
       if (flow.verification_uri_complete) window.open(flow.verification_uri_complete, '_blank', 'noopener,noreferrer')
     } catch (err) {
@@ -204,24 +208,44 @@ export default function SettingsPage() {
     }
   }
 
-  async function pollCodexDeviceLogin() {
-    if (!codexDeviceFlow?.flow_id) return
+  async function startCodexBrowserLogin() {
+    setError('')
+    setTestError('')
+    setTestResult(null)
+    setCodexDeviceStatus('Creating browser login link…')
+    setCodexDeviceBusy(true)
+    try {
+      const flow = await api.startCodexBrowserOAuth()
+      setCodexBrowserFlow(flow)
+      setCodexDeviceFlow(null)
+      setCodexCallback('')
+      setCodexDeviceStatus('Open the login link. After OpenAI redirects to localhost, copy the full browser URL and paste it below.')
+      window.open(flow.authorization_url, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      setCodexDeviceStatus('')
+      setTestError(err.message)
+    } finally {
+      setCodexDeviceBusy(false)
+    }
+  }
+
+  async function completeCodexBrowserLogin() {
+    if (!codexBrowserFlow?.flow_id || !codexCallback.trim()) return
     setError('')
     setTestError('')
     setCodexDeviceBusy(true)
     try {
-      const result = await api.pollCodexDeviceOAuth(codexDeviceFlow.flow_id, { label: form.label.trim() || null })
+      const result = await api.completeCodexBrowserOAuth(codexBrowserFlow.flow_id, { label: form.label.trim() || null, callback: codexCallback.trim() })
       if (result.status === 'completed') {
         setCodexDeviceStatus(`Codex connected as ${result.config?.label || 'codex'}.`)
-        setCodexDeviceFlow(null)
+        setCodexBrowserFlow(null)
+        setCodexCallback('')
         setOpen(false)
         setForm(initialForm)
         await load()
-      } else if (result.status === 'pending' || result.status === 'slow_down') {
-        setCodexDeviceStatus(`Still waiting for OpenAI authorization. Try again in ${result.interval_seconds || codexDeviceFlow.interval_seconds || 5}s.`)
       } else {
         setCodexDeviceStatus('')
-        setTestError(result.error || 'Codex device authorization did not complete.')
+        setTestError(result.error || 'Codex browser authorization did not complete.')
       }
     } catch (err) {
       setTestError(err.message)
@@ -230,63 +254,6 @@ export default function SettingsPage() {
     }
   }
 
-  const missingRequired = (!isCodex && !form.api_key.trim()) || (isCustom && (!form.base_url.trim() || !form.custom_path.trim() || !form.custom_metric_label.trim() || !form.custom_metric_path.trim()))
-  const testDisabled = testing || saving || missingRequired
-  const saveDisabled = testing || saving || missingRequired || (isCodex && !form.api_key.trim())
-
-  return <>
-    <header className="page-heading">
-      <Box><div className="page-kicker">Connections</div><Typography component="h1" variant="h2">Provider settings</Typography><Typography component="p">Manage credentials and custom endpoints. Secrets are encrypted before storage and never returned in full.</Typography></Box>
-      <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError(''); setCodexDeviceFlow(null); setCodexDeviceStatus('') }}>Add provider</Button>
-    </header>
-    {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-    <Paper className="settings-panel glass-panel" variant="outlined">
-      <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
-      {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config, index) => {
-        const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
-        return <div className="config-row" key={config.id}>
-          <div className="config-order-controls" aria-label={`Reorder ${config.label}`}>
-            <IconButton size="small" onClick={() => moveConfig(config.id, -1)} disabled={index === 0} aria-label={`Move ${config.label} up`}>↑</IconButton>
-            <IconButton size="small" onClick={() => moveConfig(config.id, 1)} disabled={index === configs.length - 1} aria-label={`Move ${config.label} down`}>↓</IconButton>
-          </div>
-          <div className="config-identity"><div className="config-avatar" aria-hidden="true">{initials}</div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography></div></div>
-          <div className="config-detail"><span>Credential</span>{config.api_key_masked}</div>
-          <div className="config-detail"><span>Endpoint</span>{config.base_url || 'Provider default'}</div>
-          <div className="config-actions">
-            <label className="config-switch"><span>API</span><Tooltip title={config.is_enabled ? 'Disable API polling and Homepage output' : 'Enable API polling and Homepage output'}><Switch checked={config.is_enabled} onChange={() => toggleApi(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} API for ${config.label}` }} /></Tooltip></label>
-            <label className="config-switch"><span>UI</span><Tooltip title={config.is_visible ? 'Hide from main dashboard' : 'Show on main dashboard'}><Switch checked={config.is_visible} onChange={() => toggleUi(config)} color="primary" inputProps={{ 'aria-label': `${config.is_visible ? 'Hide' : 'Show'} ${config.label} on main dashboard` }} /></Tooltip></label>
-            <Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
-          </div>
-        </div>
-      })}</div>}
-    </Paper>
-    <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-      <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">New connection</Typography><Typography component="span" display="block" variant="h5">Add API provider</Typography></Stack></DialogTitle>
-      <DialogContent>
-        <Stack spacing={2.25} sx={{ mt: 1 }}>
-          <FormControl fullWidth><InputLabel>Provider</InputLabel><Select label="Provider" value={form.provider} onChange={(event) => setForm({ ...initialForm, provider: event.target.value })}>{providers.map((provider) => <MenuItem key={provider.id} value={provider.id}>{provider.name}</MenuItem>)}</Select>{selectedProvider && <FormHelperText>{selectedProvider.description}</FormHelperText>}</FormControl>
-          {setup && <Box className="provider-setup-guide">
-            <Typography component="h3" variant="subtitle2">How to connect {selectedProvider?.name || 'this provider'}</Typography>
-            <Typography variant="caption" color="text.secondary">{setup.title}</Typography>
-            <ol>{setup.steps.map((step) => <li key={step}>{step}</li>)}</ol>
-            {setup.url && <Button component="a" href={setup.url} target="_blank" rel="noreferrer" size="small" variant="outlined" endIcon={<LaunchRoundedIcon />} aria-label={`${setup.linkLabel} (opens in a new tab)`}>{setup.linkLabel}</Button>}
-          </Box>}
-          <TextField label="Connection label (optional)" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Auto-filled when blank" helperText="Leave blank to auto-fill a unique label." />
-          {isCodex && <Box className="provider-setup-guide">
-            <Typography component="h3" variant="subtitle2">Connect without Codex CLI</Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Button variant="contained" onClick={startCodexDeviceLogin} disabled={codexDeviceBusy} startIcon={codexDeviceBusy ? <CircularProgress size={16} color="inherit" /> : null}>Start Codex device login</Button>
-              {codexDeviceFlow && <Button variant="outlined" onClick={pollCodexDeviceLogin} disabled={codexDeviceBusy}>I authorized it — check now</Button>}
-            </Stack>
-            {codexDeviceFlow && <Stack spacing={1} sx={{ mt: 1.5 }}>
-              <Typography variant="body2">Open <a href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri} target="_blank" rel="noreferrer">{codexDeviceFlow.verification_uri}</a> and enter:</Typography>
-              <Typography variant="h5" component="code" sx={{ letterSpacing: '.08em' }}>{codexDeviceFlow.user_code}</Typography>
-              <Typography variant="caption" color="text.secondary">Expires at {new Date(codexDeviceFlow.expires_at).toLocaleString()}.</Typography>
-            </Stack>}
-            {codexDeviceStatus && <Alert severity="info" sx={{ mt: 1.5 }}>{codexDeviceStatus}</Alert>}
-          </Box>}
-          <TextField label={isCodex ? 'Manual OAuth token bundle fallback' : isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" multiline={isCodex} minRows={isCodex ? 3 : undefined} onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : isCodex ? 'Optional fallback only. Prefer device login above; pasted JSON is still encrypted at rest.' : `Use the ${setup?.title || 'key'} described above.`} />
-          <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional -- provider default will be used'} required={isCustom} />
           {isCustom && <Stack spacing={2.25}>
             <Typography className="dialog-section-label">Custom request</Typography>
             <FormControl fullWidth><InputLabel>HTTP method</InputLabel><Select label="HTTP method" value={form.custom_method} onChange={(event) => setForm({ ...form, custom_method: event.target.value })}><MenuItem value="GET">GET</MenuItem><MenuItem value="POST">POST</MenuItem></Select></FormControl>

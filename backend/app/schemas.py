@@ -83,6 +83,32 @@ class CodexDevicePollRead(BaseModel):
     config: ProviderConfigRead | None = None
 
 
+class CodexBrowserStartRead(BaseModel):
+    flow_id: str
+    authorization_url: str
+    redirect_uri: str
+    expires_at: str
+
+
+class CodexBrowserCompleteRequest(BaseModel):
+    callback: str = Field(..., min_length=1)
+    label: str | None = Field(default=None, max_length=120)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def _blank_label_to_none(cls, value: str | None) -> str | None:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
+class CodexBrowserCompleteRead(BaseModel):
+    status: str
+    error: str | None = None
+    config: ProviderConfigRead | None = None
+
+
 class UsageMetric(BaseModel):
     label: str
     value: float | int | str | bool | None
