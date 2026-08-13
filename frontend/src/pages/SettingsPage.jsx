@@ -43,6 +43,13 @@ const PROVIDER_SETUP = {
     linkLabel: 'Open DeepSeek API Keys',
     keyPlaceholder: 'sk-…',
   },
+  codex: {
+    title: 'Codex OAuth token bundle',
+    steps: ['Use an OAuth token bundle from Codex/ChatGPT tooling; standard OpenAI API keys and organization admin keys will not work.', 'Paste JSON containing access_token, refresh_token, optional expires_at, and optional account_id. The whole bundle is encrypted at rest.', 'Do not put access_token or refresh_token in Extra metadata or URLs. The backend rejects plaintext token metadata.'],
+    url: 'https://chatgpt.com/codex',
+    linkLabel: 'Open ChatGPT Codex',
+    keyPlaceholder: '{"access_token":"…","refresh_token":"…","expires_at":"…","account_id":"…"}',
+  },
   openai: {
     title: 'OpenAI organization admin key',
     steps: ['Open your organization settings as an organization owner.', 'Create an Admin API key -- not a project, standard model, or Codex key.', 'Paste the admin key below; organization-level access is required by the Costs API. Personal Codex usage has no API and is not trackable here.'],
@@ -216,7 +223,7 @@ export default function SettingsPage() {
             {setup.url && <Button component="a" href={setup.url} target="_blank" rel="noreferrer" size="small" variant="outlined" endIcon={<LaunchRoundedIcon />} aria-label={`${setup.linkLabel} (opens in a new tab)`}>{setup.linkLabel}</Button>}
           </Box>}
           <TextField label="Connection label (optional)" value={form.label} onChange={(event) => setForm({ ...form, label: event.target.value })} placeholder="Auto-filled when blank" helperText="Leave blank to auto-fill a unique label." />
-          <TextField label={isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : `Use the ${setup?.title || 'key'} described above.`} />
+          <TextField label={form.provider === 'codex' ? 'Encrypted OAuth token bundle' : isCustom ? 'Secret / API key' : 'API key'} value={form.api_key} type="password" multiline={form.provider === 'codex'} minRows={form.provider === 'codex' ? 3 : undefined} onChange={(event) => setForm({ ...form, api_key: event.target.value })} placeholder={setup?.keyPlaceholder} helperText={isCustom ? 'Inserted into the auth header template as {api_key}; never put secrets in URLs.' : form.provider === 'codex' ? 'Paste JSON; access and refresh tokens are encrypted together and never returned.' : `Use the ${setup?.title || 'key'} described above.`} />
           <TextField label="Base URL override" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={isCustom ? 'https://api.example.com' : 'Optional -- provider default will be used'} required={isCustom} />
           {isCustom && <Stack spacing={2.25}>
             <Typography className="dialog-section-label">Custom request</Typography>

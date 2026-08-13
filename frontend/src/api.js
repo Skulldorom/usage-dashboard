@@ -43,7 +43,7 @@ async function parseJsonResponse(res, path) {
   try {
     return JSON.parse(text)
   } catch (err) {
-    throw new Error(`API request for ${V1}${path} returned invalid JSON: ${err.message}`)
+    throw new Error(`API request for ${V1}${path} returned invalid JSON: ${err.message}`, { cause: err })
   }
 }
 
