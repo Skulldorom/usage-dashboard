@@ -420,7 +420,7 @@ export default function SettingsPage() {
       <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={() => { setOpen(true); setTestResult(null); setTestError(''); setCodexDeviceFlow(null); setCodexBrowserFlow(null); setCodexCallback(''); setCodexDeviceStatus('') }}>Add provider</Button>
     </header>
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-    <Paper className="settings-panel glass-panel" variant="outlined">
+    <Paper id="provider-settings" className="settings-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
       {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config, index) => {
         const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
@@ -452,7 +452,7 @@ export default function SettingsPage() {
         </div>
       })}</div>}
     </Paper>
-    <Paper className="settings-panel api-token-panel glass-panel" variant="outlined">
+    <Paper id="api-tokens" className="settings-panel api-token-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">API tokens</Typography><Typography variant="body2" color="text.secondary">Scoped bearer tokens for browser extensions and other external clients.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
       <Box className="api-token-grid">
         <Stack spacing={2}>
@@ -497,7 +497,7 @@ export default function SettingsPage() {
         </Box>
       </Box>
     </Paper>
-    <Paper className="settings-panel homepage-integration-panel glass-panel" variant="outlined">
+    <Paper id="homepage-integration" className="settings-panel homepage-integration-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
       <Box className="homepage-guide">
         <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
