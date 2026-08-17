@@ -2,6 +2,7 @@ import base64
 import hashlib
 import logging
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from hmac import compare_digest
 
@@ -12,10 +13,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.database import get_session
-from app.models import AdminCredential
+from app.models import AdminCredential, ApiToken
 
 logger = logging.getLogger(__name__)
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+@dataclass(frozen=True)
+class AuthPrincipal:
+    kind: str
+    scopes: frozenset[str] = frozenset()
+    api_token_id: int | None = None
+
+    @property
+    def is_admin(self) -> bool:
+        return self.kind == "admin"
 
 
 def _now() -> datetime:
@@ -169,6 +181,50 @@ async def revoke_admin_session(token: str, session: AsyncSession) -> None:
     await session.commit()
 
 
+def _api_token_plaintext() -> str:
+    return f"udt_{secrets.token_urlsafe(32)}"
+
+
+async def create_api_token_record(name: str, scopes: list[str], expires_at: datetime | None, session: AsyncSession) -> tuple[ApiToken, str]:
+    token = _api_token_plaintext()
+    record = ApiToken(
+        name=name,
+        token_hash=_hash_secret(token),
+        token_prefix=token[:12],
+        scopes=sorted(set(scopes)),
+        expires_at=expires_at,
+    )
+    session.add(record)
+    await session.commit()
+    await session.refresh(record)
+    return record, token
+
+
+async def revoke_api_token_record(token_id: int, session: AsyncSession) -> bool:
+    record = await session.get(ApiToken, token_id)
+    if not record:
+        return False
+    if record.revoked_at is None:
+        record.revoked_at = _now()
+        await session.commit()
+    return True
+
+
+async def validate_api_token(token: str, session: AsyncSession) -> AuthPrincipal | None:
+    token_hash = _hash_secret(token)
+    record = (await session.execute(select(ApiToken).where(ApiToken.token_hash == token_hash))).scalar_one_or_none()
+    if not record:
+        return None
+    current = _now()
+    expires_at = _as_aware(record.expires_at)
+    revoked_at = _as_aware(record.revoked_at)
+    if revoked_at is not None or (expires_at is not None and expires_at <= current):
+        return None
+    record.last_used_at = current
+    await session.commit()
+    return AuthPrincipal(kind="api_token", scopes=frozenset(record.scopes or []), api_token_id=record.id)
+
+
 async def validate_admin_session_token(token: str, session: AsyncSession) -> bool:
     credential = await get_admin_credential(session)
     if not credential:
@@ -195,27 +251,46 @@ def _request_host(request: Request) -> str:
     return host.strip().rstrip(".").lower()
 
 
-async def require_admin_auth(
+async def authenticate_bearer(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     session: AsyncSession = Depends(get_session),
-) -> None:
-    """Require admin bearer auth for sensitive API routes."""
+) -> AuthPrincipal:
+    """Authenticate any supported bearer token without logging or returning it."""
     if credentials is None or credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing admin bearer token",
+            detail="Missing bearer token",
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = credentials.credentials
     if settings.admin_token and compare_digest(token, settings.admin_token):
-        return
+        return AuthPrincipal(kind="admin")
     if await validate_admin_session_token(token, session):
-        return
+        return AuthPrincipal(kind="admin")
+    api_principal = await validate_api_token(token, session)
+    if api_principal is not None:
+        return api_principal
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid admin bearer token",
+        detail="Invalid bearer token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+
+
+async def require_admin_auth(principal: AuthPrincipal = Depends(authenticate_bearer)) -> AuthPrincipal:
+    """Require admin bearer auth for sensitive API routes."""
+    if principal.is_admin:
+        return principal
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges are required")
+
+
+def require_scope(required_scope: str):
+    async def dependency(principal: AuthPrincipal = Depends(authenticate_bearer)) -> AuthPrincipal:
+        if principal.is_admin or required_scope in principal.scopes:
+            return principal
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"API token is missing required scope: {required_scope}")
+
+    return dependency
 
 
 async def homepage_auth(
@@ -226,4 +301,7 @@ async def homepage_auth(
     """Allow configured hosts to read the homepage payload without admin auth."""
     if _request_host(request) in settings.homepage_allowed_hosts:
         return
-    await require_admin_auth(credentials, session)
+    principal = await authenticate_bearer(credentials, session)
+    if principal.is_admin:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges are required")

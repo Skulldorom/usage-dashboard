@@ -16,6 +16,48 @@ class AuthTokenRead(BaseModel):
     token_type: str = "bearer"
     expires_at: datetime
 
+
+
+API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read"}
+
+class ApiTokenCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=120)
+    scopes: list[str] = Field(default_factory=list)
+    expires_at: datetime | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Token name is required")
+        return stripped
+
+    @field_validator("scopes")
+    @classmethod
+    def _validate_scopes(cls, value: list[str]) -> list[str]:
+        scopes = sorted(set(value))
+        invalid = [scope for scope in scopes if scope not in API_TOKEN_SCOPES]
+        if invalid:
+            raise ValueError(f"Unsupported API token scope: {invalid[0]}")
+        if not scopes:
+            raise ValueError("At least one scope is required")
+        return scopes
+
+class ApiTokenRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    token_prefix: str
+    scopes: list[str]
+    expires_at: datetime | None
+    revoked_at: datetime | None
+    last_used_at: datetime | None
+    created_at: datetime
+
+class ApiTokenCreated(ApiTokenRead):
+    token: str
+
 class ProviderInfo(BaseModel):
     id: str
     name: str

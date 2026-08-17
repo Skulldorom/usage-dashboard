@@ -8,14 +8,14 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.auth import auth_status, bearer_scheme, homepage_auth, login_admin, request_password_reset, require_admin_auth, reset_admin_password, revoke_admin_session, setup_admin_password
+from app.core.auth import auth_status, bearer_scheme, create_api_token_record, homepage_auth, login_admin, request_password_reset, require_admin_auth, require_scope, reset_admin_password, revoke_admin_session, revoke_api_token_record, setup_admin_password
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.database import engine, get_session
-from app.models import ProviderConfig, UsageSnapshot
+from app.models import ApiToken, ProviderConfig, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -37,6 +37,10 @@ def _config_read(config: ProviderConfig) -> ProviderConfigRead:
 
 def _config_ordering():
     return (asc(ProviderConfig.display_order), asc(ProviderConfig.id))
+
+
+def _api_token_read(record: ApiToken) -> ApiTokenRead:
+    return ApiTokenRead.model_validate(record)
 
 
 def _slug(value: str) -> str:
@@ -168,12 +172,32 @@ async def complete_auth_reset(payload: AuthCodePasswordRequest, session: AsyncSe
     return AuthTokenRead(access_token=token, expires_at=expires_at)
 
 
+@router.get("/api-tokens", response_model=list[ApiTokenRead], dependencies=[Depends(require_admin_auth)])
+async def list_api_tokens(session: AsyncSession = Depends(get_session)):
+    rows = (await session.execute(select(ApiToken).order_by(desc(ApiToken.created_at), desc(ApiToken.id)))).scalars().all()
+    return [_api_token_read(row) for row in rows]
+
+
+@router.post("/api-tokens", response_model=ApiTokenCreated, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_auth)])
+async def create_api_token(payload: ApiTokenCreate, session: AsyncSession = Depends(get_session)):
+    record, token = await create_api_token_record(payload.name, payload.scopes, payload.expires_at, session)
+    return ApiTokenCreated(**_api_token_read(record).model_dump(), token=token)
+
+
+@router.post("/api-tokens/{token_id}/revoke", response_model=ApiTokenRead, dependencies=[Depends(require_admin_auth)])
+async def revoke_api_token(token_id: int, session: AsyncSession = Depends(get_session)):
+    if not await revoke_api_token_record(token_id, session):
+        raise HTTPException(status_code=404, detail="API token not found")
+    record = await session.get(ApiToken, token_id)
+    return _api_token_read(record)
+
+
 @router.get("/providers", response_model=list[ProviderInfo])
 async def providers() -> list[dict]:
     return list_providers()
 
 
-@router.get("/configs", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
+@router.get("/configs", response_model=list[ProviderConfigRead], dependencies=[Depends(require_scope("configs:read"))])
 async def list_configs(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     return [_config_read(row) for row in rows]
@@ -357,7 +381,7 @@ async def delete_config(config_id: int, session: AsyncSession = Depends(get_sess
     await session.commit()
 
 
-@router.get("/configs/{config_id}/history", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
+@router.get("/configs/{config_id}/history", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_scope("history:read"))])
 async def config_history(config_id: int, hours: int = 168, limit: int = 500, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
     if not config:
@@ -456,7 +480,7 @@ async def stop_auto_polling() -> None:
     _next_auto_poll_at = None
 
 
-@router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_admin_auth)])
+@router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_scope("poll:write"))])
 async def poll_config(config_id: int, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
     if not config:
@@ -475,13 +499,13 @@ async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnaps
     return snapshot
 
 
-@router.post("/poll", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_admin_auth)])
+@router.post("/poll", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_scope("poll:write"))])
 async def poll_all(session: AsyncSession = Depends(get_session)):
     async with _auto_poll_lock:
         return await _poll_enabled_configs(session)
 
 
-@router.get("/poll/status", response_model=PollStatusRead, dependencies=[Depends(require_admin_auth)])
+@router.get("/poll/status", response_model=PollStatusRead, dependencies=[Depends(require_scope("poll:write"))])
 async def poll_status():
     return PollStatusRead(
         auto_poll_enabled=settings.auto_poll_enabled,
@@ -492,7 +516,7 @@ async def poll_status():
     )
 
 
-@router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_admin_auth)])
+@router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_scope("usage:read"))])
 async def usage(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     payload = []
