@@ -759,6 +759,37 @@ async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_previously_revoked_api_tokens_can_be_deleted(sqlite_db):
+    admin = {"Authorization": "Bearer test-admin-token-123"}
+    async with sqlite_db() as session:
+        token = ApiToken(
+            name="Old revoked token",
+            token_hash="a" * 64,
+            token_prefix="udt_olddead",
+            scopes=["usage:read"],
+            revoked_at=datetime.now(UTC),
+        )
+        session.add(token)
+        await session.commit()
+        token_id = token.id
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        listed = await client.get("/api/v1/api-tokens", headers=admin)
+        assert listed.status_code == 200, listed.text
+        assert listed.json()[0]["revoked_at"] is not None
+
+        deleted = await client.post(f"/api/v1/api-tokens/{token_id}/revoke", headers=admin)
+        assert deleted.status_code == 204, deleted.text
+
+        relisted = await client.get("/api/v1/api-tokens", headers=admin)
+        assert relisted.status_code == 200, relisted.text
+        assert relisted.json() == []
+
+    async with sqlite_db() as session:
+        assert await session.get(ApiToken, token_id) is None
+
+
+@pytest.mark.asyncio
 async def test_api_token_scope_enforcement_and_admin_backwards_compatibility(sqlite_db):
     admin = {"Authorization": "Bearer test-admin-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

@@ -491,7 +491,7 @@ export default function SettingsPage() {
                 <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
               </Stack>
               <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{(token.scopes || []).map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)} disabled={revoked}>Revoke</Button></Stack>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)}>{revoked ? 'Delete' : 'Revoke'}</Button></Stack>
             </Box>
           })}
         </Box>
