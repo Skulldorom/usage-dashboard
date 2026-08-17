@@ -184,12 +184,10 @@ async def create_api_token(payload: ApiTokenCreate, session: AsyncSession = Depe
     return ApiTokenCreated(**_api_token_read(record).model_dump(), token=token)
 
 
-@router.post("/api-tokens/{token_id}/revoke", response_model=ApiTokenRead, dependencies=[Depends(require_admin_auth)])
+@router.post("/api-tokens/{token_id}/revoke", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)])
 async def revoke_api_token(token_id: int, session: AsyncSession = Depends(get_session)):
     if not await revoke_api_token_record(token_id, session):
         raise HTTPException(status_code=404, detail="API token not found")
-    record = await session.get(ApiToken, token_id)
-    return _api_token_read(record)
 
 
 @router.get("/providers", response_model=list[ProviderInfo])

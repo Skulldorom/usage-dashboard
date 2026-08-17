@@ -8,7 +8,7 @@ from hmac import compare_digest
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -201,12 +201,10 @@ async def create_api_token_record(name: str, scopes: list[str], expires_at: date
 
 
 async def revoke_api_token_record(token_id: int, session: AsyncSession) -> bool:
-    record = await session.get(ApiToken, token_id)
-    if not record:
+    result = await session.execute(delete(ApiToken).where(ApiToken.id == token_id))
+    if result.rowcount == 0:
         return False
-    if record.revoked_at is None:
-        record.revoked_at = _now()
-        await session.commit()
+    await session.commit()
     return True
 
 

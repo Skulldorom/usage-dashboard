@@ -745,8 +745,14 @@ async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
         assert denied_history.status_code == 403
 
         revoked = await client.post(f"/api/v1/api-tokens/{token_id}/revoke", headers=admin)
-        assert revoked.status_code == 200, revoked.text
-        assert revoked.json()["revoked_at"] is not None
+        assert revoked.status_code == 204, revoked.text
+
+        relisted = await client.get("/api/v1/api-tokens", headers=admin)
+        assert relisted.status_code == 200, relisted.text
+        assert relisted.json() == []
+
+        async with sqlite_db() as session:
+            assert await session.get(ApiToken, token_id) is None
 
         after_revoke = await client.get("/api/v1/usage", headers=scoped)
         assert after_revoke.status_code == 401
