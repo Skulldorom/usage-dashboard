@@ -462,7 +462,7 @@ export default function SettingsPage() {
             <ol>
               <li>Create a token with the Chrome / Brave extension preset below.</li>
               <li>Copy it immediately; the full token is shown once.</li>
-              <li>Open the extension options page and set the dashboard API base URL, for example <code>{typeof window !== 'undefined' ? window.location.origin : 'https://usage.example.com'}/api/v1</code>.</li>
+              <li>Open the extension options page and set the dashboard URL, for example <code>{typeof window !== 'undefined' ? window.location.origin : 'https://usage.example.com'}</code>. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
               <li>Paste the token as the extension bearer token and save.</li>
             </ol>
           </Box>
