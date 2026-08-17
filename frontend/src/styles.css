@@ -34,11 +34,15 @@ button, input { font: inherit; }
 .brand-lockup span { display: block; color: #82798e; font-size: .7rem; margin-top: 1px; text-transform: uppercase; letter-spacing: .13em; }
 .brand-mark { width: 45px; height: 42px; object-fit: contain; flex: 0 0 auto; filter: drop-shadow(0 9px 10px rgba(0,0,0,.35)); }
 .nav-links { display: flex; flex-direction: column; gap: 7px; }
+.nav-link-group { display: flex; flex-direction: column; gap: 7px; }
 .nav-link { position: relative; display: flex; align-items: center; gap: 13px; min-height: 50px; padding: 0 15px; border: 1px solid transparent; border-radius: 13px; color: #90879c; font-weight: 650; transition: color .18s ease, background .18s ease, border-color .18s ease; }
 .nav-link svg { font-size: 21px; }
 .nav-link:hover { color: #fff; background: rgba(255,255,255,.035); }
 .nav-link.active { color: #fff; background: linear-gradient(90deg, rgba(102, 27, 158, .35), rgba(13, 186, 235, .07)); border-color: rgba(154, 80, 211, .22); }
 .nav-link.active svg { color: #14cbfa; filter: drop-shadow(0 0 7px rgba(6,200,255,.4)); }
+.settings-submenu { display: grid; gap: 5px; margin: -2px 0 4px 34px; padding-left: 15px; border-left: 1px solid rgba(6,200,255,.18); }
+.settings-submenu-link { display: block; padding: 7px 10px; border-radius: 10px; color: #8f879c; font-size: .78rem; font-weight: 700; transition: color .18s ease, background .18s ease; }
+.settings-submenu-link:hover { color: #eaf9ff; background: rgba(6,200,255,.07); }
 .sidebar-actions { margin-top: auto; display: grid; grid-template-columns: 1fr; gap: 10px; }
 .sidebar-action { min-height: 46px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 14px; color: #d8d2de; background: rgba(255,255,255,.025); cursor: pointer; transition: color .18s ease, border-color .18s ease, background .18s ease; }
 .sidebar-action:hover { color: #fff; border-color: rgba(6,200,255,.48); background: rgba(6,200,255,.08); }
@@ -107,6 +111,7 @@ button, input { font: inherit; }
 .loading-state { min-height: 220px; display: grid; place-items: center; }
 
 .settings-panel { border-radius: 21px !important; }
+.settings-panel[id] { scroll-margin-top: calc(var(--topbar-height) + 18px); }
 .settings-panel + .settings-panel { margin-top: 24px; }
 .settings-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 21px 24px; border-bottom: 1px solid rgba(255,255,255,.075); }
 .config-list { padding: 5px 18px 18px; }

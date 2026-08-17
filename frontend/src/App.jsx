@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { BrowserRouter, NavLink, Route, Routes, useLocation } from "react-router-dom";
 import {
   Alert,
   Box,
@@ -179,6 +179,12 @@ const navItems = [
   { to: "/settings", label: "Settings", icon: <SettingsRoundedIcon /> },
 ];
 
+const settingsSubmenuItems = [
+  { href: "#provider-settings", label: "Provider settings" },
+  { href: "#api-tokens", label: "API tokens" },
+  { href: "#homepage-integration", label: "Homepage integration" },
+];
+
 function SidebarActions() {
   return (
     <div className="sidebar-actions" aria-label="Project shortcuts">
@@ -197,6 +203,9 @@ function SidebarActions() {
 }
 
 function Navigation({ mobile = false, isAuthenticated = true }) {
+  const location = useLocation();
+  const showSettingsSubmenu = !mobile && location.pathname.startsWith("/settings");
+
   return (
     <nav
       className={mobile ? "mobile-navigation" : "side-navigation"}
@@ -214,17 +223,27 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
       {isAuthenticated && (
         <div className="nav-links">
           {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `nav-link${isActive ? " active" : ""}`
-              }
-            >
-              {item.icon}
-              <span>{item.label}</span>
-            </NavLink>
+            <div key={item.to} className="nav-link-group">
+              <NavLink
+                to={item.to}
+                end={item.to === "/"}
+                className={({ isActive }) =>
+                  `nav-link${isActive ? " active" : ""}`
+                }
+              >
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+              {item.to === "/settings" && showSettingsSubmenu && (
+                <div className="settings-submenu" aria-label="Settings sections">
+                  {settingsSubmenuItems.map((subitem) => (
+                    <a key={subitem.href} className="settings-submenu-link" href={subitem.href}>
+                      {subitem.label}
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
