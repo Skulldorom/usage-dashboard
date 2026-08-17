@@ -3,12 +3,16 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
+  FormGroup,
   FormHelperText,
   IconButton,
   InputLabel,
@@ -26,6 +30,7 @@ import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded'
+import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
@@ -83,6 +88,22 @@ const PROVIDER_SETUP = {
 }
 
 
+
+const API_TOKEN_SCOPES = [
+  { id: 'usage:read', label: 'Usage read', help: 'Read current usage cards and summaries.' },
+  { id: 'poll:write', label: 'Poll write', help: 'Trigger all-provider or single-provider refreshes.' },
+  { id: 'configs:read', label: 'Configs read', help: 'Read provider labels, order, visibility, and metadata.' },
+  { id: 'history:read', label: 'History read', help: 'Read per-provider usage history for charts.' },
+]
+
+const EXTENSION_DEFAULT_SCOPES = ['usage:read', 'poll:write', 'configs:read']
+
+const initialApiTokenForm = {
+  name: 'Chrome / Brave extension',
+  scopes: [...EXTENSION_DEFAULT_SCOPES],
+  expires_at: '',
+}
+
 const initialHomepageForm = {
   dashboardUrl: '',
   refreshInterval: '300000',
@@ -110,6 +131,7 @@ const initialForm = {
 export default function SettingsPage() {
   const [providers, setProviders] = useState([])
   const [configs, setConfigs] = useState([])
+  const [apiTokens, setApiTokens] = useState([])
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(initialForm)
   const [error, setError] = useState('')
@@ -127,6 +149,10 @@ export default function SettingsPage() {
     dashboardUrl: typeof window !== 'undefined' ? window.location.origin : '',
   }))
   const [homepageCopied, setHomepageCopied] = useState(false)
+  const [apiTokenForm, setApiTokenForm] = useState(initialApiTokenForm)
+  const [apiTokenSaving, setApiTokenSaving] = useState(false)
+  const [apiTokenCopied, setApiTokenCopied] = useState(false)
+  const [createdApiToken, setCreatedApiToken] = useState(null)
   const [draggingConfigId, setDraggingConfigId] = useState(null)
   const [dragOverConfigId, setDragOverConfigId] = useState(null)
   const dragCommitRef = useRef(null)
@@ -151,9 +177,12 @@ export default function SettingsPage() {
       return
     }
     try {
-      setConfigs(await api.configs())
+      const [configRows, tokenRows] = await Promise.all([api.configs(), api.apiTokens()])
+      setConfigs(configRows)
+      setApiTokens(tokenRows)
     } catch (err) {
       setConfigs([])
+      setApiTokens([])
       setError(err.message)
     }
   }, [])
@@ -210,6 +239,46 @@ export default function SettingsPage() {
       window.setTimeout(() => setHomepageCopied(false), 2200)
     } catch {
       window.prompt('Copy Homepage YAML', homepagePreview)
+    }
+  }
+  function toggleApiTokenScope(scopeId) {
+    setApiTokenForm((current) => {
+      const hasScope = current.scopes.includes(scopeId)
+      return { ...current, scopes: hasScope ? current.scopes.filter((scope) => scope !== scopeId) : [...current.scopes, scopeId] }
+    })
+  }
+  async function createExtensionApiToken() {
+    setError('')
+    setApiTokenSaving(true)
+    setApiTokenCopied(false)
+    try {
+      const payload = {
+        name: apiTokenForm.name.trim(),
+        scopes: apiTokenForm.scopes,
+        expires_at: apiTokenForm.expires_at ? new Date(apiTokenForm.expires_at).toISOString() : null,
+      }
+      const token = await api.createApiToken(payload)
+      setCreatedApiToken(token)
+      setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })
+      await load()
+    } catch (err) { setError(err.message) }
+    finally { setApiTokenSaving(false) }
+  }
+  async function revokeApiToken(id) {
+    setError('')
+    try { await api.revokeApiToken(id); await load() }
+    catch (err) { setError(err.message) }
+  }
+  async function copyCreatedApiToken() {
+    if (!createdApiToken?.token) return
+    setApiTokenCopied(false)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(createdApiToken.token)
+      else window.prompt('Copy API token', createdApiToken.token)
+      setApiTokenCopied(true)
+      window.setTimeout(() => setApiTokenCopied(false), 2200)
+    } catch {
+      window.prompt('Copy API token', createdApiToken.token)
     }
   }
   async function toggleApi(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
@@ -382,6 +451,51 @@ export default function SettingsPage() {
           </div>
         </div>
       })}</div>}
+    </Paper>
+    <Paper className="settings-panel api-token-panel glass-panel" variant="outlined">
+      <div className="settings-panel-header"><Box><Typography variant="h6">API tokens</Typography><Typography variant="body2" color="text.secondary">Scoped bearer tokens for browser extensions and other external clients.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
+      <Box className="api-token-grid">
+        <Stack spacing={2}>
+          <Box className="homepage-guide api-token-guide">
+            <Typography component="h3" variant="subtitle1">Browser extension setup</Typography>
+            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://github.com/Skulldorom/usage-dashboard-extension" target="_blank" rel="noreferrer">Skulldorom/usage-dashboard-extension</a>, then paste your Usage Dashboard URL and a scoped token. The extension preset grants current usage, polling, and provider metadata without config mutation privileges.</Typography>
+            <ol>
+              <li>Create a token with the Chrome / Brave extension preset below.</li>
+              <li>Copy it immediately; the full token is shown once.</li>
+              <li>Open the extension options page and set the dashboard API base URL, for example <code>{typeof window !== 'undefined' ? window.location.origin : 'https://usage.example.com'}/api/v1</code>.</li>
+              <li>Paste the token as the extension bearer token and save.</li>
+            </ol>
+          </Box>
+          <TextField label="Token name" value={apiTokenForm.name} onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })} helperText="Use a name you will recognize later, because the token itself will vanish like a competent intern." />
+          <TextField label="Expires at (optional)" type="datetime-local" value={apiTokenForm.expires_at} onChange={(event) => setApiTokenForm({ ...apiTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />
+          <FormGroup className="api-token-scope-grid">
+            {API_TOKEN_SCOPES.map((scope) => <FormControlLabel key={scope.id} control={<Checkbox checked={apiTokenForm.scopes.includes(scope.id)} onChange={() => toggleApiTokenScope(scope.id)} />} label={<Box><Typography variant="body2">{scope.label}</Typography><Typography variant="caption" color="text.secondary">{scope.id} — {scope.help}</Typography></Box>} />)}
+          </FormGroup>
+          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+            <Button variant="outlined" onClick={() => setApiTokenForm({ ...initialApiTokenForm })}>Use extension preset</Button>
+            <Button variant="contained" onClick={createExtensionApiToken} disabled={apiTokenSaving || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0} startIcon={apiTokenSaving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{apiTokenSaving ? 'Creating…' : 'Create token'}</Button>
+          </Stack>
+          {createdApiToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={copyCreatedApiToken} startIcon={apiTokenCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{apiTokenCopied ? 'Copied' : 'Copy'}</Button>}>
+            <strong>{createdApiToken.name}</strong> was created. Copy this token now; it will not be shown again.
+            <Box component="code" className="one-time-token">{createdApiToken.token}</Box>
+          </Alert>}
+        </Stack>
+        <Box className="api-token-list">
+          <Typography variant="overline" color="primary.main">Existing tokens</Typography>
+          {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No API tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create one for the extension; keep the admin token out of browser storage.</Typography></Box> : apiTokens.map((token) => {
+            const revoked = Boolean(token.revoked_at)
+            const expired = token.expires_at && new Date(token.expires_at) <= new Date()
+            return <Box className="api-token-row" key={token.id}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
+                <Box><Typography variant="subtitle1">{token.name}</Typography><Typography variant="caption" color="text.secondary">Prefix {token.token_prefix} • created {new Date(token.created_at).toLocaleString()} • last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'never'}</Typography></Box>
+                <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
+              </Stack>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{(token.scopes || []).map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)} disabled={revoked}>Revoke</Button></Stack>
+            </Box>
+          })}
+        </Box>
+      </Box>
     </Paper>
     <Paper className="settings-panel homepage-integration-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
