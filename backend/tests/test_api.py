@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import Settings, settings
 from app.database import get_session
 from app.main import app
-from app.models import Base, ProviderConfig, UsageSnapshot
+from app.models import ApiToken, Base, ProviderConfig, UsageSnapshot
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 from app.providers.registry import ADAPTERS
 
@@ -700,3 +700,100 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(monk
         latest_by_label = {item["config"]["label"]: item["latest"] for item in usage.json()}
         assert latest_by_label["polled"]["summary"] == "good-key ok"
         assert latest_by_label["old-only"]["summary"] == "old only"
+
+
+@pytest.mark.asyncio
+async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
+    admin = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/api-tokens",
+            json={"name": "Chrome Extension", "scopes": ["usage:read", "poll:write", "configs:read"]},
+            headers=admin,
+        )
+        assert created.status_code == 201, created.text
+        payload = created.json()
+        token = payload["token"]
+        assert token.startswith("udt_")
+        assert payload["token_prefix"] == token[:12]
+        assert payload["scopes"] == ["configs:read", "poll:write", "usage:read"]
+
+        listed = await client.get("/api/v1/api-tokens", headers=admin)
+        assert listed.status_code == 200, listed.text
+        listed_payload = listed.json()
+        assert listed_payload[0]["name"] == "Chrome Extension"
+        assert "token" not in listed_payload[0]
+        assert token not in listed.text
+
+        async with sqlite_db() as session:
+            record = (await session.execute(select(ApiToken))).scalar_one()
+            assert record.token_hash != token
+            assert len(record.token_hash) == 64
+            token_id = record.id
+
+        scoped = {"Authorization": f"Bearer {token}"}
+        configs = await client.get("/api/v1/configs", headers=scoped)
+        assert configs.status_code == 200, configs.text
+
+        usage = await client.get("/api/v1/usage", headers=scoped)
+        assert usage.status_code == 200, usage.text
+
+        denied_mutation = await client.post("/api/v1/configs", json={"provider": "deepseek", "api_key": "sk-test"}, headers=scoped)
+        assert denied_mutation.status_code == 403
+
+        denied_history = await client.get("/api/v1/configs/1/history", headers=scoped)
+        assert denied_history.status_code == 403
+
+        revoked = await client.post(f"/api/v1/api-tokens/{token_id}/revoke", headers=admin)
+        assert revoked.status_code == 200, revoked.text
+        assert revoked.json()["revoked_at"] is not None
+
+        after_revoke = await client.get("/api/v1/usage", headers=scoped)
+        assert after_revoke.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_token_scope_enforcement_and_admin_backwards_compatibility(sqlite_db):
+    admin = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/api-tokens", json={"name": "History only", "scopes": ["history:read"]}, headers=admin)
+        assert created.status_code == 201, created.text
+        token = created.json()["token"]
+        scoped = {"Authorization": f"Bearer {token}"}
+
+        assert (await client.get("/api/v1/usage", headers=scoped)).status_code == 403
+        assert (await client.post("/api/v1/poll", headers=scoped)).status_code == 403
+        assert (await client.get("/api/v1/configs", headers=scoped)).status_code == 403
+        assert (await client.get("/api/v1/configs/999/history", headers=scoped)).status_code == 404
+
+        admin_usage = await client.get("/api/v1/usage", headers=admin)
+        assert admin_usage.status_code == 200, admin_usage.text
+        admin_create_config = await client.post("/api/v1/configs", json={"provider": "deepseek", "api_key": "sk-test"}, headers=admin)
+        assert admin_create_config.status_code == 201, admin_create_config.text
+
+
+@pytest.mark.asyncio
+async def test_expired_api_token_is_rejected():
+    admin = {"Authorization": "Bearer test-admin-token-123"}
+    expired_at = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/api-tokens", json={"name": "Expired", "scopes": ["usage:read"], "expires_at": expired_at}, headers=admin)
+        assert created.status_code == 201, created.text
+        token = created.json()["token"]
+
+        response = await client.get("/api/v1/usage", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_api_token_management_rejects_non_admin_tokens():
+    admin = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/api-tokens", json={"name": "Usage only", "scopes": ["usage:read"]}, headers=admin)
+        token = created.json()["token"]
+        scoped = {"Authorization": f"Bearer {token}"}
+
+        list_attempt = await client.get("/api/v1/api-tokens", headers=scoped)
+        assert list_attempt.status_code == 403
+        create_attempt = await client.post("/api/v1/api-tokens", json={"name": "Nope", "scopes": ["usage:read"]}, headers=scoped)
+        assert create_attempt.status_code == 403
