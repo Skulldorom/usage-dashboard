@@ -453,14 +453,17 @@ function LandingPage({ authStatus, onLogin }) {
               {setupRequired ? "Create admin password" : "Log in"}
             </Button>
             <Button
+              className="landing-github-button"
               variant="outlined"
               color="inherit"
               size="large"
               href="https://github.com/Skulldorom/usage-dashboard"
               target="_blank"
               rel="noreferrer"
+              aria-label="View project on GitHub"
+              title="View project on GitHub"
             >
-              View project
+              <GitHubLogo />
             </Button>
           </Stack>
           {setupRequired && (
