@@ -24,4 +24,4 @@ def get_adapter_class(provider: str) -> type[ProviderAdapter]:
         raise ValueError(f"Unsupported provider: {provider}") from exc
 
 def list_providers() -> list[dict]:
-    return [{"id": cls.id, "name": cls.name, "description": cls.description, "metrics": cls.metric_names} for cls in ADAPTERS.values()]
+    return [{"id": cls.id, "name": cls.name, "description": cls.description, "metrics": cls.metric_names, "alert_metrics": cls.alert_metrics} for cls in ADAPTERS.values()]

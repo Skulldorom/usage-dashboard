@@ -22,6 +22,7 @@ class ProviderAdapter(ABC):
     description: str
     default_base_url: str
     metric_names: list[str]
+    alert_metrics: list[dict] = []
 
     def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 20.0, extra: dict[str, Any] | None = None):
         self.api_key = api_key

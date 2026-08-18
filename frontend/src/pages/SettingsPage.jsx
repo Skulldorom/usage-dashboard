@@ -167,6 +167,11 @@ export default function SettingsPage() {
   const isCustom = form.provider === 'custom_http'
   const isCodex = form.provider === 'codex'
   const setup = PROVIDER_SETUP[form.provider]
+  const thresholdProviderMetrics = useMemo(() => {
+    if (!thresholdDialog) return []
+    const provider = providers.find((entry) => entry.id === thresholdDialog.provider)
+    return provider?.alert_metrics || []
+  }, [providers, thresholdDialog])
 
   const load = useCallback(async () => {
     setError('')
@@ -352,6 +357,10 @@ export default function SettingsPage() {
   }
   function updateThresholdRule(index, patch) {
     setThresholdForm((current) => current.map((rule, i) => i === index ? { ...rule, ...patch } : rule))
+  }
+  function selectThresholdMetric(index, metric) {
+    const spec = thresholdProviderMetrics.find((entry) => entry.metric === metric)
+    updateThresholdRule(index, { metric, direction: spec?.direction || 'increasing' })
   }
   function removeThresholdRule(index) {
     setThresholdForm((current) => current.filter((_, i) => i !== index))
@@ -665,24 +674,39 @@ export default function SettingsPage() {
       <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">Alert thresholds</Typography><Typography component="span" display="block" variant="h5">{thresholdDialog?.label}</Typography></Stack></DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
-          <Typography variant="body2" color="text.secondary">Set warning, critical, and exhausted limits per metric. Direction "increasing" alerts when the value reaches the threshold (usage toward a limit); "decreasing" alerts when it falls to the threshold (remaining balance or credits). Leave thresholds empty to remove an alert rule.</Typography>
+          <Typography variant="body2" color="text.secondary">Pick a metric and set warning, critical, and exhausted limits. The alert direction is handled for you — a "remaining" metric alerts when it drops to the threshold, while a "usage" metric alerts when it climbs to it. Leave limits blank to skip a level.</Typography>
           {thresholdForm.length === 0 && <Typography variant="body2" color="text.secondary">No thresholds configured — this provider won't surface alerts.</Typography>}
-          {thresholdForm.map((rule, index) => (
-            <Paper key={index} variant="outlined" sx={{ p: 1.5 }}>
-              <Stack spacing={1.25}>
-                <Stack direction="row" spacing={1}>
-                  <TextField size="small" label="Metric label" value={rule.metric} onChange={(event) => updateThresholdRule(index, { metric: event.target.value })} placeholder="usage_percent" fullWidth />
-                  <FormControl size="small" sx={{ minWidth: 140 }}><InputLabel>Direction</InputLabel><Select label="Direction" value={rule.direction} onChange={(event) => updateThresholdRule(index, { direction: event.target.value })}><MenuItem value="increasing">Increasing (≥)</MenuItem><MenuItem value="decreasing">Decreasing (≤)</MenuItem></Select></FormControl>
+          {thresholdForm.map((rule, index) => {
+            const spec = thresholdProviderMetrics.find((entry) => entry.metric === rule.metric)
+            const unit = spec?.unit || ''
+            const directionLabel = spec?.direction === 'decreasing' ? 'alerts when value drops to threshold' : spec?.direction === 'increasing' ? 'alerts when value reaches threshold' : ''
+            return (
+              <Paper key={index} variant="outlined" sx={{ p: 1.5 }}>
+                <Stack spacing={1.25}>
+                  {thresholdProviderMetrics.length > 0 ? (
+                    <FormControl size="small" fullWidth>
+                      <InputLabel>Metric</InputLabel>
+                      <Select label="Metric" value={rule.metric} onChange={(event) => selectThresholdMetric(index, event.target.value)}>
+                        {thresholdProviderMetrics.map((entry) => <MenuItem key={entry.metric} value={entry.metric}>{entry.label}{entry.unit ? ` (${entry.unit})` : ''}</MenuItem>)}
+                      </Select>
+                      {directionLabel && <FormHelperText>{directionLabel}</FormHelperText>}
+                    </FormControl>
+                  ) : (
+                    <Stack direction="row" spacing={1}>
+                      <TextField size="small" label="Metric label" value={rule.metric} onChange={(event) => updateThresholdRule(index, { metric: event.target.value })} placeholder="usage_percent" fullWidth />
+                      <FormControl size="small" sx={{ minWidth: 140 }}><InputLabel>Direction</InputLabel><Select label="Direction" value={rule.direction} onChange={(event) => updateThresholdRule(index, { direction: event.target.value })}><MenuItem value="increasing">Increasing (≥)</MenuItem><MenuItem value="decreasing">Decreasing (≤)</MenuItem></Select></FormControl>
+                    </Stack>
+                  )}
+                  <Stack direction="row" spacing={1}>
+                    <TextField size="small" label={`Warning${unit ? ` (${unit})` : ''}`} type="number" value={rule.warning} onChange={(event) => updateThresholdRule(index, { warning: event.target.value })} />
+                    <TextField size="small" label={`Critical${unit ? ` (${unit})` : ''}`} type="number" value={rule.critical} onChange={(event) => updateThresholdRule(index, { critical: event.target.value })} />
+                    <TextField size="small" label={`Exhausted${unit ? ` (${unit})` : ''}`} type="number" value={rule.exhausted} onChange={(event) => updateThresholdRule(index, { exhausted: event.target.value })} />
+                  </Stack>
+                  <Stack direction="row" justifyContent="flex-end"><Button size="small" color="error" onClick={() => removeThresholdRule(index)}>Remove</Button></Stack>
                 </Stack>
-                <Stack direction="row" spacing={1}>
-                  <TextField size="small" label="Warning" type="number" value={rule.warning} onChange={(event) => updateThresholdRule(index, { warning: event.target.value })} />
-                  <TextField size="small" label="Critical" type="number" value={rule.critical} onChange={(event) => updateThresholdRule(index, { critical: event.target.value })} />
-                  <TextField size="small" label="Exhausted" type="number" value={rule.exhausted} onChange={(event) => updateThresholdRule(index, { exhausted: event.target.value })} />
-                </Stack>
-                <Stack direction="row" justifyContent="flex-end"><Button size="small" color="error" onClick={() => removeThresholdRule(index)}>Remove</Button></Stack>
-              </Stack>
-            </Paper>
-          ))}
+              </Paper>
+            )
+          })}
           <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={addThresholdRule}>Add threshold rule</Button>
         </Stack>
       </DialogContent>

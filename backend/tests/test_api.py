@@ -958,3 +958,24 @@ async def test_threshold_rule_requires_at_least_one_value():
             headers=auth,
         )
         assert created.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_providers_endpoint_exposes_alert_metrics_catalog():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/providers")
+
+    assert response.status_code == 200, response.text
+    by_id = {provider["id"]: provider for provider in response.json()}
+
+    codex = by_id["codex"]["alert_metrics"]
+    assert any(m["metric"] == "session_remaining_percent" and m["direction"] == "decreasing" and m["unit"] == "%" for m in codex)
+
+    deepseek = by_id["deepseek"]["alert_metrics"]
+    assert any(m["metric"] == "total_balance" and m["direction"] == "decreasing" and m["unit"] == "USD" for m in deepseek)
+
+    firecrawl = by_id["firecrawl"]["alert_metrics"]
+    assert any(m["metric"] == "usage_percent" and m["direction"] == "increasing" for m in firecrawl)
+
+    # Custom HTTP has no static metric catalog — the frontend falls back to free-text entry.
+    assert by_id["custom_http"]["alert_metrics"] == []

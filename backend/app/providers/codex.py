@@ -73,6 +73,13 @@ class CodexAdapter(ProviderAdapter):
         "review_session_remaining_percent",
         "review_weekly_remaining_percent",
     ]
+    alert_metrics = [
+        {"metric": "session_remaining_percent", "label": "Session remaining", "unit": "%", "direction": "decreasing"},
+        {"metric": "weekly_remaining_percent", "label": "Weekly remaining", "unit": "%", "direction": "decreasing"},
+        {"metric": "review_session_remaining_percent", "label": "Review session remaining", "unit": "%", "direction": "decreasing"},
+        {"metric": "review_weekly_remaining_percent", "label": "Review weekly remaining", "unit": "%", "direction": "decreasing"},
+        {"metric": "reset_credits_available", "label": "Reset credits available", "unit": "credits", "direction": "decreasing"},
+    ]
 
     def __init__(
         self,

@@ -13,6 +13,13 @@ class AnthropicAdapter(ProviderAdapter):
     description = "Claude Usage & Cost Admin API message usage. Requires an Anthropic Admin API key."
     default_base_url = "https://api.anthropic.com"
     metric_names = list(TOKEN_FIELDS)
+    alert_metrics = [
+        {"metric": "input_tokens", "label": "Input tokens", "unit": "tokens", "direction": "increasing"},
+        {"metric": "output_tokens", "label": "Output tokens", "unit": "tokens", "direction": "increasing"},
+        {"metric": "cache_creation_tokens", "label": "Cache creation tokens", "unit": "tokens", "direction": "increasing"},
+        {"metric": "cache_read_tokens", "label": "Cache read tokens", "unit": "tokens", "direction": "increasing"},
+        {"metric": "num_requests", "label": "Requests", "unit": "requests", "direction": "increasing"},
+    ]
 
     async def fetch_usage(self) -> ProviderUsage:
         end = datetime.now(UTC)

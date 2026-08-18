@@ -9,6 +9,11 @@ class FirecrawlAdapter(ProviderAdapter):
     description = "Firecrawl team credit usage."
     default_base_url = "https://api.firecrawl.dev/v2"
     metric_names = ["credits_remaining", "credits_used", "usage_percent", "plan_credits", "billing_period_end"]
+    alert_metrics = [
+        {"metric": "usage_percent", "label": "Usage", "unit": "%", "direction": "increasing"},
+        {"metric": "credits_remaining", "label": "Credits remaining", "unit": "credits", "direction": "decreasing"},
+        {"metric": "credits_used", "label": "Credits used", "unit": "credits", "direction": "increasing"},
+    ]
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}"}

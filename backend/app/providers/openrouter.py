@@ -8,6 +8,12 @@ class OpenRouterAdapter(ProviderAdapter):
     description = "OpenRouter API key credit usage and limits."
     default_base_url = "https://openrouter.ai/api/v1"
     metric_names = ["limit_remaining", "usage_daily", "usage_weekly", "usage_monthly", "limit"]
+    alert_metrics = [
+        {"metric": "limit_remaining", "label": "Limit remaining", "unit": "credits", "direction": "decreasing"},
+        {"metric": "usage_daily", "label": "Daily usage", "unit": "credits", "direction": "increasing"},
+        {"metric": "usage_weekly", "label": "Weekly usage", "unit": "credits", "direction": "increasing"},
+        {"metric": "usage_monthly", "label": "Monthly usage", "unit": "credits", "direction": "increasing"},
+    ]
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}

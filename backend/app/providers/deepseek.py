@@ -7,6 +7,11 @@ class DeepSeekAdapter(ProviderAdapter):
     description = "DeepSeek account balance."
     default_base_url = "https://api.deepseek.com"
     metric_names = ["available", "total_balance", "granted_balance", "topped_up_balance"]
+    alert_metrics = [
+        {"metric": "total_balance", "label": "Total balance", "unit": "USD", "direction": "decreasing"},
+        {"metric": "granted_balance", "label": "Granted balance", "unit": "USD", "direction": "decreasing"},
+        {"metric": "topped_up_balance", "label": "Topped-up balance", "unit": "USD", "direction": "decreasing"},
+    ]
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
