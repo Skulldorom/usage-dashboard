@@ -22,6 +22,8 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { api } from '../api.js'
 import {
   PROVIDER_USAGE_URLS,
+  alertMessage,
+  alertSeverity,
   firecrawlSummary,
   formatDateTime,
   formatMetricLabel,
@@ -182,7 +184,7 @@ function UsageHistory({ config, latest }) {
 }
 
 function UsageCard({ item }) {
-  const { config, latest } = item
+  const { config, latest, alerts, alert_state } = item
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
   const providerInitials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
   const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
@@ -203,6 +205,11 @@ function UsageCard({ item }) {
           </div>
         </Stack>
         <Typography className="provider-summary" variant="body2">{latest?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
+        {alertSeverity(alert_state) && (
+          <Alert severity={alertSeverity(alert_state)} sx={{ mt: 1.5 }}>
+            {alertMessage(alerts, alert_state)}
+          </Alert>
+        )}
         <Stack>{firecrawlComposite ? <Box className="metric-row">
           <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{firecrawlComposite.label}</Typography><Typography className="metric-value" variant="body2">{firecrawlComposite.value}</Typography></Stack>
           <LinearProgress variant="determinate" value={firecrawlComposite.percent} sx={{ mt: 1 }} />
