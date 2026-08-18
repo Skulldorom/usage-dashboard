@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Usage Dashboard Extension — Privacy Policy</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      max-width: 46rem;
+      margin: 2rem auto;
+      padding: 0 1.25rem;
+      color: #1a1a2e;
+    }
+    h1 { font-size: 1.75rem; line-height: 1.25; }
+    h2 { font-size: 1.2rem; margin-top: 2rem; }
+    code {
+      background: rgba(127,127,127,.14);
+      padding: .1rem .35rem;
+      border-radius: .3rem;
+      font-size: .9em;
+    }
+    .updated { color: #6b7280; font-size: .9rem; }
+    a { color: #4d74ff; }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e6e6f0; background: #11111a; }
+      .updated { color: #9aa0b0; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Usage Dashboard Extension — Privacy Policy</h1>
+  <p class="updated">Last updated: 2026-08-18</p>
+
+  <p>
+    This policy describes how the <strong>Usage Dashboard</strong> browser extension
+    ("the extension") handles data. The extension is a companion client for a
+    self-hosted <a href="https://github.com/Skulldorom/usage-dashboard">Usage Dashboard</a>
+    instance that <strong>you</strong> operate.
+  </p>
+
+  <h2>Data stored locally</h2>
+  <p>
+    The extension stores the following information on your device using
+    <code>chrome.storage.local</code> (local browser storage only — <strong>not</strong>
+    <code>chrome.storage.sync</code>, and never sent to any server operated by the
+    extension developer):
+  </p>
+  <ul>
+    <li>The <strong>Usage Dashboard URL</strong> you configure (the main address of your own instance).</li>
+    <li>Your <strong>bearer authentication token</strong> for that instance.</li>
+    <li>Your <strong>refresh interval</strong> and <strong>auto-poll</strong> preferences.</li>
+    <li>A short-lived <strong>cache</strong> of provider usage/status data retrieved from your instance, used to render the popup quickly.</li>
+  </ul>
+  <p>None of this data is transmitted to the extension developer or any third party.</p>
+
+  <h2>What data the extension sends, and where</h2>
+  <p>
+    The extension only makes network requests to the <strong>single server origin you
+    configure</strong> — your own Usage Dashboard instance. Specifically, it calls:
+  </p>
+  <ul>
+    <li><code>GET /api/v1/usage</code></li>
+    <li><code>GET /api/v1/poll/status</code></li>
+    <li><code>POST /api/v1/poll</code> (scheduled/manual refresh)</li>
+    <li><code>POST /api/v1/configs/{id}/poll</code> (per-provider refresh)</li>
+  </ul>
+  <p>
+    Your bearer token is sent <strong>only</strong> to the server origin you explicitly
+    configure and authorize. It is never sent anywhere else.
+  </p>
+
+  <h2>Host access</h2>
+  <p>
+    The extension declares <code>http://*/*</code> and <code>https://*/*</code> as
+    <strong>optional</strong> host permissions and requests access <strong>only</strong> to
+    the origin of the Usage Dashboard URL you enter. If you decline, the extension cannot
+    contact your dashboard.
+  </p>
+
+  <h2>Telemetry, analytics, and tracking</h2>
+  <p>
+    The extension does <strong>not</strong> collect analytics, usage telemetry, or crash
+    reports, and does <strong>not</strong> use tracking or advertising. No data is
+    transmitted to the developer or any third party.
+  </p>
+
+  <h2>Data retention and deletion</h2>
+  <p>
+    All stored data lives in <code>chrome.storage.local</code> and is removed when you clear
+    the extension's data or uninstall it. To delete your token at any time, open the
+    extension's <strong>Options</strong> page and click <strong>Clear token</strong>.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    For questions about this policy or the extension, open an issue in the
+    <a href="https://github.com/Skulldorom/usage-dashboard">Usage Dashboard</a> repository.
+  </p>
+</body>
+</html>
