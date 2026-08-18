@@ -60,11 +60,18 @@ class ApiTokenRead(BaseModel):
 class ApiTokenCreated(ApiTokenRead):
     token: str
 
+class ProviderAlertMetric(BaseModel):
+    metric: str
+    label: str
+    unit: str | None = None
+    direction: Literal["increasing", "decreasing"] = "increasing"
+
 class ProviderInfo(BaseModel):
     id: str
     name: str
     description: str
     metrics: list[str]
+    alert_metrics: list[ProviderAlertMetric] = Field(default_factory=list)
 
 class ThresholdRule(BaseModel):
     metric: str = Field(..., min_length=1, max_length=120)

@@ -8,6 +8,9 @@ class OpenAIAdapter(ProviderAdapter):
     description = "OpenAI organization costs over the last 30 days. Requires an organization admin key."
     default_base_url = "https://api.openai.com/v1"
     metric_names = ["cost_30d", "currency", "buckets"]
+    alert_metrics = [
+        {"metric": "cost_30d", "label": "30-day cost", "unit": "USD", "direction": "increasing"},
+    ]
     async def fetch_usage(self) -> ProviderUsage:
         end = datetime.now(UTC)
         start = end - timedelta(days=30)
