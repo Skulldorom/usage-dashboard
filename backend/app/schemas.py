@@ -1,5 +1,7 @@
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 class AuthStatusRead(BaseModel):
     is_configured: bool
@@ -64,6 +66,27 @@ class ProviderInfo(BaseModel):
     description: str
     metrics: list[str]
 
+class ThresholdRule(BaseModel):
+    metric: str = Field(..., min_length=1, max_length=120)
+    direction: Literal["increasing", "decreasing"] = "increasing"
+    warning: float | None = Field(default=None)
+    critical: float | None = Field(default=None)
+    exhausted: float | None = Field(default=None)
+
+    @field_validator("metric")
+    @classmethod
+    def _strip_metric(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("Threshold metric is required")
+        return stripped
+
+    @model_validator(mode="after")
+    def _at_least_one_threshold(self):
+        if self.warning is None and self.critical is None and self.exhausted is None:
+            raise ValueError("At least one threshold (warning, critical, or exhausted) is required")
+        return self
+
 class ProviderConfigCreate(BaseModel):
     provider: str = Field(..., examples=["firecrawl"])
     label: str | None = Field(default=None, max_length=120)
@@ -73,6 +96,7 @@ class ProviderConfigCreate(BaseModel):
     is_enabled: bool = True
     is_visible: bool = True
     display_order: int | None = Field(default=None, ge=0)
+    alert_thresholds: list[ThresholdRule] = Field(default_factory=list)
 
     @field_validator("label", mode="before")
     @classmethod
@@ -90,6 +114,7 @@ class ProviderConfigUpdate(BaseModel):
     is_enabled: bool | None = None
     is_visible: bool | None = None
     display_order: int | None = Field(default=None, ge=0)
+    alert_thresholds: list[ThresholdRule] | None = None
 
     def has_update_for(self, field_name: str) -> bool:
         return field_name in self.model_fields_set
@@ -104,6 +129,7 @@ class ProviderConfigRead(BaseModel):
     is_enabled: bool
     is_visible: bool
     display_order: int
+    alert_thresholds: list[ThresholdRule] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     api_key_masked: str = "••••••••"
@@ -190,9 +216,20 @@ class ProviderUsageRead(BaseModel):
     metrics: list[UsageMetric]
     raw: dict
 
+class AlertStateRead(BaseModel):
+    metric: str
+    metric_type: str
+    value: float | int | None
+    unit: str | None
+    direction: str
+    alert_state: str
+    thresholds: dict[str, float | None]
+
 class DashboardConfigUsage(BaseModel):
     config: ProviderConfigRead
     latest: UsageSnapshotRead | None = None
+    alerts: list[AlertStateRead] = Field(default_factory=list)
+    alert_state: str = "normal"
 
 class HomepageProviderRow(BaseModel):
     provider: str
