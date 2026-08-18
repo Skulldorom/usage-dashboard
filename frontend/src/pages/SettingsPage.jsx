@@ -176,6 +176,7 @@ export default function SettingsPage() {
     const provider = providers.find((entry) => entry.id === thresholdDialog.provider)
     return provider?.alert_metrics || []
   }, [providers, thresholdDialog])
+  const providerIcons = useMemo(() => new Map(providers.map((provider) => [provider.id, provider.icon])), [providers])
 
   const load = useCallback(async () => {
     setError('')
@@ -529,7 +530,7 @@ export default function SettingsPage() {
             <IconButton size="small" onClick={() => moveConfig(config.id, -1)} disabled={index === 0} aria-label={`Move ${config.label} up`}>↑</IconButton>
             <IconButton size="small" onClick={() => moveConfig(config.id, 1)} disabled={index === configs.length - 1} aria-label={`Move ${config.label} down`}>↓</IconButton>
           </div>
-          <div className="config-identity"><div className="config-avatar" aria-hidden="true"><ProviderIcon provider={config.provider} /></div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography>{(config.alert_thresholds || []).length > 0 && <div className="config-alert-summary">{(config.alert_thresholds || []).map((rule, ruleIndex) => <span className="threshold-chip" key={`${rule.metric}-${ruleIndex}`}>{formatThresholdRule(rule)}</span>)}</div>}</div></div>
+          <div className="config-identity"><div className="config-avatar" aria-hidden="true"><ProviderIcon icon={providerIcons.get(config.provider)} /></div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography>{(config.alert_thresholds || []).length > 0 && <div className="config-alert-summary">{(config.alert_thresholds || []).map((rule, ruleIndex) => <span className="threshold-chip" key={`${rule.metric}-${ruleIndex}`}>{formatThresholdRule(rule)}</span>)}</div>}</div></div>
           <div className="config-detail"><span>Credential</span>{config.api_key_masked}</div>
           <div className="config-detail"><span>Endpoint</span>{config.base_url || 'Provider default'}</div>
           <div className="config-actions">

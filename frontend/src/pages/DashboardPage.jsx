@@ -184,7 +184,7 @@ function UsageHistory({ config, latest }) {
   )
 }
 
-function UsageCard({ item }) {
+function UsageCard({ item, icon }) {
   const { config, latest, alerts, alert_state } = item
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
   const alertClass = alert_state && alert_state !== 'normal' ? `provider-alert-${alert_state}` : ''
@@ -197,7 +197,7 @@ function UsageCard({ item }) {
       <CardContent>
         <Stack className="provider-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
           <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
-            <div className="provider-logo" aria-hidden="true"><ProviderIcon provider={config.provider} /></div>
+            <div className="provider-logo" aria-hidden="true"><ProviderIcon icon={icon} /></div>
             <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
           </Stack>
           <div className="provider-actions">
@@ -234,16 +234,23 @@ export default function DashboardPage() {
   const [pollStatus, setPollStatus] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [providerIcons, setProviderIcons] = useState(() => new Map())
 
   async function load(poll = false) {
     setLoading(true)
     setError('')
     try {
       if (poll) await api.pollAll()
-      const [usage, hp, status] = await Promise.all([api.usage(), api.homepage(), api.pollStatus()])
+      const [usage, hp, status, providerRows] = await Promise.all([
+        api.usage(),
+        api.homepage(),
+        api.pollStatus(),
+        api.providers().catch(() => []),
+      ])
       setItems(usage)
       setHomepage(hp)
       setPollStatus(status)
+      setProviderIcons(new Map(providerRows.map((provider) => [provider.id, provider.icon])))
     } catch (err) {
       setError(err.message)
     } finally {
@@ -274,6 +281,6 @@ export default function DashboardPage() {
     {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
     {!loading && items.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">No providers connected</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Head to Settings and connect your first API provider.</Typography></Box>}
     {!loading && items.length > 0 && visibleItems.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">All providers are hidden</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Use Settings to show a provider on the main dashboard.</Typography></Box>}
-    <Grid container spacing={2.5}>{visibleItems.map((item) => <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}><UsageCard item={item} /></Grid>)}</Grid>
+    <Grid container spacing={2.5}>{visibleItems.map((item) => <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}><UsageCard item={item} icon={providerIcons.get(item.config.provider)} /></Grid>)}</Grid>
   </>
 }
