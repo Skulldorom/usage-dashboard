@@ -834,3 +834,127 @@ async def test_api_token_management_rejects_non_admin_tokens():
         assert list_attempt.status_code == 403
         create_attempt = await client.post("/api/v1/api-tokens", json={"name": "Nope", "scopes": ["usage:read"]}, headers=scoped)
         assert create_attempt.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_usage_includes_alert_state_from_thresholds(sqlite_db):
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="firecrawl",
+            label="main",
+            encrypted_api_key="encrypted",
+            alert_thresholds=[
+                {"metric": "usage_percent", "direction": "increasing", "warning": 75, "critical": 90},
+            ],
+        )
+        session.add(config)
+        await session.flush()
+        session.add(
+            UsageSnapshot(
+                provider_config_id=config.id,
+                provider="firecrawl",
+                status="healthy",
+                summary="test",
+                metrics=[{"label": "usage_percent", "value": 92, "unit": "%"}],
+                raw={},
+                checked_at=now,
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["alert_state"] == "critical"
+    assert row["alerts"] == [
+        {
+            "metric": "usage_percent",
+            "metric_type": "usage_percent",
+            "value": 92,
+            "unit": "%",
+            "direction": "increasing",
+            "alert_state": "critical",
+            "thresholds": {"warning": 75, "critical": 90},
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_usage_without_thresholds_stays_normal(sqlite_db):
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        config = ProviderConfig(provider="deepseek", label="main", encrypted_api_key="encrypted")
+        session.add(config)
+        await session.flush()
+        session.add(
+            UsageSnapshot(
+                provider_config_id=config.id,
+                provider="deepseek",
+                status="healthy",
+                summary="test",
+                metrics=[{"label": "total_balance", "value": 12.5, "unit": "USD"}],
+                raw={},
+                checked_at=now,
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    row = response.json()[0]
+    assert row["alert_state"] == "normal"
+    assert row["alerts"] == []
+
+
+@pytest.mark.asyncio
+async def test_create_and_update_config_persist_thresholds(sqlite_db):
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={
+                "provider": "firecrawl",
+                "label": "main",
+                "api_key": "sk-test",
+                "alert_thresholds": [
+                    {"metric": "usage_percent", "direction": "increasing", "warning": 75, "critical": 90},
+                ],
+            },
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        config_id = created.json()["id"]
+        assert created.json()["alert_thresholds"][0]["warning"] == 75
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"alert_thresholds": [{"metric": "credits_remaining", "direction": "decreasing", "warning": 10, "exhausted": 0}]},
+            headers=auth,
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["alert_thresholds"][0]["metric"] == "credits_remaining"
+        assert updated.json()["alert_thresholds"][0]["exhausted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_threshold_rule_requires_at_least_one_value():
+    auth = {"Authorization": "Bearer test-admin-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={
+                "provider": "firecrawl",
+                "label": "main",
+                "api_key": "sk-test",
+                "alert_thresholds": [{"metric": "usage_percent", "direction": "increasing"}],
+            },
+            headers=auth,
+        )
+        assert created.status_code == 422

@@ -34,6 +34,7 @@ import ExtensionRoundedIcon from '@mui/icons-material/ExtensionRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import KeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
+import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import { api } from '../api.js'
 import { homepageYaml } from '../lib/homepageYaml.js'
 
@@ -158,6 +159,9 @@ export default function SettingsPage() {
   const [draggingConfigId, setDraggingConfigId] = useState(null)
   const [dragOverConfigId, setDragOverConfigId] = useState(null)
   const dragCommitRef = useRef(null)
+  const [thresholdDialog, setThresholdDialog] = useState(null)
+  const [thresholdForm, setThresholdForm] = useState([])
+  const [thresholdSaving, setThresholdSaving] = useState(false)
   const homepagePreview = useMemo(() => homepageYaml(homepageForm), [homepageForm])
   const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
@@ -330,6 +334,53 @@ export default function SettingsPage() {
     setDraggingConfigId(null)
     setDragOverConfigId(null)
   }
+  function openThresholdDialog(config) {
+    setThresholdDialog(config)
+    setThresholdForm((config.alert_thresholds || []).map((rule) => ({
+      metric: rule.metric,
+      direction: rule.direction || 'increasing',
+      warning: rule.warning ?? '',
+      critical: rule.critical ?? '',
+      exhausted: rule.exhausted ?? '',
+    })))
+  }
+  function addThresholdRule() {
+    setThresholdForm((current) => [
+      ...current,
+      { metric: '', direction: 'increasing', warning: '', critical: '', exhausted: '' },
+    ])
+  }
+  function updateThresholdRule(index, patch) {
+    setThresholdForm((current) => current.map((rule, i) => i === index ? { ...rule, ...patch } : rule))
+  }
+  function removeThresholdRule(index) {
+    setThresholdForm((current) => current.filter((_, i) => i !== index))
+  }
+  async function saveThresholds() {
+    setError('')
+    setThresholdSaving(true)
+    const clean = thresholdForm
+      .filter((rule) => rule.metric.trim())
+      .map((rule) => {
+        const num = (value) => (value === '' || value === null ? null : Number(value))
+        return {
+          metric: rule.metric.trim(),
+          direction: rule.direction,
+          warning: num(rule.warning),
+          critical: num(rule.critical),
+          exhausted: num(rule.exhausted),
+        }
+      })
+    try {
+      await api.updateConfig(thresholdDialog.id, { alert_thresholds: clean })
+      setThresholdDialog(null)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setThresholdSaving(false)
+    }
+  }
   async function startCodexDeviceLogin() {
     setError('')
     setTestError('')
@@ -460,6 +511,7 @@ export default function SettingsPage() {
           <div className="config-actions">
             <label className="config-switch"><span>API</span><Tooltip title={config.is_enabled ? 'Disable API polling and Homepage output' : 'Enable API polling and Homepage output'}><Switch checked={config.is_enabled} onChange={() => toggleApi(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} API for ${config.label}` }} /></Tooltip></label>
             <label className="config-switch"><span>UI</span><Tooltip title={config.is_visible ? 'Hide from main dashboard' : 'Show on main dashboard'}><Switch checked={config.is_visible} onChange={() => toggleUi(config)} color="primary" inputProps={{ 'aria-label': `${config.is_visible ? 'Hide' : 'Show'} ${config.label} on main dashboard` }} /></Tooltip></label>
+            <Tooltip title="Alert thresholds"><IconButton size="small" onClick={() => openThresholdDialog(config)} aria-label={`Edit alert thresholds for ${config.label}`}><NotificationsActiveRoundedIcon fontSize="small" /></IconButton></Tooltip>
             <Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
           </div>
         </div>
@@ -608,6 +660,33 @@ export default function SettingsPage() {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)} disabled={testing || saving}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit} disabled={saveDisabled} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}>{saving ? 'Saving…' : 'Save provider'}</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(thresholdDialog)} onClose={() => setThresholdDialog(null)} fullWidth maxWidth="sm">
+      <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">Alert thresholds</Typography><Typography component="span" display="block" variant="h5">{thresholdDialog?.label}</Typography></Stack></DialogTitle>
+      <DialogContent>
+        <Stack spacing={2} sx={{ mt: 1 }}>
+          <Typography variant="body2" color="text.secondary">Set warning, critical, and exhausted limits per metric. Direction "increasing" alerts when the value reaches the threshold (usage toward a limit); "decreasing" alerts when it falls to the threshold (remaining balance or credits). Leave thresholds empty to remove an alert rule.</Typography>
+          {thresholdForm.length === 0 && <Typography variant="body2" color="text.secondary">No thresholds configured — this provider won't surface alerts.</Typography>}
+          {thresholdForm.map((rule, index) => (
+            <Paper key={index} variant="outlined" sx={{ p: 1.5 }}>
+              <Stack spacing={1.25}>
+                <Stack direction="row" spacing={1}>
+                  <TextField size="small" label="Metric label" value={rule.metric} onChange={(event) => updateThresholdRule(index, { metric: event.target.value })} placeholder="usage_percent" fullWidth />
+                  <FormControl size="small" sx={{ minWidth: 140 }}><InputLabel>Direction</InputLabel><Select label="Direction" value={rule.direction} onChange={(event) => updateThresholdRule(index, { direction: event.target.value })}><MenuItem value="increasing">Increasing (≥)</MenuItem><MenuItem value="decreasing">Decreasing (≤)</MenuItem></Select></FormControl>
+                </Stack>
+                <Stack direction="row" spacing={1}>
+                  <TextField size="small" label="Warning" type="number" value={rule.warning} onChange={(event) => updateThresholdRule(index, { warning: event.target.value })} />
+                  <TextField size="small" label="Critical" type="number" value={rule.critical} onChange={(event) => updateThresholdRule(index, { critical: event.target.value })} />
+                  <TextField size="small" label="Exhausted" type="number" value={rule.exhausted} onChange={(event) => updateThresholdRule(index, { exhausted: event.target.value })} />
+                </Stack>
+                <Stack direction="row" justifyContent="flex-end"><Button size="small" color="error" onClick={() => removeThresholdRule(index)}>Remove</Button></Stack>
+              </Stack>
+            </Paper>
+          ))}
+          <Button variant="outlined" startIcon={<AddRoundedIcon />} onClick={addThresholdRule}>Add threshold rule</Button>
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setThresholdDialog(null)}>Cancel</Button><Button variant="contained" onClick={saveThresholds} disabled={thresholdSaving} startIcon={thresholdSaving ? <CircularProgress size={16} color="inherit" /> : null}>{thresholdSaving ? 'Saving…' : 'Save thresholds'}</Button></DialogActions>
     </Dialog>
   </>
 }

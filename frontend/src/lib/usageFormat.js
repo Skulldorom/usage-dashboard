@@ -78,3 +78,27 @@ export function firecrawlSummary(metrics) {
     percent: Math.min(100, Math.max(0, usagePercent.value)),
   }
 }
+
+export const ALERT_SEVERITY = {
+  warning: 'warning',
+  critical: 'error',
+  exhausted: 'error',
+}
+
+export function alertSeverity(alertState) {
+  return ALERT_SEVERITY[alertState] || null
+}
+
+export function alertMessage(alerts, alertState) {
+  if (!alerts || alerts.length === 0 || alertState === 'normal') return null
+  const verb = alertState === 'exhausted' ? 'exhausted' : alertState
+  const detail = alerts
+    .filter((alert) => alert.alert_state !== 'normal')
+    .map((alert) => {
+      const value = alert.value ?? '-'
+      const unit = alert.unit ? ` ${alert.unit}` : ''
+      return `${alert.metric.replaceAll('_', ' ')} at ${value}${unit}`
+    })
+    .join(', ')
+  return `Threshold ${verb}: ${detail}`
+}

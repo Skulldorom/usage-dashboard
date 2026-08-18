@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
+  alertMessage,
+  alertSeverity,
   codexRemainingValue,
   firecrawlSummary,
   formatDateTime,
@@ -143,5 +145,35 @@ describe('selectHistoryMetric', () => {
 
   it('returns null when no metric has more than one value', () => {
     expect(selectHistoryMetric('deepseek', [{ metrics: [{ label: 'total_balance', value: 100 }] }])).toBeNull()
+  })
+})
+
+describe('alertSeverity', () => {
+  it('maps alert states to MUI severities', () => {
+    expect(alertSeverity('normal')).toBeNull()
+    expect(alertSeverity('warning')).toBe('warning')
+    expect(alertSeverity('critical')).toBe('error')
+    expect(alertSeverity('exhausted')).toBe('error')
+    expect(alertSeverity(undefined)).toBeNull()
+  })
+})
+
+describe('alertMessage', () => {
+  it('summarizes crossed thresholds', () => {
+    const alerts = [
+      { metric: 'usage_percent', value: 92, unit: '%', alert_state: 'critical' },
+    ]
+    expect(alertMessage(alerts, 'critical')).toContain('usage percent at 92 %')
+  })
+
+  it('uses "exhausted" wording for the exhausted state', () => {
+    const alerts = [{ metric: 'credits_remaining', value: 0, unit: 'USD', alert_state: 'exhausted' }]
+    expect(alertMessage(alerts, 'exhausted')).toContain('Threshold exhausted')
+  })
+
+  it('returns null when nothing crossed', () => {
+    expect(alertMessage([], 'normal')).toBeNull()
+    expect(alertMessage([{ metric: 'x', alert_state: 'normal' }], 'normal')).toBeNull()
+    expect(alertMessage(null, 'critical')).toBeNull()
   })
 })
