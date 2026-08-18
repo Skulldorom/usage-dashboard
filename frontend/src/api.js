@@ -51,6 +51,8 @@ async function parseJsonResponse(res, path) {
   }
 }
 
+export const UNAUTHORIZED_EVENT = 'usage-dashboard:unauthorized'
+
 async function request(path, options = {}) {
   const token = getAdminToken()
   const authHeaders = token ? { Authorization: `Bearer ${token}` } : {}
@@ -59,6 +61,12 @@ async function request(path, options = {}) {
     ...fetchOptions,
     headers: { 'Content-Type': 'application/json', ...authHeaders, ...optionHeaders },
   })
+  if (res.status === 401 && token) {
+    // The stored admin token is no longer valid. Clear it and tell the app to
+    // log the user out instead of surfacing an "Invalid bearer token" banner.
+    clearAdminToken()
+    window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+  }
   if (!res.ok) throw new Error(await parseErrorResponse(res))
   if (res.status === 204) return null
   return parseJsonResponse(res, path)
