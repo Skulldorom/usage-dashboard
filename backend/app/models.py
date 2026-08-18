@@ -45,6 +45,7 @@ class ProviderConfig(Base):
     encrypted_api_key: Mapped[str] = mapped_column(Text)
     base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     extra: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
+    alert_thresholds: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
