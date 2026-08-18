@@ -20,6 +20,7 @@ import DataUsageRoundedIcon from '@mui/icons-material/DataUsageRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { api } from '../api.js'
+import ProviderIcon from '../components/ProviderIcon.jsx'
 import {
   PROVIDER_USAGE_URLS,
   alertMessage,
@@ -186,17 +187,17 @@ function UsageHistory({ config, latest }) {
 function UsageCard({ item }) {
   const { config, latest, alerts, alert_state } = item
   const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
-  const providerInitials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
+  const alertClass = alert_state && alert_state !== 'normal' ? `provider-alert-${alert_state}` : ''
   const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
   const metrics = latest?.metrics || []
   const firecrawlComposite = config.provider === 'firecrawl' ? firecrawlSummary(metrics) : null
 
   return (
-    <Card className="provider-card glass-panel" variant="outlined">
+    <Card className={`provider-card glass-panel ${alertClass}`} variant="outlined">
       <CardContent>
         <Stack className="provider-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
           <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
-            <div className="provider-logo" aria-hidden="true">{providerInitials}</div>
+            <div className="provider-logo" aria-hidden="true"><ProviderIcon provider={config.provider} /></div>
             <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
           </Stack>
           <div className="provider-actions">

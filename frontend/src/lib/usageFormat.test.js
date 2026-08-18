@@ -7,6 +7,7 @@ import {
   formatDateTime,
   formatMetricLabel,
   formatMetricValue,
+  formatThresholdRule,
   metricPercent,
   numericMetric,
   selectHistoryMetric,
@@ -175,5 +176,21 @@ describe('alertMessage', () => {
     expect(alertMessage([], 'normal')).toBeNull()
     expect(alertMessage([{ metric: 'x', alert_state: 'normal' }], 'normal')).toBeNull()
     expect(alertMessage(null, 'critical')).toBeNull()
+  })
+})
+
+describe('formatThresholdRule', () => {
+  it('formats an increasing threshold with all levels', () => {
+    expect(formatThresholdRule({ metric: 'usage_percent', direction: 'increasing', warning: 80, critical: 90, exhausted: 100 })).toBe('usage percent ≥ 80 / 90 / 100')
+  })
+
+  it('uses ≤ for decreasing thresholds', () => {
+    expect(formatThresholdRule({ metric: 'credits_remaining', direction: 'decreasing', warning: 500, critical: 100 })).toBe('credits remaining ≤ 500 / 100')
+  })
+
+  it('omits unset levels and returns empty for missing rules', () => {
+    expect(formatThresholdRule({ metric: 'cost_30d', direction: 'increasing', warning: 10 })).toBe('cost 30d ≥ 10')
+    expect(formatThresholdRule(null)).toBe('')
+    expect(formatThresholdRule(undefined)).toBe('')
   })
 })

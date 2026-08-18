@@ -36,6 +36,8 @@ import KeyRoundedIcon from '@mui/icons-material/KeyRounded'
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded'
 import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsActiveRounded'
 import { api } from '../api.js'
+import ProviderIcon from '../components/ProviderIcon.jsx'
+import { formatThresholdRule } from '../lib/usageFormat.js'
 import { homepageYaml } from '../lib/homepageYaml.js'
 
 const PROVIDER_SETUP = {
@@ -162,6 +164,8 @@ export default function SettingsPage() {
   const [thresholdDialog, setThresholdDialog] = useState(null)
   const [thresholdForm, setThresholdForm] = useState([])
   const [thresholdSaving, setThresholdSaving] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [deleting, setDeleting] = useState(false)
   const homepagePreview = useMemo(() => homepageYaml(homepageForm), [homepageForm])
   const selectedProvider = useMemo(() => providers.find((provider) => provider.id === form.provider), [providers, form.provider])
   const isCustom = form.provider === 'custom_http'
@@ -236,7 +240,19 @@ export default function SettingsPage() {
     finally { setTesting(false) }
   }
 
-  async function remove(id) { await api.deleteConfig(id); await load() }
+  async function confirmDelete() {
+    setError('')
+    setDeleting(true)
+    try {
+      await api.deleteConfig(deleteTarget.id)
+      setDeleteTarget(null)
+      await load()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
   function updateHomepageForm(patch) {
     setHomepageCopied(false)
     setHomepageForm((current) => ({ ...current, ...patch }))
@@ -496,7 +512,6 @@ export default function SettingsPage() {
     <Paper id="provider-settings" className="settings-panel glass-panel" variant="outlined">
       <div className="settings-panel-header"><Box><Typography variant="h6">Connected providers</Typography><Typography variant="body2" color="text.secondary">{configs.length} connection{configs.length === 1 ? '' : 's'} configured</Typography></Box><KeyRoundedIcon color="primary" /></div>
       {configs.length === 0 ? <Box className="empty-state" sx={{ m: 2 }}><div className="empty-state-icon"><HubRoundedIcon /></div><Typography variant="h6">Nothing connected yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Add a provider to start collecting usage telemetry.</Typography></Box> : <div className="config-list">{configs.map((config, index) => {
-        const initials = config.provider.split('_').map((word) => word[0]).join('').slice(0, 2)
         const dragging = draggingConfigId === config.id
         const dragOver = dragOverConfigId === config.id && draggingConfigId !== config.id
         return <div
@@ -514,14 +529,14 @@ export default function SettingsPage() {
             <IconButton size="small" onClick={() => moveConfig(config.id, -1)} disabled={index === 0} aria-label={`Move ${config.label} up`}>↑</IconButton>
             <IconButton size="small" onClick={() => moveConfig(config.id, 1)} disabled={index === configs.length - 1} aria-label={`Move ${config.label} down`}>↓</IconButton>
           </div>
-          <div className="config-identity"><div className="config-avatar" aria-hidden="true">{initials}</div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography></div></div>
+          <div className="config-identity"><div className="config-avatar" aria-hidden="true"><ProviderIcon provider={config.provider} /></div><div><span>Provider</span><strong>{config.label}</strong><Typography variant="caption" color="text.secondary">{config.provider}</Typography>{(config.alert_thresholds || []).length > 0 && <div className="config-alert-summary">{(config.alert_thresholds || []).map((rule, ruleIndex) => <span className="threshold-chip" key={`${rule.metric}-${ruleIndex}`}>{formatThresholdRule(rule)}</span>)}</div>}</div></div>
           <div className="config-detail"><span>Credential</span>{config.api_key_masked}</div>
           <div className="config-detail"><span>Endpoint</span>{config.base_url || 'Provider default'}</div>
           <div className="config-actions">
             <label className="config-switch"><span>API</span><Tooltip title={config.is_enabled ? 'Disable API polling and Homepage output' : 'Enable API polling and Homepage output'}><Switch checked={config.is_enabled} onChange={() => toggleApi(config)} color="success" inputProps={{ 'aria-label': `${config.is_enabled ? 'Disable' : 'Enable'} API for ${config.label}` }} /></Tooltip></label>
             <label className="config-switch"><span>UI</span><Tooltip title={config.is_visible ? 'Hide from main dashboard' : 'Show on main dashboard'}><Switch checked={config.is_visible} onChange={() => toggleUi(config)} color="primary" inputProps={{ 'aria-label': `${config.is_visible ? 'Hide' : 'Show'} ${config.label} on main dashboard` }} /></Tooltip></label>
             <Tooltip title="Alert thresholds"><IconButton size="small" onClick={() => openThresholdDialog(config)} aria-label={`Edit alert thresholds for ${config.label}`}><NotificationsActiveRoundedIcon fontSize="small" /></IconButton></Tooltip>
-            <Tooltip title="Remove provider"><IconButton color="error" onClick={() => remove(config.id)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
+            <Tooltip title="Remove provider"><IconButton color="error" onClick={() => setDeleteTarget(config)} aria-label={`Remove ${config.label}`}><DeleteOutlineRoundedIcon /></IconButton></Tooltip>
           </div>
         </div>
       })}</div>}
@@ -711,6 +726,13 @@ export default function SettingsPage() {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setThresholdDialog(null)}>Cancel</Button><Button variant="contained" onClick={saveThresholds} disabled={thresholdSaving} startIcon={thresholdSaving ? <CircularProgress size={16} color="inherit" /> : null}>{thresholdSaving ? 'Saving…' : 'Save thresholds'}</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(deleteTarget)} onClose={() => { if (!deleting) setDeleteTarget(null) }} fullWidth maxWidth="xs">
+      <DialogTitle>Remove provider?</DialogTitle>
+      <DialogContent>
+        <Typography>This permanently deletes <strong>{deleteTarget?.label}</strong> ({deleteTarget?.provider}) and its usage history. This cannot be undone.</Typography>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setDeleteTarget(null)} disabled={deleting}>Cancel</Button><Button variant="contained" color="error" onClick={confirmDelete} disabled={deleting} startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : <DeleteOutlineRoundedIcon />}>{deleting ? 'Deleting…' : 'Delete provider'}</Button></DialogActions>
     </Dialog>
   </>
 }
