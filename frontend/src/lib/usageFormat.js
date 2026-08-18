@@ -102,3 +102,10 @@ export function alertMessage(alerts, alertState) {
     .join(', ')
   return `Threshold ${verb}: ${detail}`
 }
+
+export function formatThresholdRule(rule) {
+  if (!rule) return ''
+  const levels = [rule.warning, rule.critical, rule.exhausted].filter((value) => value !== null && value !== undefined)
+  const operator = rule.direction === 'decreasing' ? '≤' : '≥'
+  return `${rule.metric.replaceAll('_', ' ')} ${operator} ${levels.join(' / ')}`
+}
