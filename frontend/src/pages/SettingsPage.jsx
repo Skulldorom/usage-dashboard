@@ -152,6 +152,8 @@ export default function SettingsPage() {
   const [apiTokenForm, setApiTokenForm] = useState(initialApiTokenForm)
   const [apiTokenSaving, setApiTokenSaving] = useState(false)
   const [apiTokenCopied, setApiTokenCopied] = useState(false)
+  const [extensionUrlCopied, setExtensionUrlCopied] = useState(false)
+  const extensionUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const [createdApiToken, setCreatedApiToken] = useState(null)
   const [draggingConfigId, setDraggingConfigId] = useState(null)
   const [dragOverConfigId, setDragOverConfigId] = useState(null)
@@ -246,6 +248,17 @@ export default function SettingsPage() {
       const hasScope = current.scopes.includes(scopeId)
       return { ...current, scopes: hasScope ? current.scopes.filter((scope) => scope !== scopeId) : [...current.scopes, scopeId] }
     })
+  }
+  async function copyExtensionUrl() {
+    setExtensionUrlCopied(false)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(extensionUrl)
+      else window.prompt('Copy dashboard URL', extensionUrl)
+      setExtensionUrlCopied(true)
+      window.setTimeout(() => setExtensionUrlCopied(false), 2200)
+    } catch {
+      window.prompt('Copy dashboard URL', extensionUrl)
+    }
   }
   async function createExtensionApiToken() {
     setError('')
@@ -462,9 +475,29 @@ export default function SettingsPage() {
             <ol>
               <li>Create a token with the Chrome / Brave extension preset below.</li>
               <li>Copy it immediately; the full token is shown once.</li>
-              <li>Open the extension options page and set the dashboard URL, for example <code>{typeof window !== 'undefined' ? window.location.origin : 'https://usage.example.com'}</code>. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
+              <li>Copy the dashboard URL below, then open the extension options page and paste it in. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
               <li>Paste the token as the extension bearer token and save.</li>
             </ol>
+            <Box className="extension-url-copy">
+              <Stack direction="row" spacing={1} alignItems="flex-start">
+                <TextField
+                  fullWidth
+                  label="Dashboard URL"
+                  value={extensionUrl}
+                  InputProps={{ readOnly: true }}
+                  onFocus={(event) => event.target.select()}
+                  helperText="The extension appends /api/v1 automatically."
+                />
+                <Button
+                  variant="outlined"
+                  onClick={copyExtensionUrl}
+                  startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
+                  sx={{ flex: '0 0 auto' }}
+                >
+                  {extensionUrlCopied ? 'Copied' : 'Copy'}
+                </Button>
+              </Stack>
+            </Box>
           </Box>
           <TextField label="Token name" value={apiTokenForm.name} onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })} helperText="Use a name you will recognize later, because the token itself will vanish like a competent intern." />
           <TextField label="Expires at (optional)" type="datetime-local" value={apiTokenForm.expires_at} onChange={(event) => setApiTokenForm({ ...apiTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />

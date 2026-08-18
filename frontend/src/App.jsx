@@ -9,18 +9,21 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  IconButton,
   Stack,
   TextField,
   ThemeProvider,
+  Tooltip,
   Typography,
   createTheme,
 } from "@mui/material";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
+import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import { api, clearAdminToken, getAdminToken, setAdminToken } from "./api.js";
+import { UNAUTHORIZED_EVENT, api, clearAdminToken, getAdminToken, setAdminToken } from "./api.js";
 import "./styles.css";
 
 const theme = createTheme({
@@ -185,20 +188,46 @@ const settingsSubmenuItems = [
   { href: "#homepage-integration", label: "Homepage integration" },
 ];
 
-function SidebarActions() {
+function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
   return (
-    <div className="sidebar-actions" aria-label="Project shortcuts">
-      <a
-        className="sidebar-action sidebar-action-wide"
-        href="https://github.com/Skulldorom/usage-dashboard"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Open Usage Dashboard GitHub project"
-        title="Open GitHub"
-      >
-        <GitHubLogo />
-      </a>
-    </div>
+    <Stack direction="row" spacing={1} alignItems="center">
+      {!isAuthenticated && (
+        <Button
+          className="token-button"
+          variant="outlined"
+          color="inherit"
+          startIcon={<KeyRoundedIcon />}
+          onClick={onLogin}
+        >
+          {authStatus?.setup_required ? "Set password" : "Log in"}
+        </Button>
+      )}
+      {isAuthenticated && (
+        <>
+          <Tooltip title="Open GitHub project">
+            <IconButton
+              className="topbar-icon-button"
+              component="a"
+              href="https://github.com/Skulldorom/usage-dashboard"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open Usage Dashboard GitHub project"
+            >
+              <GitHubLogo />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Log out">
+            <IconButton
+              className="topbar-icon-button"
+              onClick={onLogout}
+              aria-label="Log out"
+            >
+              <LogoutRoundedIcon />
+            </IconButton>
+          </Tooltip>
+        </>
+      )}
+    </Stack>
   );
 }
 
@@ -247,7 +276,6 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
           ))}
         </div>
       )}
-      {!mobile && <SidebarActions />}
       {!mobile && (
         <span className="sidebar-copyright">
           © {new Date().getFullYear()} Skulldorom
@@ -528,6 +556,16 @@ function Shell() {
     loadAuthStatus();
   }, []);
 
+  useEffect(() => {
+    function handleUnauthorized() {
+      clearAdminToken();
+      setIsAuthenticated(false);
+      setAuthOpen(true);
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+  }, []);
+
   async function logout() {
     try {
       await api.logout();
@@ -564,29 +602,12 @@ function Shell() {
                 : "Authentication required"}
           </span>
         </div>
-        <Stack direction="row" spacing={1}>
-          {!isAuthenticated && (
-            <Button
-              className="token-button"
-              variant="outlined"
-              color="inherit"
-              startIcon={<KeyRoundedIcon />}
-              onClick={() => setAuthOpen(true)}
-            >
-              {authStatus?.setup_required ? "Set password" : "Log in"}
-            </Button>
-          )}
-          {isAuthenticated && (
-            <Button
-              className="token-button"
-              variant="outlined"
-              color="inherit"
-              onClick={logout}
-            >
-              Log out
-            </Button>
-          )}
-        </Stack>
+        <TopbarActions
+          isAuthenticated={isAuthenticated}
+          authStatus={authStatus}
+          onLogin={() => setAuthOpen(true)}
+          onLogout={logout}
+        />
       </header>
       <main className="main-content">
         {authLoading ? (
