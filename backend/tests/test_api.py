@@ -87,6 +87,22 @@ async def test_config_crud_and_homepage():
 
 
 @pytest.mark.asyncio
+async def test_providers_include_icons():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/providers")
+    assert response.status_code == 200
+    by_id = {provider["id"]: provider for provider in response.json()}
+    assert by_id["openai"]["icon"]["viewBox"] == "0 0 600 600"
+    assert by_id["openai"]["icon"]["path"].startswith("M557 245.5")
+    assert by_id["codex"]["icon"]["path"] == by_id["openai"]["icon"]["path"]
+    assert by_id["anthropic"]["icon"]["viewBox"] == "0 0 600 600"
+    assert by_id["deepseek"]["icon"]["viewBox"] == "0 0 600 600"
+    assert by_id["openrouter"]["icon"]["viewBox"] == "0 0 24 24"
+    assert by_id["firecrawl"]["icon"]["viewBox"] == "0 0 50 72"
+    assert by_id["custom_http"]["icon"] is None
+
+
+@pytest.mark.asyncio
 async def test_create_config_auto_fills_blank_labels():
     auth = {"Authorization": "Bearer test-admin-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
