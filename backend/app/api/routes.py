@@ -11,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.auth import auth_status, bearer_scheme, create_api_token_record, homepage_auth, login_admin, request_password_reset, require_admin_auth, require_scope, reset_admin_password, revoke_admin_session, revoke_api_token_record, setup_admin_password
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
+from app.core.thresholds import build_alerts, provider_alert_state
 from app.database import engine, get_session
 from app.models import ApiToken, ProviderConfig, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -213,7 +214,7 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     if display_order is None:
         max_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
         display_order = int(max_order or 0) + 1 if max_order is not None else 0
-    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled, is_visible=payload.is_visible, display_order=display_order)
+    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled, is_visible=payload.is_visible, display_order=display_order, alert_thresholds=[rule.model_dump() for rule in payload.alert_thresholds])
     session.add(config)
     try:
         await session.commit()
@@ -366,6 +367,8 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.is_visible = payload.is_visible
     if payload.has_update_for("display_order") and payload.display_order is not None:
         config.display_order = payload.display_order
+    if payload.has_update_for("alert_thresholds") and payload.alert_thresholds is not None:
+        config.alert_thresholds = [rule.model_dump() for rule in payload.alert_thresholds]
     await session.commit()
     await session.refresh(config)
     return _config_read(config)
@@ -520,7 +523,15 @@ async def usage(session: AsyncSession = Depends(get_session)):
     payload = []
     for config in configs:
         latest = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(1))).scalar_one_or_none()
-        payload.append({"config": _config_read(config), "latest": latest})
+        alerts = build_alerts(latest.metrics if latest else [], config.alert_thresholds) if latest else []
+        payload.append(
+            {
+                "config": _config_read(config),
+                "latest": latest,
+                "alerts": [AlertStateRead(**alert) for alert in alerts],
+                "alert_state": provider_alert_state(alerts),
+            }
+        )
     return payload
 
 
