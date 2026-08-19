@@ -70,6 +70,15 @@
         gap: 20px;
         padding: 26px clamp(24px, 5vw, 64px) 0;
       }
+      .header-links { display: flex; align-items: center; gap: 12px; }
+      .text-link {
+        color: #b5adc1;
+        font-size: 0.88rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        transition: color 0.18s ease;
+      }
+      .text-link:hover { color: #fff; }
       .brand-lockup { display: flex; align-items: center; gap: 12px; }
       .brand-mark { width: 45px; height: 42px; object-fit: contain; filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35)); }
       .brand-lockup strong { display: block; color: #fff; font-size: 1.05rem; letter-spacing: -0.02em; }
@@ -248,14 +257,17 @@
           <span class="brand-sub">Command Center</span>
         </span>
       </a>
-      <a
-        class="github-icon-button small"
-        href="https://github.com/Skulldorom/usage-dashboard"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="View project on GitHub"
-        title="View project on GitHub"
-      >
+      <nav class="header-links" aria-label="Site links">
+        <a class="text-link" href="./extension.html" aria-label="Browser extension landing page">Extension</a>
+        <a class="text-link" href="./extension-privacy.html" aria-label="Extension privacy policy">Privacy</a>
+        <a
+          class="github-icon-button small"
+          href="https://github.com/Skulldorom/usage-dashboard"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="View project on GitHub"
+          title="View project on GitHub"
+        >
         <svg class="github-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
           <path
             fill="currentColor"
@@ -263,6 +275,7 @@
           />
         </svg>
       </a>
+      </nav>
     </header>
 
     <main>
