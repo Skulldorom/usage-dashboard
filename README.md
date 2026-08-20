@@ -2,15 +2,13 @@
 
 # Usage Dashboard
 
-Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
-
-## Stack
-
-- Backend: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
-- Frontend: Vite, React, MUI, React Router
-- Runtime: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
+Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
 
 ![Usage Dashboard screenshot](screenshot.png)
+
+## Documentation
+
+Full documentation — installation, configuration, providers, integrations, the browser extension, and development — lives on the [documentation site](https://skulldorom.github.io/usage-dashboard/).
 
 ## Quick start
 
@@ -27,183 +25,27 @@ Open through the frontend container, which also proxies API traffic to the backe
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
-- Homepage payload: http://localhost:3000/api/v1/homepage (requires a login session/scoped bearer token unless `HOMEPAGE_ALLOWED_HOSTS` allows the request host)
 
-First-run admin setup is intentionally local-log based: `GET /api/v1/auth/status` generates and logs a one-time setup code from the backend when no password exists yet. The UI asks for that code and a new password. Password resets use the same pattern via **Reset password**, which logs a one-time reset code in the backend logs before accepting a new password. Docker Compose users can view codes with `docker compose logs backend`.
+First-run admin setup is log-based: the backend prints a one-time setup code when no password exists yet. See [First-run setup](https://skulldorom.github.io/usage-dashboard/getting-started/first-run.html) for details.
 
-Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is intentionally internal-only and is not published on the host. The default Compose stack pulls published images from GitHub Container Registry; set `IMAGE_TAG`, `BACKEND_IMAGE`, or `FRONTEND_IMAGE` to pin or override them.
+## Features
 
-## Configuration
+- 🔐 Provider credentials encrypted at rest with Fernet.
+- 📊 Usage and balance tracking for seven provider types.
+- 🏠 Homepage Dashboard widget with dynamic per-provider rows.
+- 🧩 Chrome/Brave browser extension with one-click setup.
+- 🔔 Alert thresholds and automatic background polling.
 
-| Variable | Description |
-| --- | --- |
-| `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
-| `POSTGRES_IMAGE` | PostgreSQL image used by Compose. Defaults to `postgres:18-alpine`; the Compose volume is mounted at `/var/lib/postgresql` for the 18+ image layout. |
-| `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
-| `ADMIN_SESSION_EXPIRE_HOURS` | Hours before password-login session tokens expire. Defaults to `24`. |
-| `ADMIN_RECOVERY_CODE_EXPIRE_MINUTES` | Minutes before setup/reset codes printed in backend logs expire. Defaults to `30`. |
-| `HOMEPAGE_ALLOWED_HOSTS` | Comma-separated hostnames that may access `GET /api/v1/homepage` without a bearer token; ports are ignored. All other API routes still require a valid admin session or scoped API token. |
-| `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
-| `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
-| `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
-| `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |
-| `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins for the FastAPI API. |
-| `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
-| `EXTENSION_TARGET_CHROME_ID` / `EXTENSION_TARGET_*_ID` | Optional runtime browser extension IDs used by one-click setup from the frontend container. Useful for testing unpacked/dev Chrome, Edge, Opera, Firefox, or Safari builds without rebuilding the GHCR image. |
-| `AUTO_POLL_ENABLED` | Enables background provider polling. Defaults to `true`. |
-| `AUTO_POLL_INTERVAL_MINUTES` | Minutes between automatic provider polls. Defaults to `60`. |
+## Stack
 
-## Providers
-
-### Firecrawl
-
-Uses `GET https://api.firecrawl.dev/v2/team/credit-usage` for current remaining/plan credits and `GET https://api.firecrawl.dev/v2/team/credit-usage/historical` for usage consumed in the billing period.
-
-### DeepSeek
-
-Uses `GET https://api.deepseek.com/user/balance`.
-
-### OpenAI
-
-Uses `GET https://api.openai.com/v1/organization/costs`. This endpoint requires an organization admin key
-
-### Anthropic / Claude
-
-Uses `GET https://api.anthropic.com/v1/organizations/usage_report/messages` for the last 24 hours. This requires an Anthropic Admin API key from Console > Settings > Organization > Admin API Keys, not a normal inference key.
-
-### OpenRouter
-
-Uses `GET https://openrouter.ai/api/v1/key` with the same bearer token used for inference and surfaces remaining, daily, weekly, and monthly credit usage.
-
-### Custom HTTP
-
-Choose `Custom HTTP` in Settings, provide a base URL, relative path, auth header template, and one JSON path metric. The encrypted API key is inserted into the auth header template via `{api_key}`. Do not put secrets in the base URL or path; the backend rejects credential-looking URLs.
-
-Example metric config generated by the form:
-
-```json
-{
-  "method": "GET",
-  "path": "/v1/billing",
-  "auth_header_name": "Authorization",
-  "auth_header_template": "Bearer {api_key}",
-  "metrics": [
-    {"label": "remaining", "path": "$.credits.remaining", "unit": "credits", "maximum_path": "$.credits.limit"}
-  ]
-}
-```
-
-## Homepage Dashboard widget
-
-The Compose stack no longer has a separate `nginx` service. The `frontend` service is the nginx-based static frontend **and** API proxy. Use the URL that matches where Homepage is running:
-
-- Same Docker Compose project/network: `http://frontend/api/v1/homepage`
-- Separate Compose project on a shared Docker network: connect Homepage to the Usage Dashboard network and use `http://frontend/api/v1/homepage`, or add a network alias such as `usage-dashboard` and use `http://usage-dashboard/api/v1/homepage`
-- Host/LAN access through the published port: `http://<server-ip-or-dns>:${NGINX_HTTP_PORT:-3000}/api/v1/homepage`
-- Public reverse-proxy access: `https://usage.example.com/api/v1/homepage`
-
-If you use `HOMEPAGE_ALLOWED_HOSTS`, include the hostname that reaches the frontend/proxy and is forwarded to the backend. For internal Docker calls that is usually `frontend` or your network alias; for public access it is your external hostname.
-
-Two widget formats are supported. The UI generator defaults to the dynamic provider list because it matches the dashboard provider rows.
-
-#### Option A -- Dynamic list (one row per provider)
-
-Recommended default. Requires Homepage >= 1.1.0. Set `display: dynamic-list` and use the object-style `mappings` below. Each enabled provider config becomes a row with its label on the left and usage-left text on the right.
-
-```yaml
-- API Usage:
-    icon: mdi-api
-    widget:
-      type: customapi
-      url: http://frontend/api/v1/homepage
-      display: dynamic-list
-      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend; otherwise use a scoped token with usage:read.
-      # headers:
-      #   Authorization: Bearer ***
-      refreshInterval: 300000
-      mappings:
-        items: list
-        name: label
-        label: value
-        format: text
-```
-
-**`display: dynamic-list` is mandatory** -- omitting it causes `TypeError: s.slice is not a function` because Homepage tries to treat the object-style mappings as a block-display array.
-The `list` array contains one flat object per enabled provider config:
-- `label` -> left side (e.g. `deepseek (main)`)
-- `value` -> right side (prefers remaining credits/usage, then percent-used, then summary fallback)
-
-The existing scalar fields (`summary`, `configured_providers`, `healthy_providers`, `degraded_providers`) and flattened `metrics` object remain in the response for use with Option B or extra mappings.
-
-#### Option B -- Block display (scalar fields)
-
-The `block` display shows individual fields as labelled rows. Use this for a compact summary tile:
-
-```yaml
-- API Usage:
-    icon: mdi-api
-    widget:
-      type: customapi
-      url: http://frontend/api/v1/homepage
-      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend; otherwise use a scoped token with usage:read.
-      # headers:
-      #   Authorization: Bearer ***
-      refreshInterval: 300000
-      mappings:
-        - field: summary
-          label: Providers
-        - field: configured_providers
-          label: Configured
-        - field: healthy_providers
-          label: Healthy
-        - field: degraded_providers
-          label: Degraded
-```
-
-Flattened `metrics` keys (e.g. `firecrawl_main_credits_remaining`, `deepseek_main_total_balance`) are also available as extra `field` mappings.
-
-### Public homepage behind reverse-proxy auth
-
-Set `HOMEPAGE_ALLOWED_HOSTS` when a trusted proxy such as Authentik protects the public hostname and you only want the flat homepage payload to be readable without sharing a bearer token:
-
-```env
-HOMEPAGE_ALLOWED_HOSTS=usage.example.com,status.local
-```
-
-Only `GET /api/v1/homepage` checks this allowlist. Without the allowlist, Homepage can also use a scoped API token with `usage:read`. `/configs`, `/poll`, `/usage`, and history endpoints still require a valid admin session or scoped API token with the matching route scope. Hostnames are matched case-insensitively and any port suffix is ignored.
-
-### Testing one-click browser extension setup
-
-Set `EXTENSION_TARGET_CHROME_ID` in `.env` to the ID shown on Chrome's unpacked extension page, then restart the frontend container:
-
-```bash
-EXTENSION_TARGET_CHROME_ID=<dev-extension-id> docker compose up -d frontend
-```
-
-The frontend loads this at runtime through `/runtime-config.js`, so GHCR images do not need to be rebuilt for extension ID testing. Equivalent `EXTENSION_TARGET_EDGE_ID`, `EXTENSION_TARGET_OPERA_ID`, `EXTENSION_TARGET_FIREFOX_ID`, and `EXTENSION_TARGET_SAFARI_ID` variables are available for other browser builds as they exist.
+- Backend: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
+- Frontend: Vite, React, MUI, React Router
+- Runtime: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
 
 ## Development
 
-```bash
-cd backend
-python -m venv .venv
-. .venv/bin/activate
-pip install -r requirements.txt
-export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-pytest
-```
+See the [documentation site](https://skulldorom.github.io/usage-dashboard/development/local-development.html) for local development, testing, and Docker image build instructions.
 
-```bash
-cd frontend
-npm install
-npm run dev
-npm run build
-```
+## License
 
-To build local images instead of using GHCR, run explicit builds with the Dockerfiles:
-
-```bash
-docker build -t usage-dashboard-backend:local -f backend/Dockerfile .
-docker build -t usage-dashboard-frontend:local -f frontend/Dockerfile .
-BACKEND_IMAGE=usage-dashboard-backend:local FRONTEND_IMAGE=usage-dashboard-frontend:local docker compose up -d
-```
+[Mozilla Public License 2.0](LICENSE)
