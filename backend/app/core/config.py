@@ -1,5 +1,5 @@
 from functools import lru_cache
-from pydantic import Field, field_validator
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -9,7 +9,6 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "sqlite+aiosqlite:///./usage-dashboard.db"
     encryption_key: str = Field(..., min_length=32)
-    admin_token: str | None = Field(default=None, min_length=16)
     admin_session_expire_hours: int = Field(default=24, ge=1)
     admin_recovery_code_expire_minutes: int = Field(default=30, ge=1)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
@@ -19,13 +18,6 @@ class Settings(BaseSettings):
     auto_poll_interval_minutes: int = Field(default=60, ge=1)
     custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")
     homepage_allowed_hosts_raw: str = Field(default="", alias="HOMEPAGE_ALLOWED_HOSTS")
-
-    @field_validator("admin_token", mode="before")
-    @classmethod
-    def _blank_admin_token_to_none(cls, value: str | None) -> str | None:
-        if isinstance(value, str) and not value.strip():
-            return None
-        return value
 
     @staticmethod
     def _parse_hosts(value: str) -> set[str]:

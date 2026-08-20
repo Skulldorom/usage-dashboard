@@ -12,10 +12,11 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.core.auth import _hash_secret
 from app.core.config import Settings, settings
 from app.database import get_session
 from app.main import app
-from app.models import ApiToken, Base, ProviderConfig, UsageSnapshot
+from app.models import AdminCredential, ApiToken, Base, ProviderConfig, UsageSnapshot
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 from app.providers.registry import ADAPTERS
 
@@ -25,7 +26,6 @@ TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
 
 @pytest_asyncio.fixture(autouse=True)
 async def sqlite_db(monkeypatch):
-    monkeypatch.setattr(settings, "admin_token", "test-admin-token-123")
     monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "")
     monkeypatch.setattr(settings, "snapshot_retention_days", 90)
     if DB.exists():
@@ -34,6 +34,14 @@ async def sqlite_db(monkeypatch):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, expire_on_commit=False)
+    async with Session() as session:
+        session.add(
+            AdminCredential(
+                password_hash="test-only",
+                session_tokens=[{"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}],
+            )
+        )
+        await session.commit()
 
     async def override_session():
         async with Session() as session:
@@ -71,7 +79,7 @@ async def test_config_crud_and_homepage():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         providers = await client.get("/api/v1/providers")
         assert providers.status_code == 200
-        auth = {"Authorization": "Bearer test-admin-token-123"}
+        auth = {"Authorization": "Bearer test-admin-session-token-123"}
         created = await client.post("/api/v1/configs", json={"provider": "deepseek", "label": "main", "api_key": "sk-test"}, headers=auth)
         assert created.status_code == 201, created.text
         payload = created.json()
@@ -104,7 +112,7 @@ async def test_providers_include_icons():
 
 @pytest.mark.asyncio
 async def test_create_config_auto_fills_blank_labels():
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post("/api/v1/configs", json={"provider": "deepseek", "label": "", "api_key": "sk-test"}, headers=auth)
         second = await client.post("/api/v1/configs", json={"provider": "deepseek", "api_key": "sk-test-2"}, headers=auth)
@@ -124,7 +132,7 @@ async def test_poll_status_reports_auto_poll_schedule(monkeypatch):
     monkeypatch.setattr(routes, "_last_auto_polled_at", datetime(2026, 8, 14, 12, 0, tzinfo=UTC))
     monkeypatch.setattr(routes, "_next_auto_poll_at", datetime(2026, 8, 14, 12, 15, tzinfo=UTC))
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/poll/status", headers=auth)
 
@@ -139,7 +147,7 @@ async def test_poll_status_reports_auto_poll_schedule(monkeypatch):
 @pytest.mark.asyncio
 async def test_patch_config_base_url_null_clears_override(sqlite_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        auth = {"Authorization": "Bearer test-admin-token-123"}
+        auth = {"Authorization": "Bearer test-admin-session-token-123"}
         created = await client.post(
             "/api/v1/configs",
             json={
@@ -162,9 +170,9 @@ async def test_patch_config_base_url_null_clears_override(sqlite_db):
     assert db_base_url is None
 
 
-def test_blank_admin_token_env_is_treated_as_unconfigured():
-    configured = Settings(ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="")
-    assert configured.admin_token is None
+def test_admin_token_env_is_ignored_by_settings():
+    configured = Settings(ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="legacy-static-admin-token-123")
+    assert not hasattr(configured, "admin_token")
 
 
 @pytest.mark.asyncio
@@ -179,8 +187,42 @@ async def test_protected_routes_require_admin_auth():
         homepage_without_auth = await client.get("/api/v1/homepage")
         assert homepage_without_auth.status_code == 401
 
-        authorized = await client.get("/api/v1/homepage", headers={"Authorization": "Bearer test-admin-token-123"})
+        authorized = await client.get("/api/v1/homepage", headers={"Authorization": "Bearer test-admin-session-token-123"})
         assert authorized.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_static_admin_token_is_not_accepted():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/configs", headers={"Authorization": "Bearer legacy-static-admin-token-123"})
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_homepage_allows_usage_read_api_token_from_untrusted_host():
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/api-tokens", json={"name": "Homepage", "scopes": ["usage:read"]}, headers=admin)
+        assert created.status_code == 201, created.text
+        scoped = {"Authorization": f"Bearer {created.json()['token']}"}
+
+        response = await client.get("/api/v1/homepage", headers=scoped)
+
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_homepage_rejects_api_token_without_usage_read_scope():
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post("/api/v1/api-tokens", json={"name": "History", "scopes": ["history:read"]}, headers=admin)
+        assert created.status_code == 201, created.text
+        scoped = {"Authorization": f"Bearer {created.json()['token']}"}
+
+        response = await client.get("/api/v1/homepage", headers=scoped)
+
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -244,7 +286,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
         ])
         await session.commit()
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/homepage", headers=auth)
 
@@ -294,7 +336,7 @@ async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlit
         await session.commit()
         ids = {"first": first.id, "second": second.id, "third": third.id}
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         reordered = await client.patch("/api/v1/configs/order", json={"config_ids": [ids["third"], ids["first"], ids["second"]]}, headers=auth)
         assert reordered.status_code == 200, reordered.text
@@ -315,8 +357,7 @@ async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlit
 
 
 @pytest.mark.asyncio
-async def test_missing_admin_token_returns_401_but_whitelisted_homepage_still_loads(monkeypatch):
-    monkeypatch.setattr(settings, "admin_token", None)
+async def test_missing_auth_returns_401_but_whitelisted_homepage_still_loads(monkeypatch):
     monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com")
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://usage.example.com") as client:
         homepage = await client.get("/api/v1/homepage")
@@ -348,7 +389,7 @@ async def test_config_history_returns_recent_snapshots_in_ascending_order():
         config_id = config.id
     await engine.dispose()
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(f"/api/v1/configs/{config_id}/history", params={"hours": 24, "limit": 1}, headers=auth)
         assert response.status_code == 200, response.text
@@ -372,7 +413,7 @@ async def test_config_history_requires_admin_auth():
 @pytest.mark.asyncio
 async def test_config_test_endpoint_returns_usage_without_persisting(monkeypatch):
     monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         tested = await client.post("/api/v1/configs/test", json={"provider": "fake", "label": "scratch", "api_key": "good-key"}, headers=auth)
         assert tested.status_code == 200, tested.text
@@ -402,7 +443,7 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
         expires_at=datetime.now(UTC) + timedelta(hours=1),
         account_id="acct_123",
     ).to_secret_json()
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         leaked_extra = await client.post(
@@ -498,7 +539,7 @@ async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encry
     monkeypatch.setattr(routes.codex_oauth, "start_device_authorization", fake_start_device_authorization)
     monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
         assert started.status_code == 200, started.text
@@ -550,7 +591,7 @@ async def test_codex_device_oauth_poll_hides_raw_oauth_errors(monkeypatch):
     monkeypatch.setattr(routes.codex_oauth, "start_device_authorization", fake_start_device_authorization)
     monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
         assert started.status_code == 200, started.text
@@ -580,7 +621,7 @@ async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_enc
 
     monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
 
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
         assert started.status_code == 200, started.text
@@ -665,7 +706,7 @@ async def providers_payload():
 @pytest.mark.asyncio
 async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
     monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for idx in range(3):
             created = await client.post("/api/v1/configs", json={"provider": "fake", "label": f"provider-{idx}", "api_key": f"key-{idx}", "extra": {"delay": 0.15}}, headers=auth)
@@ -684,7 +725,7 @@ async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
 async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(monkeypatch):
     monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
     monkeypatch.setattr(settings, "snapshot_retention_days", 0)
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post("/api/v1/configs", json={"provider": "fake", "label": "polled", "api_key": "good-key"}, headers=auth)
         second = await client.post("/api/v1/configs", json={"provider": "fake", "label": "old-only", "api_key": "good-key"}, headers=auth)
@@ -720,7 +761,7 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(monk
 
 @pytest.mark.asyncio
 async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
-    admin = {"Authorization": "Bearer test-admin-token-123"}
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
@@ -776,7 +817,7 @@ async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_previously_revoked_api_tokens_can_be_deleted(sqlite_db):
-    admin = {"Authorization": "Bearer test-admin-token-123"}
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
     async with sqlite_db() as session:
         token = ApiToken(
             name="Old revoked token",
@@ -806,8 +847,8 @@ async def test_previously_revoked_api_tokens_can_be_deleted(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_api_token_scope_enforcement_and_admin_backwards_compatibility(sqlite_db):
-    admin = {"Authorization": "Bearer test-admin-token-123"}
+async def test_api_token_scope_enforcement_and_admin_sessions(sqlite_db):
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/v1/api-tokens", json={"name": "History only", "scopes": ["history:read"]}, headers=admin)
         assert created.status_code == 201, created.text
@@ -827,7 +868,7 @@ async def test_api_token_scope_enforcement_and_admin_backwards_compatibility(sql
 
 @pytest.mark.asyncio
 async def test_expired_api_token_is_rejected():
-    admin = {"Authorization": "Bearer test-admin-token-123"}
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
     expired_at = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/v1/api-tokens", json={"name": "Expired", "scopes": ["usage:read"], "expires_at": expired_at}, headers=admin)
@@ -840,7 +881,7 @@ async def test_expired_api_token_is_rejected():
 
 @pytest.mark.asyncio
 async def test_api_token_management_rejects_non_admin_tokens():
-    admin = {"Authorization": "Bearer test-admin-token-123"}
+    admin = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post("/api/v1/api-tokens", json={"name": "Usage only", "scopes": ["usage:read"]}, headers=admin)
         token = created.json()["token"]
@@ -854,7 +895,7 @@ async def test_api_token_management_rejects_non_admin_tokens():
 
 @pytest.mark.asyncio
 async def test_usage_includes_alert_state_from_thresholds(sqlite_db):
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     now = datetime.now(UTC)
     async with sqlite_db() as session:
         config = ProviderConfig(
@@ -901,7 +942,7 @@ async def test_usage_includes_alert_state_from_thresholds(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_usage_without_thresholds_stays_normal(sqlite_db):
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     now = datetime.now(UTC)
     async with sqlite_db() as session:
         config = ProviderConfig(provider="deepseek", label="main", encrypted_api_key="encrypted")
@@ -931,7 +972,7 @@ async def test_usage_without_thresholds_stays_normal(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_create_and_update_config_persist_thresholds(sqlite_db):
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
@@ -961,7 +1002,7 @@ async def test_create_and_update_config_persist_thresholds(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_threshold_rule_requires_at_least_one_value():
-    auth = {"Authorization": "Bearer test-admin-token-123"}
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
