@@ -79,8 +79,8 @@ const theme = createTheme({
     MuiDialog: {
       styleOverrides: {
         paper: {
-          backgroundImage:
-            "linear-gradient(145deg, rgba(31,22,47,.98), rgba(12,9,18,.98))",
+          backgroundImage: "none",
+          background: "rgba(12,9,18,.98)",
           border: "1px solid rgba(255,255,255,.1)",
           boxShadow: "0 30px 100px rgba(0,0,0,.65)",
         },
@@ -105,7 +105,7 @@ const theme = createTheme({
         },
         bar: {
           borderRadius: 20,
-          background: "linear-gradient(90deg, #7557ff, #06c8ff)",
+          background: "#06c8ff",
         },
       },
     },
