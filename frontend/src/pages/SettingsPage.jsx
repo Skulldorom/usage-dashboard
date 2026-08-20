@@ -548,7 +548,7 @@ export default function SettingsPage() {
         <Stack spacing={2}>
           <Box className="homepage-guide api-token-guide">
             <Typography component="h3" variant="subtitle1">Browser extension setup</Typography>
-            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://github.com/Skulldorom/usage-dashboard-extension" target="_blank" rel="noreferrer">Skulldorom/usage-dashboard-extension</a>, then paste your Usage Dashboard URL and a scoped token. The extension preset grants current usage, polling, and provider metadata without config mutation privileges.</Typography>
+            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>, then paste your Usage Dashboard URL and a scoped token. The extension preset grants current usage, polling, and provider metadata without config mutation privileges.</Typography>
             <ol>
               <li>Create a token with the Chrome / Brave extension preset below.</li>
               <li>Copy it immediately; the full token is shown once.</li>
