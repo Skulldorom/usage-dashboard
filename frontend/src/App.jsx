@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
-import { BrowserRouter, NavLink, Route, Routes, useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  NavLink,
+  Route,
+  Routes,
+  useLocation,
+} from "react-router-dom";
 import {
   Alert,
   Box,
@@ -23,7 +29,13 @@ import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import { UNAUTHORIZED_EVENT, api, clearAdminToken, getAdminToken, setAdminToken } from "./api.js";
+import {
+  UNAUTHORIZED_EVENT,
+  api,
+  clearAdminToken,
+  getAdminToken,
+  setAdminToken,
+} from "./api.js";
 import "./styles.css";
 
 const theme = createTheme({
@@ -234,7 +246,8 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
 
 function Navigation({ mobile = false, isAuthenticated = true }) {
   const location = useLocation();
-  const showSettingsSubmenu = !mobile && location.pathname.startsWith("/settings");
+  const showSettingsSubmenu =
+    !mobile && location.pathname.startsWith("/settings");
 
   return (
     <nav
@@ -265,9 +278,16 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
                 <span>{item.label}</span>
               </NavLink>
               {item.to === "/settings" && showSettingsSubmenu && (
-                <div className="settings-submenu" aria-label="Settings sections">
+                <div
+                  className="settings-submenu"
+                  aria-label="Settings sections"
+                >
                   {settingsSubmenuItems.map((subitem) => (
-                    <a key={subitem.href} className="settings-submenu-link" href={subitem.href}>
+                    <a
+                      key={subitem.href}
+                      className="settings-submenu-link"
+                      href={subitem.href}
+                    >
                       {subitem.label}
                     </a>
                   ))}
@@ -461,7 +481,6 @@ function LandingPage({ authStatus, onLogin }) {
   return (
     <section className="landing-page">
       <div className="landing-hero glass-panel">
-        <div className="landing-orb" aria-hidden="true" />
         <Stack spacing={2.4} className="landing-copy">
           <Typography className="page-kicker" component="span">
             Private telemetry command center
@@ -564,7 +583,8 @@ function Shell() {
       setAuthOpen(true);
     }
     window.addEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
+    return () =>
+      window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, []);
 
   async function logout() {
