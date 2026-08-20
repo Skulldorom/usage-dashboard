@@ -51,6 +51,10 @@ function logBridgeFailure(stage, detail) {
   console.warn('[Usage Dashboard] extension bridge failure', { stage, ...detail })
 }
 
+export function extensionSupportsOneClickSetup(response) {
+  return Array.isArray(response?.capabilities) && response.capabilities.includes('authorize-origin')
+}
+
 function mapConfigureResponse(response) {
   if (response?.ok && response.protocolVersion === EXTENSION_PROTOCOL_VERSION) {
     return {
