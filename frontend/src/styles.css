@@ -78,11 +78,11 @@ input {
   stroke-width: 1;
 }
 .network-lines path:nth-child(even) {
-  stroke: rgba(139, 92, 246, 0.18);
+  stroke: rgba(4, 193, 245, 0.17);
 }
 .network-nodes {
-  fill: rgba(167, 139, 250, 0.72);
-  filter: drop-shadow(0 0 7px rgba(139, 92, 246, 0.45));
+  fill: rgba(12, 206, 255, 0.75);
+  filter: drop-shadow(0 0 7px #06c8ff);
 }
 
 .sidebar {
@@ -92,7 +92,7 @@ input {
   z-index: 20;
   padding: 24px 18px;
   background: rgba(13, 9, 24, 0.98);
-  border-right: 1px solid rgba(167, 139, 250, 0.14);
+  border-right: 1px solid rgba(6, 200, 255, 0.14);
 }
 .side-navigation {
   height: 100%;
@@ -161,19 +161,19 @@ input {
 }
 .nav-link.active {
   color: #fff;
-  background: rgba(139, 92, 246, 0.12);
-  border-color: rgba(167, 139, 250, 0.32);
+  background: rgba(6, 200, 255, 0.08);
+  border-color: rgba(6, 200, 255, 0.28);
 }
 .nav-link.active svg {
-  color: #a78bfa;
-  filter: drop-shadow(0 0 7px rgba(139, 92, 246, 0.35));
+  color: #14cbfa;
+  filter: drop-shadow(0 0 7px rgba(6, 200, 255, 0.4));
 }
 .settings-submenu {
   display: grid;
   gap: 5px;
   margin: -2px 0 4px 34px;
   padding-left: 15px;
-  border-left: 1px solid rgba(167, 139, 250, 0.18);
+  border-left: 1px solid rgba(6, 200, 255, 0.18);
 }
 .settings-submenu-link {
   display: block;
@@ -211,7 +211,7 @@ input {
   gap: 20px;
   padding: 0 clamp(24px, 4vw, 58px);
   background: rgba(9, 7, 19, 0.76);
-  border-bottom: 1px solid rgba(167, 139, 250, 0.12);
+  border-bottom: 1px solid rgba(6, 200, 255, 0.12);
   backdrop-filter: blur(22px);
 }
 .topbar-context {
@@ -222,7 +222,7 @@ input {
   font-size: 0.78rem;
 }
 .eyebrow {
-  color: #a78bfa;
+  color: #14cbfa;
   font-weight: 800;
   font-size: 0.69rem;
   letter-spacing: 0.16em;
@@ -244,7 +244,7 @@ input {
 }
 .token-button:hover {
   color: #fff !important;
-  border-color: rgba(167, 139, 250, 0.45) !important;
+  border-color: rgba(6, 200, 255, 0.45) !important;
 }
 .topbar-icon-button {
   width: 42px !important;
@@ -255,8 +255,8 @@ input {
 }
 .topbar-icon-button:hover {
   color: #fff !important;
-  border-color: rgba(167, 139, 250, 0.45) !important;
-  background: rgba(139, 92, 246, 0.1) !important;
+  border-color: rgba(6, 200, 255, 0.45) !important;
+  background: rgba(6, 200, 255, 0.08) !important;
 }
 .topbar-icon-button .MuiSvgIcon-root {
   font-size: 1.25rem;
@@ -290,7 +290,7 @@ input {
   display: flex;
   align-items: center;
   gap: 9px;
-  color: #bda7ff;
+  color: #20cffa;
   font-size: 0.72rem;
   font-weight: 800;
   letter-spacing: 0.15em;
@@ -313,7 +313,7 @@ input {
 .glass-panel {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(6, 200, 255, 0.14);
   background: rgba(16, 12, 29, 0.92);
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(14px);
@@ -477,7 +477,7 @@ input {
   align-items: center;
   gap: 4px;
   padding: 0 9px;
-  border: 1px solid rgba(167, 139, 250, 0.28);
+  border: 1px solid rgba(6, 200, 255, 0.28);
   border-radius: 999px;
   color: #9eeaff;
   background: rgba(6, 200, 255, 0.06);
@@ -640,7 +640,7 @@ input {
 .config-row.is-dragging {
   opacity: 0.58;
   cursor: grabbing;
-  background: rgba(139, 92, 246, 0.1);
+  background: rgba(6, 200, 255, 0.08);
   border-color: rgba(6, 200, 255, 0.35);
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.28);
   transform: scale(0.992);
@@ -739,8 +739,8 @@ input {
 .config-drag-handle:hover,
 .config-order-controls .MuiIconButton-root:hover {
   color: #fff;
-  border-color: rgba(167, 139, 250, 0.45);
-  background: rgba(139, 92, 246, 0.13);
+  border-color: rgba(6, 200, 255, 0.45);
+  background: rgba(6, 200, 255, 0.11);
 }
 .config-actions {
   display: flex;
@@ -768,7 +768,7 @@ input {
 .provider-setup-guide,
 .homepage-guide {
   padding: 18px;
-  border: 1px solid rgba(167, 139, 250, 0.18);
+  border: 1px solid rgba(6, 200, 255, 0.18);
   border-radius: 14px;
   background: rgba(6, 200, 255, 0.06);
 }
@@ -913,7 +913,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   margin-top: 10px;
   padding: 10px 12px;
   overflow-wrap: anywhere;
-  border: 1px solid rgba(167, 139, 250, 0.18);
+  border: 1px solid rgba(6, 200, 255, 0.18);
   border-radius: 11px;
   background: rgba(0, 0, 0, 0.24);
 }
@@ -975,10 +975,10 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .landing-hint {
   max-width: 620px;
   padding: 14px 16px;
-  border: 1px solid rgba(167, 139, 250, 0.22);
+  border: 1px solid rgba(6, 200, 255, 0.16);
   border-radius: 14px;
-  color: #ddd2ff;
-  background: rgba(139, 92, 246, 0.08);
+  color: #c8f5ff;
+  background: rgba(6, 200, 255, 0.055);
   font-size: 0.88rem;
 }
 .landing-card-stack {
@@ -1000,14 +1000,14 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .landing-stat-card {
   min-height: 118px;
   padding: 22px;
-  border: 1px solid rgba(167, 139, 250, 0.14);
+  border: 1px solid rgba(6, 200, 255, 0.14);
   border-radius: 20px;
   background: rgba(22, 17, 38, 0.82);
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
 }
 .landing-stat-card.primary {
-  border-color: rgba(167, 139, 250, 0.38);
-  background: rgba(139, 92, 246, 0.16);
+  border-color: rgba(6, 200, 255, 0.32);
+  background: rgba(6, 200, 255, 0.14);
 }
 .landing-stat-card span {
   display: block;
@@ -1053,8 +1053,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 }
 .github-project-link:hover {
   color: #fff;
-  border-color: rgba(167, 139, 250, 0.48);
-  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(6, 200, 255, 0.48);
+  background: rgba(6, 200, 255, 0.08);
   transform: translateY(-1px);
 }
 .github-logo {
@@ -1106,7 +1106,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     display: flex;
     align-items: center;
     padding: 7px;
-    border: 1px solid rgba(167, 139, 250, 0.16);
+    border: 1px solid rgba(6, 200, 255, 0.16);
     border-radius: 18px;
     background: rgba(17, 11, 29, 0.92);
     box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55);
