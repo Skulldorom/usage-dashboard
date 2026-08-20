@@ -1,6 +1,7 @@
 import { EXTENSION_MESSAGE_TYPES, EXTENSION_PROTOCOL_VERSION, getExtensionTargets } from './extensionTargets.js'
 
 const DEFAULT_TIMEOUT_MS = 1000
+const DEFAULT_CONFIGURE_TIMEOUT_MS = 10000
 
 function defaultRuntime() {
   return globalThis.chrome?.runtime || null
@@ -71,7 +72,7 @@ function mapConfigureResponse(response) {
   return { status: 'error', error: responseErrorMessage(response), response }
 }
 
-export function createExtensionBridge({ runtime = defaultRuntime(), targets = getExtensionTargets(), timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export function createExtensionBridge({ runtime = defaultRuntime(), targets = getExtensionTargets(), timeoutMs = DEFAULT_TIMEOUT_MS, configureTimeoutMs = DEFAULT_CONFIGURE_TIMEOUT_MS } = {}) {
   async function ping() {
     if (!runtime?.sendMessage) return { status: 'unsupported-browser' }
     if (!targets.length) return { status: 'unsupported-browser' }
@@ -133,9 +134,9 @@ export function createExtensionBridge({ runtime = defaultRuntime(), targets = ge
     const message = { type: EXTENSION_MESSAGE_TYPES.configure, protocolVersion: EXTENSION_PROTOCOL_VERSION, token }
     if (replaceExisting) message.replaceExisting = true
 
-    const result = await sendRuntimeMessage({ runtime, target, timeoutMs, message })
-    if (result.timedOut) { const detail = { status: 'timeout' }; logBridgeFailure('authorize-origin', detail); return detail }
-    if (result.error) { const detail = { status: statusFromError(result.error), error: result.error }; logBridgeFailure('authorize-origin', detail); return detail }
+    const result = await sendRuntimeMessage({ runtime, target, timeoutMs: configureTimeoutMs, message })
+    if (result.timedOut) { const detail = { status: 'timeout' }; logBridgeFailure('configure', detail); return detail }
+    if (result.error) { const detail = { status: statusFromError(result.error), error: result.error }; logBridgeFailure('configure', detail); return detail }
     return mapConfigureResponse(result.response)
   }
 

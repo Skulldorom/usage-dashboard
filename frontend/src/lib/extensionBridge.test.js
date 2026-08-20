@@ -122,6 +122,26 @@ describe('extensionBridge', () => {
     expect(JSON.stringify(calls[0].message)).not.toContain('dashboardUrl')
   })
 
+  it('uses a longer configure timeout and logs configure-stage timeout failures', async () => {
+    vi.useFakeTimers()
+    const { runtime } = runtimeWithResponses(['no-callback'])
+    const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 5, configureTimeoutMs: 50 })
+    const pending = bridge.configure({ target: chromeTarget, token: 'udt_secret' })
+
+    await vi.advanceTimersByTimeAsync(5)
+    await expect(Promise.race([pending, Promise.resolve('still-pending')])).resolves.toBe('still-pending')
+
+    await vi.advanceTimersByTimeAsync(45)
+    const result = await pending
+
+    expect(result).toMatchObject({ status: 'timeout' })
+    expect(console.warn).toHaveBeenCalledWith(
+      '[Usage Dashboard] extension bridge failure',
+      expect.objectContaining({ stage: 'configure', status: 'timeout' }),
+    )
+    vi.useRealTimers()
+  })
+
   it('passes explicit replacement intent and maps permission denial', async () => {
     const { runtime, calls } = runtimeWithResponses([{ ok: false, protocolVersion: 1, code: 'permission-denied' }])
     const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 20 })

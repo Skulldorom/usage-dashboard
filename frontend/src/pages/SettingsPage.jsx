@@ -795,7 +795,26 @@ export default function SettingsPage() {
           <Box className="integration-card-body">
             <Stack spacing={2}>
               <Box className="homepage-guide api-token-guide">
-                <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. One-click setup checks for the extension before creating a token, then sends only the scoped token to the extension. The extension derives this dashboard URL from the browser sender origin.</Typography>
+                <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. Before using one-click setup, open the extension Options page and paste this dashboard URL so the extension knows which self-hosted instance to trust.</Typography>
+                <Stack className="extension-url-inline-copy" direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mt: 1.5 }}>
+                  <TextField
+                    size="small"
+                    fullWidth
+                    label="Dashboard URL for extension options"
+                    value={extensionUrl}
+                    InputProps={{ readOnly: true }}
+                    onFocus={(event) => event.target.select()}
+                    helperText="Paste this in the extension Options page before one-click setup."
+                  />
+                  <Button
+                    variant="outlined"
+                    onClick={copyExtensionUrl}
+                    startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
+                    sx={{ flex: '0 0 auto' }}
+                  >
+                    {extensionUrlCopied ? 'Copied' : 'Copy'}
+                  </Button>
+                </Stack>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
                   <Button
                     variant="contained"
@@ -938,7 +957,7 @@ export default function SettingsPage() {
       <DialogContent>
         <Stack spacing={2.25} sx={{ mt: 1 }}>
           <Box className="homepage-guide api-token-guide">
-            <Typography variant="body2" color="text.secondary">Use this fallback when one-click setup cannot reach the extension. The generated token uses the extension preset and the full token is shown once.</Typography>
+            <Typography variant="body2" color="text.secondary">Use this fallback when one-click setup cannot reach the extension. For one-click setup, paste the dashboard URL into the extension Options page first; manual setup uses the same URL plus a token you copy yourself. The generated token uses the extension preset and the full token is shown once.</Typography>
             <ol>
               <li>Create a token with the browser extension preset.</li>
               <li>Copy it immediately; the full token is shown once.</li>

@@ -11,13 +11,21 @@ browser) installs from the same listing.
 
 ## Configure
 
-The extension needs the URL of your Usage Dashboard instance and a bearer token:
+The extension needs the URL of your Usage Dashboard instance before either setup
+path can work:
 
-- **One-click setup**: sign in to your dashboard and use the **Connect
-  extension** button.
-- **Manual setup**: open the extension **Options** page and enter the dashboard
-  URL plus an [API token](/configuration/api-tokens) with `usage:read` and
-  `poll:write` scopes.
+1. Sign in to your dashboard and open **Settings → Integrations → Browser
+   extension**.
+2. Copy the dashboard URL shown there.
+3. Open the extension **Options** page and paste the dashboard URL.
+4. Return to the dashboard and choose a setup path:
+   - **One-click setup**: use **Connect extension** to create and send a scoped
+     token automatically.
+   - **Manual setup**: use **Manual setup** to create a token, then paste it in
+     the extension Options page yourself.
+
+Manual tokens should use [API token](/configuration/api-tokens) scopes
+`usage:read`, `poll:write`, and `configs:read`.
 
 ## Unpacked / dev builds
 
