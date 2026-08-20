@@ -101,6 +101,7 @@ const API_TOKEN_SCOPES = [
 ]
 
 const EXTENSION_DEFAULT_SCOPES = ['usage:read', 'poll:write', 'configs:read']
+const HOMEPAGE_DEFAULT_SCOPES = ['usage:read']
 
 const initialApiTokenForm = {
   name: 'Chrome / Brave extension',
@@ -115,6 +116,11 @@ const initialHomepageForm = {
   authMode: 'bearer',
   token: '',
   includeToken: false,
+}
+
+const initialHomepageTokenForm = {
+  name: 'Homepage widget',
+  expires_at: '',
 }
 
 const EXTENSION_CONNECT_MESSAGES = {
@@ -174,6 +180,10 @@ export default function SettingsPage() {
   const [extensionUrlCopied, setExtensionUrlCopied] = useState(false)
   const extensionUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const [createdApiToken, setCreatedApiToken] = useState(null)
+  const [homepageTokenForm, setHomepageTokenForm] = useState(initialHomepageTokenForm)
+  const [homepageTokenSaving, setHomepageTokenSaving] = useState(false)
+  const [createdHomepageToken, setCreatedHomepageToken] = useState(null)
+  const [homepageTokenCopied, setHomepageTokenCopied] = useState(false)
   const [extensionConnectState, setExtensionConnectState] = useState({ status: 'idle' })
   const [extensionConnectBusy, setExtensionConnectBusy] = useState(false)
   const [extensionReplacement, setExtensionReplacement] = useState(null)
@@ -275,6 +285,7 @@ export default function SettingsPage() {
   }
   function updateHomepageForm(patch) {
     setHomepageCopied(false)
+    setHomepageTokenCopied(false)
     setHomepageForm((current) => ({ ...current, ...patch }))
   }
   async function copyHomepageYaml() {
@@ -391,6 +402,35 @@ export default function SettingsPage() {
       window.setTimeout(() => setApiTokenCopied(false), 2200)
     } catch {
       window.prompt('Copy API token', createdApiToken.token)
+    }
+  }
+  async function createHomepageApiToken() {
+    setError('')
+    setHomepageTokenSaving(true)
+    setHomepageTokenCopied(false)
+    try {
+      const token = await api.createApiToken({
+        name: homepageTokenForm.name.trim() || initialHomepageTokenForm.name,
+        scopes: HOMEPAGE_DEFAULT_SCOPES,
+        expires_at: homepageTokenForm.expires_at ? new Date(homepageTokenForm.expires_at).toISOString() : null,
+      })
+      setCreatedHomepageToken(token)
+      updateHomepageForm({ authMode: 'bearer', token: token.token, includeToken: true })
+      setHomepageTokenForm(initialHomepageTokenForm)
+      await load()
+    } catch (err) { setError(err.message) }
+    finally { setHomepageTokenSaving(false) }
+  }
+  async function copyCreatedHomepageToken() {
+    if (!createdHomepageToken?.token) return
+    setHomepageTokenCopied(false)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(createdHomepageToken.token)
+      else window.prompt('Copy Homepage API token', createdHomepageToken.token)
+      setHomepageTokenCopied(true)
+      window.setTimeout(() => setHomepageTokenCopied(false), 2200)
+    } catch {
+      window.prompt('Copy Homepage API token', createdHomepageToken.token)
     }
   }
   async function toggleApi(config) { await api.updateConfig(config.id, { is_enabled: !config.is_enabled }); await load() }
@@ -615,110 +655,129 @@ export default function SettingsPage() {
         </div>
       })}</div>}
     </Paper>
-    <Paper id="api-tokens" className="settings-panel api-token-panel glass-panel" variant="outlined">
-      <div className="settings-panel-header"><Box><Typography variant="h6">API tokens</Typography><Typography variant="body2" color="text.secondary">Scoped bearer tokens for browser extensions and other external clients.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
-      <Box className="api-token-grid">
-        <Stack spacing={2}>
-          <Box className="homepage-guide api-token-guide">
-            <Typography component="h3" variant="subtitle1">Browser extension setup</Typography>
-            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. One-click setup checks for the extension before creating a token, then sends only the scoped token to the extension. The extension derives this dashboard URL from the browser sender origin.</Typography>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
-              <Button
-                variant="contained"
-                onClick={() => connectExtension()}
-                disabled={extensionConnectBusy || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0}
-                startIcon={extensionConnectBusy ? <CircularProgress size={16} color="inherit" /> : <ExtensionRoundedIcon />}
-              >
-                {extensionConnectBusy ? 'Connecting…' : 'Connect extension'}
-              </Button>
-              <Button component="a" href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer" variant="outlined" endIcon={<LaunchRoundedIcon />}>Install extension</Button>
-            </Stack>
-            {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status] && <Alert severity={EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].severity} sx={{ mt: 1.5 }}>
-              {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].text}
-            </Alert>}
-            <Typography component="h4" variant="subtitle2" sx={{ mt: 2 }}>Manual setup fallback</Typography>
-            <ol>
-              <li>Create a token with the Chrome / Brave extension preset below.</li>
-              <li>Copy it immediately; the full token is shown once.</li>
-              <li>Copy the dashboard URL below, then open the extension options page and paste it in. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
-              <li>Paste the token as the extension bearer token and save.</li>
-            </ol>
-            <Box className="extension-url-copy">
-              <Stack direction="row" spacing={1} alignItems="flex-start">
-                <TextField
-                  fullWidth
-                  label="Dashboard URL"
-                  value={extensionUrl}
-                  InputProps={{ readOnly: true }}
-                  onFocus={(event) => event.target.select()}
-                  helperText="The extension appends /api/v1 automatically."
-                />
-                <Button
-                  variant="outlined"
-                  onClick={copyExtensionUrl}
-                  startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
-                  sx={{ flex: '0 0 auto' }}
-                >
-                  {extensionUrlCopied ? 'Copied' : 'Copy'}
-                </Button>
+    <Paper id="integrations" className="settings-panel integrations-panel glass-panel" variant="outlined">
+      <div className="settings-panel-header"><Box><Typography variant="h6">Integrations</Typography><Typography variant="body2" color="text.secondary">Connect external clients with scoped tokens instead of sharing your admin session.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
+      <Box className="integrations-stack">
+        <Box id="browser-extension-integration" className="integration-card browser-extension-card">
+          <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Browser extension</Typography><Typography variant="body2" color="text.secondary">One-click setup for Chrome/Brave and compatible browser builds.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
+          <Box className="api-token-grid integration-card-body">
+            <Stack spacing={2}>
+              <Box className="homepage-guide api-token-guide">
+                <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. One-click setup checks for the extension before creating a token, then sends only the scoped token to the extension. The extension derives this dashboard URL from the browser sender origin.</Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+                  <Button
+                    variant="contained"
+                    onClick={() => connectExtension()}
+                    disabled={extensionConnectBusy || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0}
+                    startIcon={extensionConnectBusy ? <CircularProgress size={16} color="inherit" /> : <ExtensionRoundedIcon />}
+                  >
+                    {extensionConnectBusy ? 'Connecting…' : 'Connect extension'}
+                  </Button>
+                  <Button component="a" href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer" variant="outlined" endIcon={<LaunchRoundedIcon />}>Install extension</Button>
+                </Stack>
+                {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status] && <Alert severity={EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].severity} sx={{ mt: 1.5 }}>
+                  {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].text}
+                </Alert>}
+                <Typography component="h4" variant="subtitle2" sx={{ mt: 2 }}>Manual setup fallback</Typography>
+                <ol>
+                  <li>Create a token with the browser extension preset below.</li>
+                  <li>Copy it immediately; the full token is shown once.</li>
+                  <li>Copy the dashboard URL below, then open the extension options page and paste it in. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
+                  <li>Paste the token as the extension bearer token and save.</li>
+                </ol>
+                <Box className="extension-url-copy">
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <TextField
+                      fullWidth
+                      label="Dashboard URL"
+                      value={extensionUrl}
+                      InputProps={{ readOnly: true }}
+                      onFocus={(event) => event.target.select()}
+                      helperText="The extension appends /api/v1 automatically."
+                    />
+                    <Button
+                      variant="outlined"
+                      onClick={copyExtensionUrl}
+                      startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
+                      sx={{ flex: '0 0 auto' }}
+                    >
+                      {extensionUrlCopied ? 'Copied' : 'Copy'}
+                    </Button>
+                  </Stack>
+                </Box>
+              </Box>
+              <TextField label="Extension token name" value={apiTokenForm.name} onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })} helperText="This token is only for the browser extension. It will not be reused for Homepage unless you manually copy it there, which would be weird but legal." />
+              <TextField label="Extension token expires at (optional)" type="datetime-local" value={apiTokenForm.expires_at} onChange={(event) => setApiTokenForm({ ...apiTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />
+              <FormGroup className="api-token-scope-grid">
+                {API_TOKEN_SCOPES.map((scope) => <FormControlLabel key={scope.id} control={<Checkbox checked={apiTokenForm.scopes.includes(scope.id)} onChange={() => toggleApiTokenScope(scope.id)} />} label={<Box><Typography variant="body2">{scope.label}</Typography><Typography variant="caption" color="text.secondary">{scope.id} — {scope.help}</Typography></Box>} />)}
+              </FormGroup>
+              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Button variant="outlined" onClick={() => setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })}>Use extension preset</Button>
+                <Button variant="contained" onClick={createExtensionApiToken} disabled={apiTokenSaving || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0} startIcon={apiTokenSaving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{apiTokenSaving ? 'Creating…' : 'Create extension token'}</Button>
               </Stack>
+              {createdApiToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={copyCreatedApiToken} startIcon={apiTokenCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{apiTokenCopied ? 'Copied' : 'Copy'}</Button>}>
+                <strong>{createdApiToken.name}</strong> was created for the browser extension. Copy this token now; it will not be shown again.
+                <Box component="code" className="one-time-token">{createdApiToken.token}</Box>
+              </Alert>}
+            </Stack>
+            <Box className="api-token-list">
+              <Typography variant="overline" color="primary.main">Existing integration tokens</Typography>
+              {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No scoped tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create separate tokens for the extension and Homepage; tiny blast radiuses, very adult.</Typography></Box> : apiTokens.map((token) => {
+                const revoked = Boolean(token.revoked_at)
+                const expired = token.expires_at && new Date(token.expires_at) <= new Date()
+                const scopes = token.scopes || []
+                const tokenKind = scopes.length === 1 && scopes.includes('usage:read') ? 'Homepage-ready' : scopes.includes('poll:write') && scopes.includes('configs:read') ? 'Extension-ready' : 'Scoped token'
+                return <Box className="api-token-row" key={token.id}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
+                    <Box><Typography variant="subtitle1">{token.name}</Typography><Typography variant="caption" color="text.secondary">{tokenKind} • Prefix {token.token_prefix} • created {new Date(token.created_at).toLocaleString()} • last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'never'}</Typography></Box>
+                    <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
+                  </Stack>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{scopes.map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)}>{revoked ? 'Delete' : 'Revoke'}</Button></Stack>
+                </Box>
+              })}
             </Box>
           </Box>
-          <TextField label="Token name" value={apiTokenForm.name} onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })} helperText="Use a name you will recognize later, because the token itself will vanish like a competent intern." />
-          <TextField label="Expires at (optional)" type="datetime-local" value={apiTokenForm.expires_at} onChange={(event) => setApiTokenForm({ ...apiTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />
-          <FormGroup className="api-token-scope-grid">
-            {API_TOKEN_SCOPES.map((scope) => <FormControlLabel key={scope.id} control={<Checkbox checked={apiTokenForm.scopes.includes(scope.id)} onChange={() => toggleApiTokenScope(scope.id)} />} label={<Box><Typography variant="body2">{scope.label}</Typography><Typography variant="caption" color="text.secondary">{scope.id} — {scope.help}</Typography></Box>} />)}
-          </FormGroup>
-          <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-            <Button variant="outlined" onClick={() => setApiTokenForm({ ...initialApiTokenForm })}>Use extension preset</Button>
-            <Button variant="contained" onClick={createExtensionApiToken} disabled={apiTokenSaving || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0} startIcon={apiTokenSaving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{apiTokenSaving ? 'Creating…' : 'Create token'}</Button>
-          </Stack>
-          {createdApiToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={copyCreatedApiToken} startIcon={apiTokenCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{apiTokenCopied ? 'Copied' : 'Copy'}</Button>}>
-            <strong>{createdApiToken.name}</strong> was created. Copy this token now; it will not be shown again.
-            <Box component="code" className="one-time-token">{createdApiToken.token}</Box>
-          </Alert>}
-        </Stack>
-        <Box className="api-token-list">
-          <Typography variant="overline" color="primary.main">Existing tokens</Typography>
-          {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No API tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create one for the extension; use scoped tokens instead of your admin session.</Typography></Box> : apiTokens.map((token) => {
-            const revoked = Boolean(token.revoked_at)
-            const expired = token.expires_at && new Date(token.expires_at) <= new Date()
-            return <Box className="api-token-row" key={token.id}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
-                <Box><Typography variant="subtitle1">{token.name}</Typography><Typography variant="caption" color="text.secondary">Prefix {token.token_prefix} • created {new Date(token.created_at).toLocaleString()} • last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'never'}</Typography></Box>
-                <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
-              </Stack>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{(token.scopes || []).map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)}>{revoked ? 'Delete' : 'Revoke'}</Button></Stack>
-            </Box>
-          })}
         </Box>
-      </Box>
-    </Paper>
-    <Paper id="homepage-integration" className="settings-panel homepage-integration-panel glass-panel" variant="outlined">
-      <div className="settings-panel-header"><Box><Typography variant="h6">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
-      <Box className="homepage-guide">
-        <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
-        <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Dynamic provider list is the default because it renders one row per enabled API. Switch to summary cards only when you want top-level stats.</Typography>
-        <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use a scoped token with usage:read.</Typography>
-      </Box>
-      <Box className="homepage-config-grid">
-        <Stack spacing={2}>
-          <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach. The API path is fixed to /api/v1/homepage." />
-          <TextField label="Refresh interval (ms)" value={homepageForm.refreshInterval} onChange={(event) => updateHomepageForm({ refreshInterval: event.target.value })} placeholder="300000" helperText="Homepage refresh interval in milliseconds. Leave blank to omit." />
-          <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="dynamic-list">Dynamic provider list</MenuItem><MenuItem value="summary">Summary cards</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
-          <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
-          {homepageForm.authMode === 'bearer' && <>
-            <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Use a scoped token with usage:read. Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
-            <label className="config-switch homepage-token-switch"><span>Include token in YAML</span><Tooltip title="Off keeps a placeholder so copied YAML does not leak secrets on screen."><Switch checked={homepageForm.includeToken} onChange={(event) => updateHomepageForm({ includeToken: event.target.checked })} color="warning" inputProps={{ 'aria-label': 'Include token in generated YAML' }} /></Tooltip></label>
-          </>}
-        </Stack>
-        <Box className="homepage-yaml-preview">
-          <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
-            <Box><Typography variant="overline" color="primary.main">Live YAML preview</Typography><Typography variant="caption" color="text.secondary" display="block">Updates as you type; copy, paste, done.</Typography></Box>
-            <Button variant="contained" size="small" onClick={copyHomepageYaml} startIcon={homepageCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{homepageCopied ? 'Copied' : 'Copy YAML'}</Button>
-          </Stack>
-          <pre><code>{homepagePreview}</code></pre>
+        <Box id="homepage-integration" className="integration-card homepage-integration-card">
+          <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Homepage integration</Typography><Typography variant="body2" color="text.secondary">Generate a paste-ready services.yaml entry for gethomepage.dev with its own scoped token.</Typography></Box><ContentCopyRoundedIcon color="primary" /></div>
+          <Box className="homepage-guide integration-guide">
+            <Typography component="h4" variant="subtitle1">Where this YAML goes</Typography>
+            <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Dynamic provider list is the default because it renders one row per enabled API. Switch to summary cards only when you want top-level stats.</Typography>
+            <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise generate a Homepage token below; it only gets <code>usage:read</code>.</Typography>
+          </Box>
+          <Box className="homepage-config-grid integration-card-body">
+            <Stack spacing={2}>
+              <TextField label="Usage Dashboard URL / hostname" value={homepageForm.dashboardUrl} onChange={(event) => updateHomepageForm({ dashboardUrl: event.target.value })} placeholder="https://usage.example.com" helperText="The public URL Homepage can reach. The API path is fixed to /api/v1/homepage." />
+              <TextField label="Refresh interval (ms)" value={homepageForm.refreshInterval} onChange={(event) => updateHomepageForm({ refreshInterval: event.target.value })} placeholder="300000" helperText="Homepage refresh interval in milliseconds. Leave blank to omit." />
+              <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="dynamic-list">Dynamic provider list</MenuItem><MenuItem value="summary">Summary cards</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
+              <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
+              {homepageForm.authMode === 'bearer' && <>
+                <Box className="homepage-token-generator">
+                  <Stack spacing={1.5}>
+                    <Typography component="h4" variant="subtitle2">Homepage token</Typography>
+                    <Typography variant="body2" color="text.secondary">Generate a separate token with only <code>usage:read</code>. The full token is shown once and inserted into the YAML preview.</Typography>
+                    <TextField label="Homepage token name" value={homepageTokenForm.name} onChange={(event) => setHomepageTokenForm({ ...homepageTokenForm, name: event.target.value })} />
+                    <TextField label="Homepage token expires at (optional)" type="datetime-local" value={homepageTokenForm.expires_at} onChange={(event) => setHomepageTokenForm({ ...homepageTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} />
+                    <Button variant="contained" onClick={createHomepageApiToken} disabled={homepageTokenSaving || !homepageTokenForm.name.trim()} startIcon={homepageTokenSaving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{homepageTokenSaving ? 'Generating…' : 'Generate Homepage token'}</Button>
+                  </Stack>
+                </Box>
+                <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Use a scoped token with usage:read. Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
+                <label className="config-switch homepage-token-switch"><span>Include token in YAML</span><Tooltip title="Off keeps a placeholder so copied YAML does not leak secrets on screen."><Switch checked={homepageForm.includeToken} onChange={(event) => updateHomepageForm({ includeToken: event.target.checked })} color="warning" inputProps={{ 'aria-label': 'Include token in generated YAML' }} /></Tooltip></label>
+                {createdHomepageToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={copyCreatedHomepageToken} startIcon={homepageTokenCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{homepageTokenCopied ? 'Copied' : 'Copy'}</Button>}>
+                  <strong>{createdHomepageToken.name}</strong> was created with <code>usage:read</code> only and inserted into the YAML preview. Copy it now; it will not be shown again.
+                  <Box component="code" className="one-time-token">{createdHomepageToken.token}</Box>
+                </Alert>}
+              </>}
+            </Stack>
+            <Box className="homepage-yaml-preview">
+              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 1.5 }}>
+                <Box><Typography variant="overline" color="primary.main">Live YAML preview</Typography><Typography variant="caption" color="text.secondary" display="block">Updates as you type; copy, paste, done.</Typography></Box>
+                <Button variant="contained" size="small" onClick={copyHomepageYaml} startIcon={homepageCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{homepageCopied ? 'Copied' : 'Copy YAML'}</Button>
+              </Stack>
+              <pre><code>{homepagePreview}</code></pre>
+            </Box>
+          </Box>
         </Box>
       </Box>
     </Paper>
