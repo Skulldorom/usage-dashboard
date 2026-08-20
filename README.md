@@ -49,6 +49,7 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |
 | `BACKEND_CORS_ORIGINS` | Comma-separated allowed origins for the FastAPI API. |
 | `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
+| `EXTENSION_TARGET_CHROME_ID` / `EXTENSION_TARGET_*_ID` | Optional runtime browser extension IDs used by one-click setup from the frontend container. Useful for testing unpacked/dev Chrome, Edge, Opera, Firefox, or Safari builds without rebuilding the GHCR image. |
 | `AUTO_POLL_ENABLED` | Enables background provider polling. Defaults to `true`. |
 | `AUTO_POLL_INTERVAL_MINUTES` | Minutes between automatic provider polls. Defaults to `60`. |
 
@@ -170,6 +171,16 @@ HOMEPAGE_ALLOWED_HOSTS=usage.example.com,status.local
 ```
 
 Only `GET /api/v1/homepage` checks this allowlist. Without the allowlist, Homepage can also use a scoped API token with `usage:read`. `/configs`, `/poll`, `/usage`, and history endpoints still require a valid admin session or scoped API token with the matching route scope. Hostnames are matched case-insensitively and any port suffix is ignored.
+
+### Testing one-click browser extension setup
+
+Set `EXTENSION_TARGET_CHROME_ID` in `.env` to the ID shown on Chrome's unpacked extension page, then restart the frontend container:
+
+```bash
+EXTENSION_TARGET_CHROME_ID=<dev-extension-id> docker compose up -d frontend
+```
+
+The frontend loads this at runtime through `/runtime-config.js`, so GHCR images do not need to be rebuilt for extension ID testing. Equivalent `EXTENSION_TARGET_EDGE_ID`, `EXTENSION_TARGET_OPERA_ID`, `EXTENSION_TARGET_FIREFOX_ID`, and `EXTENSION_TARGET_SAFARI_ID` variables are available for other browser builds as they exist.
 
 ## Development
 

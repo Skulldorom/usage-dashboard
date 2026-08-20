@@ -140,12 +140,19 @@ button, input { font: inherit; }
 .provider-setup-guide ol { margin: 12px 0 15px; padding-left: 21px; color: #c6becf; font-size: .86rem; line-height: 1.55; }
 .provider-setup-guide li + li { margin-top: 6px; }
 .homepage-guide { margin: 18px 24px 0; }
+.integrations-stack { display: grid; gap: 20px; padding: 22px 24px 24px; }
+.integration-card { border: 1px solid rgba(255,255,255,.09); border-radius: 18px; background: rgba(0,0,0,.14); overflow: hidden; }
+.integration-card-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,.075); background: rgba(255,255,255,.018); }
+.integration-card-body { padding: 20px; }
+.integration-guide { margin: 20px 20px 0; }
+.homepage-token-generator { padding: 16px; border: 1px solid rgba(143,60,255,.2); border-radius: 14px; background: linear-gradient(135deg, rgba(143,60,255,.08), rgba(6,200,255,.045)); }
 .homepage-guide code { color: #9eeaff; }
 .homepage-config-grid { display: grid; grid-template-columns: minmax(260px, .86fr) minmax(320px, 1.14fr); gap: 22px; padding: 22px 24px 24px; }
 .homepage-yaml-preview { min-width: 0; padding: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; background: rgba(0,0,0,.22); }
 .homepage-yaml-preview pre { min-height: 430px; max-height: 620px; margin: 0; padding: 18px; overflow: auto; border: 1px solid rgba(6,200,255,.14); border-radius: 13px; color: #e9f8ff; background: rgba(3, 8, 13, .74); font-size: .82rem; line-height: 1.55; white-space: pre; }
 .homepage-token-switch { justify-content: space-between; padding: 6px 0 0; }
 .api-token-grid { display: grid; grid-template-columns: minmax(280px, .95fr) minmax(320px, 1.05fr); gap: 22px; padding: 22px 24px 24px; }
+.integration-card-body.api-token-grid, .integration-card-body.homepage-config-grid { padding: 20px; }
 .api-token-guide { margin: 0; }
 .api-token-guide a { color: #9eeaff; font-weight: 750; }
 .api-token-guide ol { margin: 12px 0 0; padding-left: 21px; color: #c6becf; font-size: .86rem; line-height: 1.55; }
@@ -225,6 +232,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert
   .config-row { grid-template-columns: auto 1fr; gap: 12px; min-height: 98px; }
   .config-order-controls { grid-row: span 3; align-self: start; }
   .homepage-guide { margin: 14px 18px 0; }
+  .integrations-stack { padding: 18px; }
+  .integration-guide { margin: 18px 18px 0; }
   .api-token-guide { margin: 0; }
   .homepage-config-grid, .api-token-grid { padding: 18px; }
   .api-token-scope-grid { grid-template-columns: 1fr; }

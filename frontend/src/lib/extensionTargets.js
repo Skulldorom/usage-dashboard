@@ -43,11 +43,16 @@ export const EXTENSION_TARGETS = {
   },
 }
 
+function runtimeExtensionTargetId(key) {
+  return globalThis.__USAGE_DASHBOARD_CONFIG__?.extensionTargets?.[key] || ''
+}
+
 export function getExtensionTargets(env = import.meta.env) {
   return Object.entries(EXTENSION_TARGETS)
     .map(([key, target]) => {
+      const runtimeId = runtimeExtensionTargetId(key)
       const overrideId = target.devOverrideEnv ? env?.[target.devOverrideEnv] : ''
-      const id = overrideId || target.id
+      const id = runtimeId || overrideId || target.id
       if (!id) return null
       return {
         key,

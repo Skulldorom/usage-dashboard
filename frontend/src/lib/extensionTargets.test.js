@@ -35,4 +35,22 @@ describe('extensionTargets', () => {
     expect(targets.map((target) => target.key)).not.toContain('firefox')
     expect(targets.map((target) => target.key)).not.toContain('safari')
   })
+
+  it('prefers runtime extension target ids over Vite env and source defaults', () => {
+    globalThis.__USAGE_DASHBOARD_CONFIG__ = { extensionTargets: { chrome: 'runtime-chrome-id' } }
+
+    expect(getExtensionTargets({ VITE_EXTENSION_TARGET_CHROME_ID: 'vite-dev-id' })).toEqual([
+      expect.objectContaining({ key: 'chrome', id: 'runtime-chrome-id', productionId: 'lajooelgpfeholbdkmammfladpefohgk' }),
+    ])
+
+    delete globalThis.__USAGE_DASHBOARD_CONFIG__
+  })
+
+  it('ignores blank runtime extension target ids', () => {
+    globalThis.__USAGE_DASHBOARD_CONFIG__ = { extensionTargets: { chrome: '' } }
+
+    expect(getExtensionTargets({ VITE_EXTENSION_TARGET_CHROME_ID: 'vite-dev-id' })[0].id).toBe('vite-dev-id')
+
+    delete globalThis.__USAGE_DASHBOARD_CONFIG__
+  })
 })
