@@ -38,7 +38,7 @@ import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsAct
 import { api } from '../api.js'
 import ProviderIcon from '../components/ProviderIcon.jsx'
 import { formatThresholdRule } from '../lib/usageFormat.js'
-import { extensionBridge } from '../lib/extensionBridge.js'
+import { extensionBridge, extensionSupportsOneClickSetup } from '../lib/extensionBridge.js'
 import { homepageYaml } from '../lib/homepageYaml.js'
 
 const PROVIDER_SETUP = {
@@ -359,19 +359,31 @@ export default function SettingsPage() {
         setExtensionConnectState({ status: ping.status })
         return
       }
+      if (!extensionSupportsOneClickSetup(ping.response)) {
+        logExtensionSetup('capability-check', {
+          status: 'incompatible-protocol',
+          target: ping.target?.key,
+          extensionId: ping.target?.id,
+          code: 'missing-authorize-origin',
+          capabilities: ping.response?.capabilities,
+        })
+        setExtensionConnectState({
+          status: 'incompatible-protocol',
+          error: 'The installed extension does not advertise the safe one-click setup capability. Update or reload the extension, then try again.',
+        })
+        return
+      }
 
-      if (Array.isArray(ping.response?.capabilities) && ping.response.capabilities.includes('authorize-origin')) {
-        setExtensionConnectState({ status: 'requesting-permission', target: ping.target })
-        const authorized = await extensionBridge.authorizeOrigin({ target: ping.target })
-        logExtensionSetup('authorize-origin', { status: authorized.status, error: authorized.error, detail: authorized.response?.detail, code: authorized.response?.code })
-        if (authorized.status !== 'authorized') {
-          setExtensionConnectState({
-            status: authorized.status || 'error',
-            error: authorized.error || authorized.response?.error || authorized.response?.detail || authorized.response?.message || '',
-            tokenRevoked: false,
-          })
-          return
-        }
+      setExtensionConnectState({ status: 'requesting-permission', target: ping.target })
+      const authorized = await extensionBridge.authorizeOrigin({ target: ping.target })
+      logExtensionSetup('authorize-origin', { status: authorized.status, error: authorized.error, detail: authorized.response?.detail, code: authorized.response?.code })
+      if (authorized.status !== 'authorized') {
+        setExtensionConnectState({
+          status: authorized.status || 'error',
+          error: authorized.error || authorized.response?.error || authorized.response?.detail || authorized.response?.message || '',
+          tokenRevoked: false,
+        })
+        return
       }
 
       setExtensionConnectState({ status: 'creating-token' })
