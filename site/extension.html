@@ -201,6 +201,22 @@
       .browser-card .arrow { margin-left: auto; color: #6f657f; font-weight: 800; transition: transform 0.18s ease, color 0.18s ease; }
       a.browser-card:hover .arrow { color: #20cffa; transform: translateX(3px); }
 
+      .setup-section {
+        max-width: 880px;
+        margin: -46px auto 76px;
+        padding: 0 clamp(24px, 5vw, 64px);
+      }
+      .setup-card {
+        padding: 24px;
+        border: 1px solid rgba(6, 200, 255, 0.18);
+        border-radius: 22px;
+        background: linear-gradient(135deg, rgba(6, 200, 255, 0.08), rgba(143, 60, 255, 0.06));
+      }
+      .setup-card h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -0.02em; }
+      .setup-card p { margin: 10px 0 0; color: #aaa2b9; line-height: 1.7; }
+      .setup-card ol { margin: 16px 0 0; padding-left: 22px; color: #c6becf; line-height: 1.65; }
+      .setup-card li + li { margin-top: 6px; }
+
       .site-footer {
         padding: 0 clamp(24px, 5vw, 64px) 30px;
         color: #5e566a;
@@ -393,6 +409,23 @@
             </span>
             <span class="badge soon" aria-hidden="true">Coming soon</span>
           </div>
+        </div>
+      </section>
+
+      <section class="setup-section" aria-labelledby="setup-heading">
+        <div class="setup-card">
+          <span class="page-kicker">Connect it</span>
+          <h2 id="setup-heading">Paste your dashboard URL before one-click setup</h2>
+          <p>
+            The extension only talks to the self-hosted Usage Dashboard instance you configure.
+            One-click setup still needs that URL saved in the extension first.
+          </p>
+          <ol>
+            <li>Install and pin the extension.</li>
+            <li>Open your dashboard settings and copy the URL from <strong>Integrations → Browser extension</strong>.</li>
+            <li>Open the extension <strong>Options</strong> page and paste that dashboard URL.</li>
+            <li>Return to the dashboard and use <strong>Connect extension</strong>, or use manual setup to paste a token yourself.</li>
+          </ol>
         </div>
       </section>
     </main>

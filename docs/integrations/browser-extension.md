@@ -11,8 +11,12 @@ provider usage in your toolbar. It talks only to your own self-hosted instance.
 
 ## One-click setup
 
-A signed-in dashboard page can hand off a connection to the extension through a
-minimal, write-only external API:
+Before using one-click setup, copy the dashboard URL from **Settings →
+Integrations → Browser extension** and paste it into the extension Options page.
+That saved URL tells the extension which self-hosted instance may configure it.
+
+A signed-in dashboard page can then hand off a connection to the extension through
+a minimal, write-only external API:
 
 - `usage-dashboard:ping` — check protocol compatibility before creating credentials.
 - `usage-dashboard:configure` — send a bearer token for the page's own origin.

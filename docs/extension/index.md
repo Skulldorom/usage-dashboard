@@ -24,8 +24,12 @@ status in a toolbar popup without opening the dashboard.
 ## Connect
 
 1. [Install the extension](/extension/chrome) for your browser.
-2. Open your Usage Dashboard and use the one-click **Connect extension** flow, or
-   enter the dashboard URL and a bearer token in the extension Options page.
+2. Open your Usage Dashboard settings and copy the dashboard URL from the
+   Browser extension card.
+3. Open the extension **Options** page and paste that dashboard URL. This tells
+   the extension which self-hosted instance is allowed to use one-click setup.
+4. Return to the dashboard and use **Connect extension**, or use **Manual setup**
+   to create and paste a bearer token yourself.
 
 The extension makes requests only to the single server origin you configure. See
 the [privacy policy](/extension-privacy) for exactly what data it stores and
