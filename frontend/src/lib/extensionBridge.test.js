@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createExtensionBridge } from './extensionBridge.js'
+import { createExtensionBridge, extensionSupportsOneClickSetup } from './extensionBridge.js'
 
 function runtimeWithResponses(responses) {
   const calls = []
@@ -51,6 +51,12 @@ describe('extensionBridge', () => {
       { extensionId: 'chrome-id', message: { type: 'usage-dashboard:ping', protocolVersion: 1 } },
       { extensionId: 'edge-id', message: { type: 'usage-dashboard:ping', protocolVersion: 1 } },
     ])
+  })
+
+  it('requires authorize-origin capability for safe one-click setup', () => {
+    expect(extensionSupportsOneClickSetup({ ok: true, protocolVersion: 1 })).toBe(false)
+    expect(extensionSupportsOneClickSetup({ ok: true, protocolVersion: 1, capabilities: [] })).toBe(false)
+    expect(extensionSupportsOneClickSetup({ ok: true, protocolVersion: 1, capabilities: ['authorize-origin'] })).toBe(true)
   })
 
   it('distinguishes incompatible protocol from not-installed runtime errors', async () => {
