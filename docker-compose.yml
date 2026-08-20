@@ -34,6 +34,12 @@ services:
   frontend:
     image: ${FRONTEND_IMAGE:-ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG:-latest}}
     restart: unless-stopped
+    environment:
+      EXTENSION_TARGET_CHROME_ID: ${EXTENSION_TARGET_CHROME_ID:-}
+      EXTENSION_TARGET_EDGE_ID: ${EXTENSION_TARGET_EDGE_ID:-}
+      EXTENSION_TARGET_OPERA_ID: ${EXTENSION_TARGET_OPERA_ID:-}
+      EXTENSION_TARGET_FIREFOX_ID: ${EXTENSION_TARGET_FIREFOX_ID:-}
+      EXTENSION_TARGET_SAFARI_ID: ${EXTENSION_TARGET_SAFARI_ID:-}
     depends_on:
       backend:
         condition: service_healthy
