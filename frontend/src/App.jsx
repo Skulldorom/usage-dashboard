@@ -30,12 +30,12 @@ const theme = createTheme({
   palette: {
     mode: "dark",
     primary: {
-      main: "#06c8ff",
-      light: "#63e3ff",
-      dark: "#0095ca",
-      contrastText: "#031018",
+      main: "#8b5cf6",
+      light: "#a78bfa",
+      dark: "#5b21b6",
+      contrastText: "#08050f",
     },
-    secondary: { main: "#a855f7", light: "#c084fc" },
+    secondary: { main: "#06c8ff", light: "#63e3ff" },
     success: { main: "#38e6a1" },
     warning: { main: "#ffbf69" },
     error: { main: "#ff6685" },
@@ -62,11 +62,12 @@ const theme = createTheme({
       styleOverrides: {
         root: { borderRadius: 12, minHeight: 42, paddingInline: 18 },
         containedPrimary: {
-          background: "linear-gradient(135deg, #06c8ff 0%, #69e7ff 100%)",
-          boxShadow: "0 10px 30px rgba(6, 200, 255, 0.2)",
+          background: "#8b5cf6",
+          color: "#08050f",
+          boxShadow: "0 10px 28px rgba(139, 92, 246, 0.18)",
           "&:hover": {
-            background: "linear-gradient(135deg, #37d4ff 0%, #8eeeff 100%)",
-            boxShadow: "0 12px 38px rgba(6, 200, 255, 0.28)",
+            background: "#a78bfa",
+            boxShadow: "0 12px 34px rgba(139, 92, 246, 0.24)",
           },
         },
         outlined: {
@@ -92,7 +93,7 @@ const theme = createTheme({
         root: {
           background: "rgba(3, 2, 8, .35)",
           "& fieldset": { borderColor: "rgba(255,255,255,.12)" },
-          "&:hover fieldset": { borderColor: "rgba(6,200,255,.45)" },
+          "&:hover fieldset": { borderColor: "rgba(167,139,250,.45)" },
         },
       },
     },
