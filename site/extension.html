@@ -49,8 +49,8 @@
       }
       .network-backdrop svg { width: 100%; height: 100%; min-height: 720px; }
       .network-lines { fill: none; stroke: rgba(160, 178, 196, 0.35); stroke-width: 1; }
-      .network-lines path:nth-child(even) { stroke: rgba(139, 92, 246, 0.18); }
-      .network-nodes { fill: rgba(167, 139, 250, 0.72); filter: drop-shadow(0 0 7px rgba(139, 92, 246, 0.45)); }
+      .network-lines path:nth-child(even) { stroke: rgba(4, 193, 245, 0.17); }
+      .network-nodes { fill: rgba(12, 206, 255, 0.75); filter: drop-shadow(0 0 7px #06c8ff); }
 
       .site-header {
         display: flex;
@@ -78,19 +78,19 @@
         align-items: center;
         gap: 7px;
         padding: 8px 15px;
-        border: 1px solid rgba(167, 139, 250, 0.42);
+        border: 1px solid rgba(6, 200, 255, 0.42);
         border-radius: 999px;
-        color: #bda7ff;
+        color: #20cffa;
         font-size: 0.85rem;
         font-weight: 700;
         letter-spacing: 0.01em;
-        background: rgba(139, 92, 246, 0.09);
+        background: rgba(6, 200, 255, 0.07);
         transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
       }
       .pill-button:hover {
         color: #fff;
-        border-color: rgba(167, 139, 250, 0.7);
-        background: rgba(139, 92, 246, 0.14);
+        border-color: rgba(6, 200, 255, 0.7);
+        background: rgba(6, 200, 255, 0.14);
         transform: translateY(-1px);
       }
       .pill-button svg { width: 15px; height: 15px; flex: none; }
@@ -106,15 +106,15 @@
       }
       .github-icon-button:hover {
         color: #fff;
-        border-color: rgba(167, 139, 250, 0.48);
-        background: rgba(139, 92, 246, 0.10);
+        border-color: rgba(6, 200, 255, 0.48);
+        background: rgba(6, 200, 255, 0.08);
       }
       .github-icon-button.small { width: 44px; height: 44px; }
       .github-logo { width: 20px; height: 20px; display: block; }
 
       .page-kicker {
         display: block;
-        color: #bda7ff;
+        color: #20cffa;
         font-size: 0.72rem;
         font-weight: 800;
         letter-spacing: 0.15em;
@@ -142,13 +142,12 @@
         border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 20px;
         background: rgba(22, 17, 38, 0.82);
-        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        box-shadow: none;
+        transition: border-color 0.18s ease, background 0.18s ease;
       }
       a.browser-card:hover {
-        border-color: rgba(167, 139, 250, 0.42);
+        border-color: rgba(6, 200, 255, 0.42);
         background: rgba(6, 200, 255, 0.12);
-        box-shadow: 0 22px 60px rgba(0, 0, 0, 0.3);
       }
       .browser-card.coming-soon {
         border-style: dashed;
@@ -183,12 +182,12 @@
       }
       .browser-card .badge.live {
         color: #05020a;
-        background: #8b5cf6;
-        box-shadow: 0 8px 22px rgba(139, 92, 246, 0.22);
+        background: #06c8ff;
+        box-shadow: none;
       }
       .browser-card .badge.soon { color: #91879f; background: rgba(255, 255, 255, 0.06); }
       .browser-card .arrow { margin-left: auto; color: #6f657f; font-weight: 800; transition: transform 0.18s ease, color 0.18s ease; }
-      a.browser-card:hover .arrow { color: #bda7ff; transform: translateX(3px); }
+      a.browser-card:hover .arrow { color: #20cffa; transform: translateX(3px); }
 
       .setup-section {
         max-width: 880px;
@@ -199,7 +198,7 @@
         padding: 24px;
         border: 1px solid rgba(6, 200, 255, 0.18);
         border-radius: 22px;
-        background: rgba(139, 92, 246, 0.10);
+        background: rgba(6, 200, 255, 0.08);
       }
       .setup-card h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -0.02em; }
       .setup-card p { margin: 10px 0 0; color: #aaa2b9; line-height: 1.7; }

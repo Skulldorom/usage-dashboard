@@ -19,9 +19,9 @@ describe("landing page layout guardrails", () => {
     expect(styles).toMatch(/\.landing-card-stack\s*\{[^}]*z-index:\s*1;/s);
   });
 
-  it("uses purple as primary and cyan as secondary accent in the app theme", () => {
-    expect(appSource).toContain('main: "#8b5cf6"');
-    expect(appSource).toContain('secondary: { main: "#06c8ff"');
+  it("uses cyan as primary and purple as secondary accent in the app theme", () => {
+    expect(appSource).toContain('main: "#06c8ff"');
+    expect(appSource).toContain('secondary: { main: "#8b5cf6"');
     expect(appSource).not.toContain("linear-gradient(135deg, #06c8ff");
   });
 });
