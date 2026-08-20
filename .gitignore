@@ -12,6 +12,10 @@ dist/
 .vite/
 npm-debug.log*
 
+# VitePress
+.vitepress/cache/
+.vitepress/dist/
+
 # Env/secrets
 .env
 .env.*
