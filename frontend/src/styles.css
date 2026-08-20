@@ -152,6 +152,7 @@ button, input { font: inherit; }
 .homepage-yaml-preview pre { min-height: 430px; max-height: 620px; margin: 0; padding: 18px; overflow: auto; border: 1px solid rgba(6,200,255,.14); border-radius: 13px; color: #e9f8ff; background: rgba(3, 8, 13, .74); font-size: .82rem; line-height: 1.55; white-space: pre; }
 .homepage-token-switch { justify-content: space-between; padding: 6px 0 0; }
 .api-token-grid { display: grid; grid-template-columns: minmax(280px, .95fr) minmax(320px, 1.05fr); gap: 22px; padding: 22px 24px 24px; }
+.browser-extension-card .api-token-grid { grid-template-columns: 1fr; }
 .integration-card-body.api-token-grid, .integration-card-body.homepage-config-grid { padding: 20px; }
 .api-token-guide { margin: 0; }
 .api-token-guide a { color: #9eeaff; font-weight: 750; }
@@ -165,6 +166,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator { filter: invert
 .api-token-scope-grid .MuiFormControlLabel-root { align-items: flex-start; margin: 0; padding: 10px; border: 1px solid rgba(255,255,255,.08); border-radius: 13px; background: rgba(255,255,255,.022); }
 .one-time-token { display: block; margin-top: 10px; padding: 10px 12px; overflow-wrap: anywhere; border: 1px solid rgba(6,200,255,.18); border-radius: 11px; background: rgba(0,0,0,.24); }
 .api-token-list { min-width: 0; padding: 18px; border: 1px solid rgba(255,255,255,.09); border-radius: 16px; background: rgba(0,0,0,.18); }
+.integration-tokens-card .api-token-list { padding: 0; border: 0; background: transparent; }
 .api-token-row { padding: 16px 0; border-top: 1px solid rgba(255,255,255,.075); }
 .api-token-row:first-of-type { border-top: 0; }
 .api-token-empty { margin-top: 12px; padding: 34px 18px; }
