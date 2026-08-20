@@ -84,6 +84,27 @@
         transition: color 0.18s ease;
       }
       .text-link:hover { color: #fff; }
+      .pill-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 15px;
+        border: 1px solid rgba(6, 200, 255, 0.42);
+        border-radius: 999px;
+        color: #20cffa;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        background: rgba(6, 200, 255, 0.07);
+        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+      }
+      .pill-button:hover {
+        color: #fff;
+        border-color: rgba(6, 200, 255, 0.7);
+        background: rgba(6, 200, 255, 0.14);
+        transform: translateY(-1px);
+      }
+      .pill-button svg { width: 15px; height: 15px; flex: none; }
 
       .github-icon-button {
         display: inline-grid;
@@ -238,9 +259,33 @@
         </span>
       </a>
       <nav class="header-links" aria-label="Site links">
-        <a class="text-link" href="./" aria-label="Usage Dashboard landing page">Dashboard</a>
-        <a class="text-link" href="./docs/" aria-label="Documentation">Docs</a>
-        <a class="text-link" href="./extension-privacy.html" aria-label="Extension privacy policy">Privacy</a>
+        <a
+          class="pill-button"
+          href="./docs/"
+          aria-label="Open documentation"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+          </svg>
+          Docs
+        </a>
+        <a
+          class="pill-button"
+          href="./"
+          aria-label="Usage Dashboard landing page"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+          </svg>
+          Dashboard
+        </a>
+        <a
+          class="text-link"
+          href="./extension-privacy.html"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Extension privacy policy"
+        >Privacy</a>
         <a
           class="github-icon-button small"
           href="https://github.com/Skulldorom/usage-dashboard"
