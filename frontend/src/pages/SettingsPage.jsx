@@ -109,6 +109,12 @@ const initialApiTokenForm = {
   expires_at: '',
 }
 
+const initialGenericApiTokenForm = {
+  name: 'Integration token',
+  scopes: ['usage:read'],
+  expires_at: '',
+}
+
 const initialHomepageForm = {
   dashboardUrl: '',
   refreshInterval: '300000',
@@ -137,6 +143,40 @@ const EXTENSION_CONNECT_MESSAGES = {
   'permission-denied': { severity: 'error', text: 'The extension could not get permission for this dashboard origin. The newly-created token was revoked.' },
   'replacement-confirmation-required': { severity: 'warning', text: 'The extension is already connected to another dashboard. Confirm replacement to continue.' },
   error: { severity: 'error', text: 'Extension connection failed. Any newly-created token was revoked when possible.' },
+}
+
+function ApiTokenCreationForm({
+  form,
+  onChange,
+  onToggleScope,
+  showScopes = true,
+  createdToken,
+  copied,
+  saving,
+  submitLabel = 'Create token',
+  savingLabel = 'Creating…',
+  resultLabel = 'Copy this token now; it will not be shown again.',
+  onSubmit,
+  onCopy,
+  onReset,
+}) {
+  const canSubmit = !saving && form.name.trim() && form.scopes.length > 0
+
+  return <Stack spacing={2}>
+    <TextField label="Token name" value={form.name} onChange={(event) => onChange({ ...form, name: event.target.value })} />
+    <TextField label="Token expires at (optional)" type="datetime-local" value={form.expires_at} onChange={(event) => onChange({ ...form, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />
+    {showScopes ? <FormGroup className="api-token-scope-grid">
+      {API_TOKEN_SCOPES.map((scope) => <FormControlLabel key={scope.id} control={<Checkbox checked={form.scopes.includes(scope.id)} onChange={() => onToggleScope(scope.id)} />} label={<Box><Typography variant="body2">{scope.label}</Typography><Typography variant="caption" color="text.secondary">{scope.id} — {scope.help}</Typography></Box>} />)}
+    </FormGroup> : <Alert severity="info">This flow uses the browser extension preset: <code>{EXTENSION_DEFAULT_SCOPES.join(', ')}</code>. Permission picking is hidden here so the extension always gets the minimum safe set it expects.</Alert>}
+    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      {onReset && <Button variant="outlined" onClick={onReset} disabled={saving}>Reset preset</Button>}
+      <Button variant="contained" onClick={onSubmit} disabled={!canSubmit} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{saving ? savingLabel : submitLabel}</Button>
+    </Stack>
+    {createdToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={onCopy} startIcon={copied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{copied ? 'Copied' : 'Copy'}</Button>}>
+      <strong>{createdToken.name}</strong> was created. {resultLabel}
+      <Box component="code" className="one-time-token">{createdToken.token}</Box>
+    </Alert>}
+  </Stack>
 }
 
 const initialForm = {
@@ -178,6 +218,12 @@ export default function SettingsPage() {
   const [apiTokenForm, setApiTokenForm] = useState(initialApiTokenForm)
   const [apiTokenSaving, setApiTokenSaving] = useState(false)
   const [apiTokenCopied, setApiTokenCopied] = useState(false)
+  const [manualExtensionDialogOpen, setManualExtensionDialogOpen] = useState(false)
+  const [genericTokenDialogOpen, setGenericTokenDialogOpen] = useState(false)
+  const [genericApiTokenForm, setGenericApiTokenForm] = useState(initialGenericApiTokenForm)
+  const [genericApiTokenSaving, setGenericApiTokenSaving] = useState(false)
+  const [createdGenericApiToken, setCreatedGenericApiToken] = useState(null)
+  const [genericApiTokenCopied, setGenericApiTokenCopied] = useState(false)
   const [extensionUrlCopied, setExtensionUrlCopied] = useState(false)
   const extensionUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const [createdApiToken, setCreatedApiToken] = useState(null)
@@ -317,6 +363,12 @@ export default function SettingsPage() {
       return { ...current, scopes: hasScope ? current.scopes.filter((scope) => scope !== scopeId) : [...current.scopes, scopeId] }
     })
   }
+  function toggleGenericApiTokenScope(scopeId) {
+    setGenericApiTokenForm((current) => {
+      const hasScope = current.scopes.includes(scopeId)
+      return { ...current, scopes: hasScope ? current.scopes.filter((scope) => scope !== scopeId) : [...current.scopes, scopeId] }
+    })
+  }
   async function copyExtensionUrl() {
     setExtensionUrlCopied(false)
     try {
@@ -328,12 +380,15 @@ export default function SettingsPage() {
       window.prompt('Copy dashboard URL', extensionUrl)
     }
   }
-  function extensionTokenPayload() {
+  function tokenPayloadFromForm(tokenForm, fallbackName, scopes = tokenForm.scopes) {
     return {
-      name: apiTokenForm.name.trim(),
-      scopes: apiTokenForm.scopes,
-      expires_at: apiTokenForm.expires_at ? new Date(apiTokenForm.expires_at).toISOString() : null,
+      name: tokenForm.name.trim() || fallbackName,
+      scopes,
+      expires_at: tokenForm.expires_at ? new Date(tokenForm.expires_at).toISOString() : null,
     }
+  }
+  function extensionTokenPayload() {
+    return tokenPayloadFromForm(apiTokenForm, initialApiTokenForm.name, EXTENSION_DEFAULT_SCOPES)
   }
   function logExtensionSetup(stage, detail = {}) {
     const payload = { stage, ...detail }
@@ -440,6 +495,18 @@ export default function SettingsPage() {
     } catch (err) { setError(err.message) }
     finally { setApiTokenSaving(false) }
   }
+  async function createGenericApiToken() {
+    setError('')
+    setGenericApiTokenSaving(true)
+    setGenericApiTokenCopied(false)
+    try {
+      const token = await api.createApiToken(tokenPayloadFromForm(genericApiTokenForm, initialGenericApiTokenForm.name))
+      setCreatedGenericApiToken(token)
+      setGenericApiTokenForm({ ...initialGenericApiTokenForm, scopes: [...initialGenericApiTokenForm.scopes] })
+      await load()
+    } catch (err) { setError(err.message) }
+    finally { setGenericApiTokenSaving(false) }
+  }
   async function revokeApiToken(id) {
     setError('')
     try { await api.revokeApiToken(id); await load() }
@@ -455,6 +522,18 @@ export default function SettingsPage() {
       window.setTimeout(() => setApiTokenCopied(false), 2200)
     } catch {
       window.prompt('Copy API token', createdApiToken.token)
+    }
+  }
+  async function copyCreatedGenericApiToken() {
+    if (!createdGenericApiToken?.token) return
+    setGenericApiTokenCopied(false)
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(createdGenericApiToken.token)
+      else window.prompt('Copy API token', createdGenericApiToken.token)
+      setGenericApiTokenCopied(true)
+      window.setTimeout(() => setGenericApiTokenCopied(false), 2200)
+    } catch {
+      window.prompt('Copy API token', createdGenericApiToken.token)
     }
   }
   async function createHomepageApiToken() {
@@ -713,7 +792,7 @@ export default function SettingsPage() {
       <Box className="integrations-stack">
         <Box id="browser-extension-integration" className="integration-card browser-extension-card">
           <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Browser extension</Typography><Typography variant="body2" color="text.secondary">One-click setup for Chrome/Brave and compatible browser builds.</Typography></Box><ExtensionRoundedIcon color="primary" /></div>
-          <Box className="api-token-grid integration-card-body">
+          <Box className="integration-card-body">
             <Stack spacing={2}>
               <Box className="homepage-guide api-token-guide">
                 <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. One-click setup checks for the extension before creating a token, then sends only the scoped token to the extension. The extension derives this dashboard URL from the browser sender origin.</Typography>
@@ -721,11 +800,12 @@ export default function SettingsPage() {
                   <Button
                     variant="contained"
                     onClick={() => connectExtension()}
-                    disabled={extensionConnectBusy || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0}
+                    disabled={extensionConnectBusy || !apiTokenForm.name.trim()}
                     startIcon={extensionConnectBusy ? <CircularProgress size={16} color="inherit" /> : <ExtensionRoundedIcon />}
                   >
                     {extensionConnectBusy ? 'Connecting…' : 'Connect extension'}
                   </Button>
+                  <Button variant="outlined" onClick={() => { setManualExtensionDialogOpen(true); setCreatedApiToken(null); setApiTokenCopied(false); setExtensionUrlCopied(false) }}>Manual setup</Button>
                   <Button component="a" href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer" variant="outlined" endIcon={<LaunchRoundedIcon />}>Install extension</Button>
                 </Stack>
                 {extensionConnectNotice && <Alert severity={extensionConnectNotice.severity} sx={{ mt: 1.5 }}>
@@ -733,49 +813,8 @@ export default function SettingsPage() {
                   {extensionConnectNotice.tokenRevoked && <><br />The newly-created token was revoked, so there is no dangling credential.</>}
                   {extensionConnectNotice.detail && <><br /><Typography component="span" variant="caption">Details: {extensionConnectNotice.detail}</Typography></>}
                 </Alert>}
-                <Typography component="h4" variant="subtitle2" sx={{ mt: 2 }}>Manual setup fallback</Typography>
-                <ol>
-                  <li>Create a token with the browser extension preset below.</li>
-                  <li>Copy it immediately; the full token is shown once.</li>
-                  <li>Copy the dashboard URL below, then open the extension options page and paste it in. The extension appends <code>/api/v1</code> automatically, and clicking a provider card opens this dashboard.</li>
-                  <li>Paste the token as the extension bearer token and save.</li>
-                </ol>
-                <Box className="extension-url-copy">
-                  <Stack direction="row" spacing={1} alignItems="flex-start">
-                    <TextField
-                      fullWidth
-                      label="Dashboard URL"
-                      value={extensionUrl}
-                      InputProps={{ readOnly: true }}
-                      onFocus={(event) => event.target.select()}
-                      helperText="The extension appends /api/v1 automatically."
-                    />
-                    <Button
-                      variant="outlined"
-                      onClick={copyExtensionUrl}
-                      startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
-                      sx={{ flex: '0 0 auto' }}
-                    >
-                      {extensionUrlCopied ? 'Copied' : 'Copy'}
-                    </Button>
-                  </Stack>
-                </Box>
               </Box>
-              <TextField label="Extension token name" value={apiTokenForm.name} onChange={(event) => setApiTokenForm({ ...apiTokenForm, name: event.target.value })} helperText="This token is only for the browser extension. It will not be reused for Homepage unless you manually copy it there, which would be weird but legal." />
-              <TextField label="Extension token expires at (optional)" type="datetime-local" value={apiTokenForm.expires_at} onChange={(event) => setApiTokenForm({ ...apiTokenForm, expires_at: event.target.value })} InputLabelProps={{ shrink: true }} helperText="Leave blank for no expiry. Revocation still works." />
-              <FormGroup className="api-token-scope-grid">
-                {API_TOKEN_SCOPES.map((scope) => <FormControlLabel key={scope.id} control={<Checkbox checked={apiTokenForm.scopes.includes(scope.id)} onChange={() => toggleApiTokenScope(scope.id)} />} label={<Box><Typography variant="body2">{scope.label}</Typography><Typography variant="caption" color="text.secondary">{scope.id} — {scope.help}</Typography></Box>} />)}
-              </FormGroup>
-              <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                <Button variant="outlined" onClick={() => setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })}>Use extension preset</Button>
-                <Button variant="contained" onClick={createExtensionApiToken} disabled={apiTokenSaving || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0} startIcon={apiTokenSaving ? <CircularProgress size={16} color="inherit" /> : <KeyRoundedIcon />}>{apiTokenSaving ? 'Creating…' : 'Create extension token'}</Button>
-              </Stack>
-              {createdApiToken && <Alert severity="success" action={<Button color="inherit" size="small" onClick={copyCreatedApiToken} startIcon={apiTokenCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{apiTokenCopied ? 'Copied' : 'Copy'}</Button>}>
-                <strong>{createdApiToken.name}</strong> was created for the browser extension. Copy this token now; it will not be shown again.
-                <Box component="code" className="one-time-token">{createdApiToken.token}</Box>
-              </Alert>}
             </Stack>
-
           </Box>
         </Box>
         <Box id="homepage-integration" className="integration-card homepage-integration-card">
@@ -819,7 +858,7 @@ export default function SettingsPage() {
           </Box>
         </Box>
         <Box id="integration-tokens" className="integration-card integration-tokens-card">
-          <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Integration tokens</Typography><Typography variant="body2" color="text.secondary">Review and revoke scoped tokens used by Browser Extension and Homepage.</Typography></Box><KeyRoundedIcon color="primary" /></div>
+          <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Integration tokens</Typography><Typography variant="body2" color="text.secondary">Review, create, and revoke scoped tokens used by integrations.</Typography></Box><Stack direction="row" spacing={1} alignItems="center"><Button variant="outlined" size="small" startIcon={<AddRoundedIcon />} onClick={() => { setGenericTokenDialogOpen(true); setCreatedGenericApiToken(null); setGenericApiTokenCopied(false) }}>Add token</Button><KeyRoundedIcon color="primary" /></Stack></div>
           <Box className="integration-card-body">
             <Box className="api-token-list">
               <Typography variant="overline" color="primary.main">Existing integration tokens</Typography>
@@ -893,6 +932,77 @@ export default function SettingsPage() {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3, flexWrap: 'wrap' }}><Button color="inherit" onClick={() => setOpen(false)} disabled={testing || saving}>Cancel</Button><Button onClick={testConnection} disabled={testDisabled} startIcon={testing ? <CircularProgress size={16} /> : null}>{testing ? 'Testing…' : 'Test connection'}</Button><Button variant="contained" onClick={submit} disabled={saveDisabled} startIcon={saving ? <CircularProgress size={16} color="inherit" /> : null}>{saving ? 'Saving…' : 'Save provider'}</Button></DialogActions>
+    </Dialog>
+    <Dialog open={manualExtensionDialogOpen} onClose={() => { if (!apiTokenSaving) setManualExtensionDialogOpen(false) }} fullWidth maxWidth="sm">
+      <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">Browser extension</Typography><Typography component="span" display="block" variant="h5">Manual extension setup</Typography></Stack></DialogTitle>
+      <DialogContent>
+        <Stack spacing={2.25} sx={{ mt: 1 }}>
+          <Box className="homepage-guide api-token-guide">
+            <Typography variant="body2" color="text.secondary">Use this fallback when one-click setup cannot reach the extension. The generated token uses the extension preset and the full token is shown once.</Typography>
+            <ol>
+              <li>Create a token with the browser extension preset.</li>
+              <li>Copy it immediately; the full token is shown once.</li>
+              <li>Copy the dashboard URL below, then open the extension options page and paste it in. The extension appends <code>/api/v1</code> automatically.</li>
+              <li>Paste the token as the extension bearer token and save.</li>
+            </ol>
+          </Box>
+          <Box className="extension-url-copy">
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="flex-start">
+              <TextField
+                fullWidth
+                label="Dashboard URL"
+                value={extensionUrl}
+                InputProps={{ readOnly: true }}
+                onFocus={(event) => event.target.select()}
+                helperText="The extension appends /api/v1 automatically."
+              />
+              <Button
+                variant="outlined"
+                onClick={copyExtensionUrl}
+                startIcon={extensionUrlCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}
+                sx={{ flex: '0 0 auto' }}
+              >
+                {extensionUrlCopied ? 'Copied' : 'Copy'}
+              </Button>
+            </Stack>
+          </Box>
+          <ApiTokenCreationForm
+            form={apiTokenForm}
+            onChange={setApiTokenForm}
+            onToggleScope={toggleApiTokenScope}
+            showScopes={false}
+            createdToken={createdApiToken}
+            copied={apiTokenCopied}
+            saving={apiTokenSaving}
+            submitLabel="Create extension token"
+            resultLabel="Copy this extension token now; it will not be shown again."
+            onSubmit={createExtensionApiToken}
+            onCopy={copyCreatedApiToken}
+            onReset={() => setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })}
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setManualExtensionDialogOpen(false)} disabled={apiTokenSaving}>Close</Button></DialogActions>
+    </Dialog>
+    <Dialog open={genericTokenDialogOpen} onClose={() => { if (!genericApiTokenSaving) setGenericTokenDialogOpen(false) }} fullWidth maxWidth="sm">
+      <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">Integration tokens</Typography><Typography component="span" display="block" variant="h5">Add scoped token</Typography></Stack></DialogTitle>
+      <DialogContent>
+        <Stack spacing={2.25} sx={{ mt: 1 }}>
+          <Typography variant="body2" color="text.secondary">Create a standalone token for scripts, widgets, or other clients. Pick only the permissions that client needs; boring, responsible, regrettably correct.</Typography>
+          <ApiTokenCreationForm
+            form={genericApiTokenForm}
+            onChange={setGenericApiTokenForm}
+            onToggleScope={toggleGenericApiTokenScope}
+            createdToken={createdGenericApiToken}
+            copied={genericApiTokenCopied}
+            saving={genericApiTokenSaving}
+            onSubmit={createGenericApiToken}
+            onCopy={copyCreatedGenericApiToken}
+            onReset={() => setGenericApiTokenForm({ ...initialGenericApiTokenForm, scopes: [...initialGenericApiTokenForm.scopes] })}
+          />
+        </Stack>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setGenericTokenDialogOpen(false)} disabled={genericApiTokenSaving}>Close</Button></DialogActions>
     </Dialog>
     <Dialog open={Boolean(thresholdDialog)} onClose={() => setThresholdDialog(null)} fullWidth maxWidth="sm">
       <DialogTitle><Stack spacing={0.75}><Typography component="span" display="block" variant="overline" color="primary.main">Alert thresholds</Typography><Typography component="span" display="block" variant="h5">{thresholdDialog?.label}</Typography></Stack></DialogTitle>

@@ -12,21 +12,29 @@ Full documentation — installation, configuration, providers, integrations, the
 
 ## Quick start
 
+Start from a machine with Git and Docker Compose installed. This path uses the published containers, so you do not need to build anything locally.
+
 ```bash
+git clone https://github.com/Skulldorom/usage-dashboard.git
+cd usage-dashboard
 cp .env.example .env
 openssl rand -base64 32 | tr '+/' '-_'
-# paste that value into ENCRYPTION_KEY in .env
-docker compose pull
-docker compose up -d
-# open the frontend, copy the one-time setup code from backend logs, and create the admin password
 ```
 
-Open through the frontend container, which also proxies API traffic to the backend:
+Copy the generated value into `ENCRYPTION_KEY` in `.env`, replacing `replace-with-generated-fernet-key`. Then start the stack:
+
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs backend
+```
+
+Open the frontend, then use the one-time setup code from the backend logs to create the admin password.
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
 
-First-run admin setup is log-based: the backend prints a one-time setup code when no password exists yet. See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-started/first-run.html) for details.
+See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-started/first-run.html) for the setup-code flow in more detail.
 
 ## Features
 
