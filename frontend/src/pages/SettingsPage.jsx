@@ -38,6 +38,7 @@ import NotificationsActiveRoundedIcon from '@mui/icons-material/NotificationsAct
 import { api } from '../api.js'
 import ProviderIcon from '../components/ProviderIcon.jsx'
 import { formatThresholdRule } from '../lib/usageFormat.js'
+import { extensionBridge } from '../lib/extensionBridge.js'
 import { homepageYaml } from '../lib/homepageYaml.js'
 
 const PROVIDER_SETUP = {
@@ -116,6 +117,21 @@ const initialHomepageForm = {
   includeToken: false,
 }
 
+const EXTENSION_CONNECT_MESSAGES = {
+  checking: { severity: 'info', text: 'Checking for a compatible extension before creating a token…' },
+  'creating-token': { severity: 'info', text: 'Extension found. Creating a scoped token…' },
+  configuring: { severity: 'info', text: 'Sending the token to the extension…' },
+  connected: { severity: 'success', text: 'Extension connected. The scoped token was saved in the extension.' },
+  'connected-degraded': { severity: 'warning', text: 'Extension connected, but the dashboard could not be reached yet. The pairing was kept so you can retry from the extension.' },
+  'not-installed': { severity: 'warning', text: 'No compatible extension responded. Install or load the extension, or use manual setup below.' },
+  timeout: { severity: 'warning', text: 'The extension did not respond in time. Manual setup is still available below.' },
+  'incompatible-protocol': { severity: 'warning', text: 'The installed extension uses an incompatible setup protocol. Update the extension, then try again.' },
+  'unsupported-browser': { severity: 'warning', text: 'This browser does not expose a supported extension messaging transport. Use manual setup below.' },
+  'permission-denied': { severity: 'error', text: 'The extension could not get permission for this dashboard origin. The newly-created token was revoked.' },
+  'replacement-confirmation-required': { severity: 'warning', text: 'The extension is already connected to another dashboard. Confirm replacement to continue.' },
+  error: { severity: 'error', text: 'Extension connection failed. Any newly-created pre-commit token was revoked when possible.' },
+}
+
 const initialForm = {
   provider: 'firecrawl',
   label: '',
@@ -158,6 +174,9 @@ export default function SettingsPage() {
   const [extensionUrlCopied, setExtensionUrlCopied] = useState(false)
   const extensionUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const [createdApiToken, setCreatedApiToken] = useState(null)
+  const [extensionConnectState, setExtensionConnectState] = useState({ status: 'idle' })
+  const [extensionConnectBusy, setExtensionConnectBusy] = useState(false)
+  const [extensionReplacement, setExtensionReplacement] = useState(null)
   const [draggingConfigId, setDraggingConfigId] = useState(null)
   const [dragOverConfigId, setDragOverConfigId] = useState(null)
   const dragCommitRef = useRef(null)
@@ -286,17 +305,71 @@ export default function SettingsPage() {
       window.prompt('Copy dashboard URL', extensionUrl)
     }
   }
+  function extensionTokenPayload() {
+    return {
+      name: apiTokenForm.name.trim(),
+      scopes: apiTokenForm.scopes,
+      expires_at: apiTokenForm.expires_at ? new Date(apiTokenForm.expires_at).toISOString() : null,
+    }
+  }
+  async function revokeCreatedConnectionToken(token) {
+    if (!token?.id) return
+    try { await api.revokeApiToken(token.id) }
+    catch { /* Best-effort cleanup; surface original connection state below. */ }
+  }
+  async function connectExtension({ replaceExisting = false } = {}) {
+    setError('')
+    setCreatedApiToken(null)
+    setApiTokenCopied(false)
+    setExtensionConnectState({ status: 'checking' })
+    setExtensionConnectBusy(true)
+    try {
+      const ping = await extensionBridge.ping()
+      if (ping.status !== 'available') {
+        setExtensionConnectState({ status: ping.status })
+        return
+      }
+
+      setExtensionConnectState({ status: 'creating-token' })
+      const token = await api.createApiToken(extensionTokenPayload())
+      await load()
+
+      setExtensionConnectState({ status: 'configuring', target: ping.target })
+      const configured = await extensionBridge.configure({ target: ping.target, token: token.token, replaceExisting })
+      if (configured.status === 'replacement-confirmation-required') {
+        await revokeCreatedConnectionToken(token)
+        await load()
+        setExtensionReplacement({ target: ping.target })
+        setExtensionConnectState({ status: 'replacement-confirmation-required' })
+        return
+      }
+      if (!['connected', 'connected-degraded'].includes(configured.status)) {
+        await revokeCreatedConnectionToken(token)
+        await load()
+        setExtensionConnectState({ status: configured.status || 'error', tokenRevoked: true })
+        return
+      }
+
+      setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })
+      setExtensionConnectState({ status: configured.status, target: ping.target })
+      await load()
+    } catch (err) {
+      setExtensionConnectState({ status: 'error' })
+      setError(err.message)
+    } finally {
+      setExtensionConnectBusy(false)
+    }
+  }
+  function confirmExtensionReplacement() {
+    setExtensionReplacement(null)
+    connectExtension({ replaceExisting: true })
+  }
   async function createExtensionApiToken() {
     setError('')
     setApiTokenSaving(true)
     setApiTokenCopied(false)
     try {
-      const payload = {
-        name: apiTokenForm.name.trim(),
-        scopes: apiTokenForm.scopes,
-        expires_at: apiTokenForm.expires_at ? new Date(apiTokenForm.expires_at).toISOString() : null,
-      }
-      const token = await api.createApiToken(payload)
+      const token = await api.createApiToken(extensionTokenPayload())
       setCreatedApiToken(token)
       setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })
       await load()
@@ -548,7 +621,22 @@ export default function SettingsPage() {
         <Stack spacing={2}>
           <Box className="homepage-guide api-token-guide">
             <Typography component="h3" variant="subtitle1">Browser extension setup</Typography>
-            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>, then paste your Usage Dashboard URL and a scoped token. The extension preset grants current usage, polling, and provider metadata without config mutation privileges.</Typography>
+            <Typography variant="body2" color="text.secondary">Install or load the Chrome/Brave extension from <a href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer">the Usage Dashboard extension page</a>. One-click setup checks for the extension before creating a token, then sends only the scoped token to the extension. The extension derives this dashboard URL from the browser sender origin.</Typography>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+              <Button
+                variant="contained"
+                onClick={() => connectExtension()}
+                disabled={extensionConnectBusy || !apiTokenForm.name.trim() || apiTokenForm.scopes.length === 0}
+                startIcon={extensionConnectBusy ? <CircularProgress size={16} color="inherit" /> : <ExtensionRoundedIcon />}
+              >
+                {extensionConnectBusy ? 'Connecting…' : 'Connect extension'}
+              </Button>
+              <Button component="a" href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer" variant="outlined" endIcon={<LaunchRoundedIcon />}>Install extension</Button>
+            </Stack>
+            {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status] && <Alert severity={EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].severity} sx={{ mt: 1.5 }}>
+              {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].text}
+            </Alert>}
+            <Typography component="h4" variant="subtitle2" sx={{ mt: 2 }}>Manual setup fallback</Typography>
             <ol>
               <li>Create a token with the Chrome / Brave extension preset below.</li>
               <li>Copy it immediately; the full token is shown once.</li>
@@ -727,6 +815,16 @@ export default function SettingsPage() {
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 3 }}><Button color="inherit" onClick={() => setThresholdDialog(null)}>Cancel</Button><Button variant="contained" onClick={saveThresholds} disabled={thresholdSaving} startIcon={thresholdSaving ? <CircularProgress size={16} color="inherit" /> : null}>{thresholdSaving ? 'Saving…' : 'Save thresholds'}</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(extensionReplacement)} onClose={() => { if (!extensionConnectBusy) setExtensionReplacement(null) }} fullWidth maxWidth="xs">
+      <DialogTitle>Replace existing extension connection?</DialogTitle>
+      <DialogContent>
+        <Typography>This extension is already connected to another Usage Dashboard. Replace that connection with this dashboard?</Typography>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, pb: 3 }}>
+        <Button color="inherit" onClick={() => setExtensionReplacement(null)} disabled={extensionConnectBusy}>Cancel</Button>
+        <Button variant="contained" color="warning" onClick={confirmExtensionReplacement} disabled={extensionConnectBusy} startIcon={extensionConnectBusy ? <CircularProgress size={16} color="inherit" /> : null}>{extensionConnectBusy ? 'Replacing…' : 'Replace connection'}</Button>
+      </DialogActions>
     </Dialog>
     <Dialog open={Boolean(deleteTarget)} onClose={() => { if (!deleting) setDeleteTarget(null) }} fullWidth maxWidth="xs">
       <DialogTitle>Remove provider?</DialogTitle>
