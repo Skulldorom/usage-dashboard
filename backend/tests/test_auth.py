@@ -19,7 +19,6 @@ async def auth_db(tmp_path, monkeypatch):
         await conn.run_sync(Base.metadata.create_all)
     Session = async_sessionmaker(engine, expire_on_commit=False)
 
-    monkeypatch.setattr(settings, "admin_token", None)
     monkeypatch.setattr(settings, "admin_session_expire_hours", 24)
     monkeypatch.setattr(settings, "admin_recovery_code_expire_minutes", 30)
 

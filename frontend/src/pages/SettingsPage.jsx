@@ -680,7 +680,7 @@ export default function SettingsPage() {
         </Stack>
         <Box className="api-token-list">
           <Typography variant="overline" color="primary.main">Existing tokens</Typography>
-          {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No API tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create one for the extension; keep the admin token out of browser storage.</Typography></Box> : apiTokens.map((token) => {
+          {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No API tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create one for the extension; use scoped tokens instead of your admin session.</Typography></Box> : apiTokens.map((token) => {
             const revoked = Boolean(token.revoked_at)
             const expired = token.expires_at && new Date(token.expires_at) <= new Date()
             return <Box className="api-token-row" key={token.id}>
@@ -700,7 +700,7 @@ export default function SettingsPage() {
       <Box className="homepage-guide">
         <Typography component="h3" variant="subtitle1">Where this YAML goes</Typography>
         <Typography variant="body2" color="text.secondary">Paste the generated service block into the Homepage group you want inside <code>services.yaml</code>. The generator always creates a single <strong>Usage Dashboard</strong> service pointed at the existing <code>/api/v1/homepage</code> endpoint. Dynamic provider list is the default because it renders one row per enabled API. Switch to summary cards only when you want top-level stats.</Typography>
-        <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use an admin/homepage token.</Typography>
+        <Typography variant="caption" color="text.secondary">Tip: if you set <code>HOMEPAGE_ALLOWED_HOSTS</code> for the Homepage host, choose “No auth header”. Otherwise keep the bearer header and use a scoped token with usage:read.</Typography>
       </Box>
       <Box className="homepage-config-grid">
         <Stack spacing={2}>
@@ -709,7 +709,7 @@ export default function SettingsPage() {
           <FormControl fullWidth><InputLabel>Homepage display</InputLabel><Select label="Homepage display" value={homepageForm.displayMode} onChange={(event) => updateHomepageForm({ displayMode: event.target.value })}><MenuItem value="dynamic-list">Dynamic provider list</MenuItem><MenuItem value="summary">Summary cards</MenuItem></Select><FormHelperText>Dynamic list renders each enabled provider row from the API's list payload.</FormHelperText></FormControl>
           <FormControl fullWidth><InputLabel>Authentication</InputLabel><Select label="Authentication" value={homepageForm.authMode} onChange={(event) => updateHomepageForm({ authMode: event.target.value })}><MenuItem value="bearer">Bearer Authorization header</MenuItem><MenuItem value="none">No auth header / allowed host</MenuItem></Select><FormHelperText>Use no auth only when Homepage is allowed by host or protected by your network.</FormHelperText></FormControl>
           {homepageForm.authMode === 'bearer' && <>
-            <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
+            <TextField label="Token (optional)" type="password" value={homepageForm.token} onChange={(event) => updateHomepageForm({ token: event.target.value })} helperText="Use a scoped token with usage:read. Left blank, the YAML keeps a safe placeholder instead of exposing a secret." />
             <label className="config-switch homepage-token-switch"><span>Include token in YAML</span><Tooltip title="Off keeps a placeholder so copied YAML does not leak secrets on screen."><Switch checked={homepageForm.includeToken} onChange={(event) => updateHomepageForm({ includeToken: event.target.checked })} color="warning" inputProps={{ 'aria-label': 'Include token in generated YAML' }} /></Tooltip></label>
           </>}
         </Stack>

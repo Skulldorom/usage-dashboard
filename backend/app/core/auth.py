@@ -261,8 +261,6 @@ async def authenticate_bearer(
             headers={"WWW-Authenticate": "Bearer"},
         )
     token = credentials.credentials
-    if settings.admin_token and compare_digest(token, settings.admin_token):
-        return AuthPrincipal(kind="admin")
     if await validate_admin_session_token(token, session):
         return AuthPrincipal(kind="admin")
     api_principal = await validate_api_token(token, session)
@@ -300,6 +298,6 @@ async def homepage_auth(
     if _request_host(request) in settings.homepage_allowed_hosts:
         return
     principal = await authenticate_bearer(credentials, session)
-    if principal.is_admin:
+    if principal.is_admin or "usage:read" in principal.scopes:
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges are required")
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="API token is missing required scope: usage:read")
