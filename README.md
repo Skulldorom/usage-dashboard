@@ -27,7 +27,7 @@ Open through the frontend container, which also proxies API traffic to the backe
 
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
-- Homepage payload: http://localhost:3000/api/v1/homepage (requires login bearer auth unless `HOMEPAGE_ALLOWED_HOSTS` allows the request host)
+- Homepage payload: http://localhost:3000/api/v1/homepage (requires a login session/scoped bearer token unless `HOMEPAGE_ALLOWED_HOSTS` allows the request host)
 
 First-run admin setup is intentionally local-log based: `GET /api/v1/auth/status` generates and logs a one-time setup code from the backend when no password exists yet. The UI asks for that code and a new password. Password resets use the same pattern via **Reset password**, which logs a one-time reset code in the backend logs before accepting a new password. Docker Compose users can view codes with `docker compose logs backend`.
 
@@ -40,10 +40,9 @@ Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is 
 | `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
 | `POSTGRES_IMAGE` | PostgreSQL image used by Compose. Defaults to `postgres:18-alpine`; the Compose volume is mounted at `/var/lib/postgresql` for the 18+ image layout. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. |
-| `ADMIN_TOKEN` | Optional legacy fallback bearer token for dashboard config, usage, polling, and homepage API routes. Password login is the primary admin flow. |
 | `ADMIN_SESSION_EXPIRE_HOURS` | Hours before password-login session tokens expire. Defaults to `24`. |
 | `ADMIN_RECOVERY_CODE_EXPIRE_MINUTES` | Minutes before setup/reset codes printed in backend logs expire. Defaults to `30`. |
-| `HOMEPAGE_ALLOWED_HOSTS` | Comma-separated hostnames that may access `GET /api/v1/homepage` without `ADMIN_TOKEN`; ports are ignored. All other API routes still require admin auth. |
+| `HOMEPAGE_ALLOWED_HOSTS` | Comma-separated hostnames that may access `GET /api/v1/homepage` without a bearer token; ports are ignored. All other API routes still require a valid admin session or scoped API token. |
 | `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
 | `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
@@ -117,7 +116,7 @@ Recommended default. Requires Homepage >= 1.1.0. Set `display: dynamic-list` and
       type: customapi
       url: http://frontend/api/v1/homepage
       display: dynamic-list
-      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend.
+      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend; otherwise use a scoped token with usage:read.
       # headers:
       #   Authorization: Bearer ***
       refreshInterval: 300000
@@ -145,7 +144,7 @@ The `block` display shows individual fields as labelled rows. Use this for a com
     widget:
       type: customapi
       url: http://frontend/api/v1/homepage
-      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend.
+      # Optional when HOMEPAGE_ALLOWED_HOSTS includes frontend; otherwise use a scoped token with usage:read.
       # headers:
       #   Authorization: Bearer ***
       refreshInterval: 300000
@@ -164,14 +163,13 @@ Flattened `metrics` keys (e.g. `firecrawl_main_credits_remaining`, `deepseek_mai
 
 ### Public homepage behind reverse-proxy auth
 
-Set `HOMEPAGE_ALLOWED_HOSTS` when a trusted proxy such as Authentik protects the public hostname and you only want the flat homepage payload to be readable without sharing `ADMIN_TOKEN`:
+Set `HOMEPAGE_ALLOWED_HOSTS` when a trusted proxy such as Authentik protects the public hostname and you only want the flat homepage payload to be readable without sharing a bearer token:
 
 ```env
-ADMIN_TOKEN=
 HOMEPAGE_ALLOWED_HOSTS=usage.example.com,status.local
 ```
 
-Only `GET /api/v1/homepage` checks this allowlist. `/configs`, `/poll`, `/usage`, and history endpoints still return `401` without a valid admin bearer token. Hostnames are matched case-insensitively and any port suffix is ignored.
+Only `GET /api/v1/homepage` checks this allowlist. Without the allowlist, Homepage can also use a scoped API token with `usage:read`. `/configs`, `/poll`, `/usage`, and history endpoints still require a valid admin session or scoped API token with the matching route scope. Hostnames are matched case-insensitively and any port suffix is ignored.
 
 ## Development
 

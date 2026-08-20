@@ -1,9 +1,9 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api'
 const V1 = `${API_BASE}/v1`
-const TOKEN_STORAGE_KEY = 'usage_dashboard_admin_token'
+const TOKEN_STORAGE_KEY = 'usage_dashboard_admin_session_token'
 
 export function getAdminToken() {
-  return localStorage.getItem(TOKEN_STORAGE_KEY) || import.meta.env.VITE_ADMIN_TOKEN || ''
+  return localStorage.getItem(TOKEN_STORAGE_KEY) || ''
 }
 
 export function setAdminToken(token) {
@@ -62,7 +62,7 @@ async function request(path, options = {}) {
     headers: { 'Content-Type': 'application/json', ...authHeaders, ...optionHeaders },
   })
   if (res.status === 401 && token) {
-    // The stored admin token is no longer valid. Clear it and tell the app to
+    // The stored admin session token is no longer valid. Clear it and tell the app to
     // log the user out instead of surfacing an "Invalid bearer token" banner.
     clearAdminToken()
     window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
