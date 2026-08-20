@@ -5,9 +5,10 @@ CONFIG_FILE="/usr/share/nginx/html/runtime-config.js"
 
 json_string() {
   # Escape enough for JSON string values without requiring jq/python in nginx alpine.
-  printf '%s' "$1" | sed 's/\/\\/g; s/"/\"/g; s///g; s/$/\n/' | tr -d '
-' | sed 's/\n$//'
+  # Browser extension IDs should be single-line strings; this still handles quotes/backslashes.
+  printf '%s' "$1" | awk '{ gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); printf "%s", $0 }'
 }
+
 
 write_target() {
   key="$1"
