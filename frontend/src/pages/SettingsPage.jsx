@@ -335,10 +335,15 @@ export default function SettingsPage() {
       expires_at: apiTokenForm.expires_at ? new Date(apiTokenForm.expires_at).toISOString() : null,
     }
   }
+  function logExtensionSetup(stage, detail = {}) {
+    const payload = { stage, ...detail }
+    if (detail?.status && !['available', 'authorized', 'connected', 'connected-degraded'].includes(detail.status)) console.warn('[Usage Dashboard] extension setup', payload)
+    else console.info('[Usage Dashboard] extension setup', payload)
+  }
   async function revokeCreatedConnectionToken(token) {
     if (!token?.id) return
-    try { await api.revokeApiToken(token.id) }
-    catch { /* Best-effort cleanup; surface original connection state below. */ }
+    try { await api.revokeApiToken(token.id); logExtensionSetup('token-revoked', { tokenId: token.id }) }
+    catch (err) { logExtensionSetup('token-revoke-failed', { tokenId: token.id, error: err.message }) }
   }
   async function connectExtension({ replaceExisting = false } = {}) {
     setError('')
@@ -346,8 +351,10 @@ export default function SettingsPage() {
     setApiTokenCopied(false)
     setExtensionConnectState({ status: 'checking' })
     setExtensionConnectBusy(true)
+    logExtensionSetup('started')
     try {
       const ping = await extensionBridge.ping()
+      logExtensionSetup('ping', { status: ping.status, target: ping.target?.key, extensionId: ping.target?.id, capabilities: ping.response?.capabilities })
       if (ping.status !== 'available') {
         setExtensionConnectState({ status: ping.status })
         return
@@ -356,6 +363,7 @@ export default function SettingsPage() {
       if (Array.isArray(ping.response?.capabilities) && ping.response.capabilities.includes('authorize-origin')) {
         setExtensionConnectState({ status: 'requesting-permission', target: ping.target })
         const authorized = await extensionBridge.authorizeOrigin({ target: ping.target })
+        logExtensionSetup('authorize-origin', { status: authorized.status, error: authorized.error, detail: authorized.response?.detail, code: authorized.response?.code })
         if (authorized.status !== 'authorized') {
           setExtensionConnectState({
             status: authorized.status || 'error',
@@ -368,10 +376,12 @@ export default function SettingsPage() {
 
       setExtensionConnectState({ status: 'creating-token' })
       const token = await api.createApiToken(extensionTokenPayload())
+      logExtensionSetup('token-created', { tokenId: token.id, tokenPrefix: token.token_prefix })
       await load()
 
       setExtensionConnectState({ status: 'configuring', target: ping.target })
       const configured = await extensionBridge.configure({ target: ping.target, token: token.token, replaceExisting })
+      logExtensionSetup('configure', { status: configured.status, error: configured.error, detail: configured.response?.detail, code: configured.response?.code, reachable: configured.reachable })
       if (configured.status === 'replacement-confirmation-required') {
         await revokeCreatedConnectionToken(token)
         await load()
@@ -392,9 +402,11 @@ export default function SettingsPage() {
 
       setApiTokenForm({ ...initialApiTokenForm, scopes: [...initialApiTokenForm.scopes] })
       setExtensionConnectState({ status: configured.status, target: ping.target })
+      logExtensionSetup('connected', { status: configured.status, target: ping.target?.key })
       await load()
     } catch (err) {
       setExtensionConnectState({ status: 'error', error: err.message })
+      logExtensionSetup('exception', { status: 'error', error: err.message })
       setError(err.message)
     } finally {
       setExtensionConnectBusy(false)
@@ -751,23 +763,7 @@ export default function SettingsPage() {
                 <Box component="code" className="one-time-token">{createdApiToken.token}</Box>
               </Alert>}
             </Stack>
-            <Box className="api-token-list">
-              <Typography variant="overline" color="primary.main">Existing integration tokens</Typography>
-              {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No scoped tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create separate tokens for the extension and Homepage; tiny blast radiuses, very adult.</Typography></Box> : apiTokens.map((token) => {
-                const revoked = Boolean(token.revoked_at)
-                const expired = token.expires_at && new Date(token.expires_at) <= new Date()
-                const scopes = token.scopes || []
-                const tokenKind = scopes.length === 1 && scopes.includes('usage:read') ? 'Homepage-ready' : scopes.includes('poll:write') && scopes.includes('configs:read') ? 'Extension-ready' : 'Scoped token'
-                return <Box className="api-token-row" key={token.id}>
-                  <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
-                    <Box><Typography variant="subtitle1">{token.name}</Typography><Typography variant="caption" color="text.secondary">{tokenKind} • Prefix {token.token_prefix} • created {new Date(token.created_at).toLocaleString()} • last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'never'}</Typography></Box>
-                    <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
-                  </Stack>
-                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{scopes.map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)}>{revoked ? 'Delete' : 'Revoke'}</Button></Stack>
-                </Box>
-              })}
-            </Box>
+
           </Box>
         </Box>
         <Box id="homepage-integration" className="integration-card homepage-integration-card">
@@ -807,6 +803,28 @@ export default function SettingsPage() {
                 <Button variant="contained" size="small" onClick={copyHomepageYaml} startIcon={homepageCopied ? <CheckRoundedIcon /> : <ContentCopyRoundedIcon />}>{homepageCopied ? 'Copied' : 'Copy YAML'}</Button>
               </Stack>
               <pre><code>{homepagePreview}</code></pre>
+            </Box>
+          </Box>
+        </Box>
+        <Box id="integration-tokens" className="integration-card integration-tokens-card">
+          <div className="integration-card-header"><Box><Typography component="h3" variant="subtitle1">Integration tokens</Typography><Typography variant="body2" color="text.secondary">Review and revoke scoped tokens used by Browser Extension and Homepage.</Typography></Box><KeyRoundedIcon color="primary" /></div>
+          <Box className="integration-card-body">
+            <Box className="api-token-list">
+              <Typography variant="overline" color="primary.main">Existing integration tokens</Typography>
+              {apiTokens.length === 0 ? <Box className="empty-state api-token-empty"><Typography variant="h6">No scoped tokens yet</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Create separate tokens for the extension and Homepage; tiny blast radiuses, very adult.</Typography></Box> : apiTokens.map((token) => {
+                const revoked = Boolean(token.revoked_at)
+                const expired = token.expires_at && new Date(token.expires_at) <= new Date()
+                const scopes = token.scopes || []
+                const tokenKind = scopes.length === 1 && scopes.includes('usage:read') ? 'Homepage-ready' : scopes.includes('poll:write') && scopes.includes('configs:read') ? 'Extension-ready' : 'Scoped token'
+                return <Box className="api-token-row" key={token.id}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5}>
+                    <Box><Typography variant="subtitle1">{token.name}</Typography><Typography variant="caption" color="text.secondary">{tokenKind} • Prefix {token.token_prefix} • created {new Date(token.created_at).toLocaleString()} • last used {token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'never'}</Typography></Box>
+                    <Stack direction="row" spacing={1}>{revoked && <Chip size="small" color="error" label="Revoked" />}{expired && !revoked && <Chip size="small" color="warning" label="Expired" />}{!revoked && !expired && <Chip size="small" color="success" label="Active" />}</Stack>
+                  </Stack>
+                  <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mt: 1.2 }}>{scopes.map((scope) => <Chip key={scope} size="small" variant="outlined" label={scope} />)}</Stack>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.5 }}><Typography variant="caption" color="text.secondary">Expires {token.expires_at ? new Date(token.expires_at).toLocaleString() : 'never'}</Typography><Button size="small" color="error" onClick={() => revokeApiToken(token.id)}>{revoked ? 'Delete' : 'Revoke'}</Button></Stack>
+                </Box>
+              })}
             </Box>
           </Box>
         </Box>

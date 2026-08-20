@@ -43,7 +43,12 @@ function statusFromError(message = '') {
 }
 
 function responseErrorMessage(response) {
-  return response?.error || response?.detail || response?.message || ''
+  return response?.detail || response?.error || response?.message || ''
+}
+
+function logBridgeFailure(stage, detail) {
+  if (!detail?.status || ['available', 'authorized', 'connected', 'connected-degraded'].includes(detail.status)) return
+  console.warn('[Usage Dashboard] extension bridge failure', { stage, ...detail })
 }
 
 function mapConfigureResponse(response) {
@@ -110,11 +115,11 @@ export function createExtensionBridge({ runtime = defaultRuntime(), targets = ge
       timeoutMs,
       message: { type: EXTENSION_MESSAGE_TYPES.authorizeOrigin, protocolVersion: EXTENSION_PROTOCOL_VERSION },
     })
-    if (result.timedOut) return { status: 'timeout' }
-    if (result.error) return { status: statusFromError(result.error), error: result.error }
+    if (result.timedOut) { const detail = { status: 'timeout' }; logBridgeFailure('authorize-origin', detail); return detail }
+    if (result.error) { const detail = { status: statusFromError(result.error), error: result.error }; logBridgeFailure('authorize-origin', detail); return detail }
     if (result.response?.ok && result.response.protocolVersion === EXTENSION_PROTOCOL_VERSION) return { status: 'authorized', response: result.response }
-    if (!result.response?.ok && result.response?.code) return { status: result.response.code, error: responseErrorMessage(result.response), response: result.response }
-    return { status: 'error', error: responseErrorMessage(result.response), response: result.response }
+    if (!result.response?.ok && result.response?.code) { const detail = { status: result.response.code, error: responseErrorMessage(result.response), response: result.response }; logBridgeFailure('authorize-origin', detail); return detail }
+    { const detail = { status: 'error', error: responseErrorMessage(result.response), response: result.response }; logBridgeFailure('authorize-origin', detail); return detail }
   }
 
   async function configure({ target, token, replaceExisting = false }) {
@@ -125,8 +130,8 @@ export function createExtensionBridge({ runtime = defaultRuntime(), targets = ge
     if (replaceExisting) message.replaceExisting = true
 
     const result = await sendRuntimeMessage({ runtime, target, timeoutMs, message })
-    if (result.timedOut) return { status: 'timeout' }
-    if (result.error) return { status: statusFromError(result.error), error: result.error }
+    if (result.timedOut) { const detail = { status: 'timeout' }; logBridgeFailure('authorize-origin', detail); return detail }
+    if (result.error) { const detail = { status: statusFromError(result.error), error: result.error }; logBridgeFailure('authorize-origin', detail); return detail }
     return mapConfigureResponse(result.response)
   }
 

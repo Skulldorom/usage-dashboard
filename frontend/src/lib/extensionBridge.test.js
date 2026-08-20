@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createExtensionBridge } from './extensionBridge.js'
 
 function runtimeWithResponses(responses) {
@@ -24,6 +24,13 @@ const chromeTarget = { key: 'chrome', id: 'chrome-id', transport: 'chromium', la
 const edgeTarget = { key: 'edge', id: 'edge-id', transport: 'chromium', label: 'Edge' }
 
 describe('extensionBridge', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
   it('reports unsupported-browser when no runtime transport is available', async () => {
     const bridge = createExtensionBridge({ runtime: null, targets: [chromeTarget], timeoutMs: 1 })
 
