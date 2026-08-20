@@ -125,6 +125,7 @@ const initialHomepageTokenForm = {
 
 const EXTENSION_CONNECT_MESSAGES = {
   checking: { severity: 'info', text: 'Checking for a compatible extension before creating a token…' },
+  'requesting-permission': { severity: 'info', text: 'Requesting browser permission for this dashboard before creating a token…' },
   'creating-token': { severity: 'info', text: 'Extension found. Creating a scoped token…' },
   configuring: { severity: 'info', text: 'Sending the token to the extension…' },
   connected: { severity: 'success', text: 'Extension connected. The scoped token was saved in the extension.' },
@@ -135,7 +136,7 @@ const EXTENSION_CONNECT_MESSAGES = {
   'unsupported-browser': { severity: 'warning', text: 'This browser does not expose a supported extension messaging transport. Use manual setup below.' },
   'permission-denied': { severity: 'error', text: 'The extension could not get permission for this dashboard origin. The newly-created token was revoked.' },
   'replacement-confirmation-required': { severity: 'warning', text: 'The extension is already connected to another dashboard. Confirm replacement to continue.' },
-  error: { severity: 'error', text: 'Extension connection failed. Any newly-created pre-commit token was revoked when possible.' },
+  error: { severity: 'error', text: 'Extension connection failed. Any newly-created token was revoked when possible.' },
 }
 
 const initialForm = {
@@ -206,6 +207,17 @@ export default function SettingsPage() {
     return provider?.alert_metrics || []
   }, [providers, thresholdDialog])
   const providerIcons = useMemo(() => new Map(providers.map((provider) => [provider.id, provider.icon])), [providers])
+  const extensionConnectNotice = useMemo(() => {
+    if (!extensionConnectState.status || extensionConnectState.status === 'idle') return null
+    const known = EXTENSION_CONNECT_MESSAGES[extensionConnectState.status]
+    const fallback = {
+      severity: 'error',
+      text: `Extension setup failed with status: ${extensionConnectState.status}.`,
+    }
+    const notice = known || fallback
+    const detail = extensionConnectState.error || extensionConnectState.detail || ''
+    return { ...notice, detail, tokenRevoked: Boolean(extensionConnectState.tokenRevoked) }
+  }, [extensionConnectState])
 
   const load = useCallback(async () => {
     setError('')
@@ -341,6 +353,19 @@ export default function SettingsPage() {
         return
       }
 
+      if (Array.isArray(ping.response?.capabilities) && ping.response.capabilities.includes('authorize-origin')) {
+        setExtensionConnectState({ status: 'requesting-permission', target: ping.target })
+        const authorized = await extensionBridge.authorizeOrigin({ target: ping.target })
+        if (authorized.status !== 'authorized') {
+          setExtensionConnectState({
+            status: authorized.status || 'error',
+            error: authorized.error || authorized.response?.error || authorized.response?.detail || authorized.response?.message || '',
+            tokenRevoked: false,
+          })
+          return
+        }
+      }
+
       setExtensionConnectState({ status: 'creating-token' })
       const token = await api.createApiToken(extensionTokenPayload())
       await load()
@@ -357,7 +382,11 @@ export default function SettingsPage() {
       if (!['connected', 'connected-degraded'].includes(configured.status)) {
         await revokeCreatedConnectionToken(token)
         await load()
-        setExtensionConnectState({ status: configured.status || 'error', tokenRevoked: true })
+        setExtensionConnectState({
+          status: configured.status || 'error',
+          error: configured.error || configured.response?.error || configured.response?.detail || configured.response?.message || '',
+          tokenRevoked: true,
+        })
         return
       }
 
@@ -365,7 +394,7 @@ export default function SettingsPage() {
       setExtensionConnectState({ status: configured.status, target: ping.target })
       await load()
     } catch (err) {
-      setExtensionConnectState({ status: 'error' })
+      setExtensionConnectState({ status: 'error', error: err.message })
       setError(err.message)
     } finally {
       setExtensionConnectBusy(false)
@@ -675,8 +704,10 @@ export default function SettingsPage() {
                   </Button>
                   <Button component="a" href="https://skulldorom.github.io/usage-dashboard/extension.html" target="_blank" rel="noreferrer" variant="outlined" endIcon={<LaunchRoundedIcon />}>Install extension</Button>
                 </Stack>
-                {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status] && <Alert severity={EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].severity} sx={{ mt: 1.5 }}>
-                  {EXTENSION_CONNECT_MESSAGES[extensionConnectState.status].text}
+                {extensionConnectNotice && <Alert severity={extensionConnectNotice.severity} sx={{ mt: 1.5 }}>
+                  {extensionConnectNotice.text}
+                  {extensionConnectNotice.tokenRevoked && <><br />The newly-created token was revoked, so there is no dangling credential.</>}
+                  {extensionConnectNotice.detail && <><br /><Typography component="span" variant="caption">Details: {extensionConnectNotice.detail}</Typography></>}
                 </Alert>}
                 <Typography component="h4" variant="subtitle2" sx={{ mt: 2 }}>Manual setup fallback</Typography>
                 <ol>

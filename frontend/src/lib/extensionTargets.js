@@ -3,6 +3,7 @@ export const EXTENSION_PROTOCOL_VERSION = 1
 export const EXTENSION_MESSAGE_TYPES = {
   ping: 'usage-dashboard:ping',
   configure: 'usage-dashboard:configure',
+  authorizeOrigin: 'usage-dashboard:authorize-origin',
 }
 
 export const EXTENSION_TARGETS = {
