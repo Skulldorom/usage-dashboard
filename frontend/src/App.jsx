@@ -184,8 +184,8 @@ const navItems = [
 
 const settingsSubmenuItems = [
   { href: "#provider-settings", label: "Provider settings" },
-  { href: "#api-tokens", label: "API tokens" },
-  { href: "#homepage-integration", label: "Homepage integration" },
+  { href: "#integrations", label: "Integrations" },
+  { href: "#integration-tokens", label: "Integration tokens" },
 ];
 
 function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
