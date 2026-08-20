@@ -69,10 +69,7 @@ function Sparkline({ points }) {
     const min = Math.min(...values)
     const max = Math.max(...values)
     const span = max - min || 1
-    const gradient = ctx.createLinearGradient(0, 0, width, 0)
-    gradient.addColorStop(0, '#a855f7')
-    gradient.addColorStop(1, '#06c8ff')
-    ctx.strokeStyle = gradient
+    ctx.strokeStyle = '#06c8ff'
     ctx.shadowColor = 'rgba(6, 200, 255, .45)'
     ctx.shadowBlur = 8
     ctx.lineWidth = 2.5
