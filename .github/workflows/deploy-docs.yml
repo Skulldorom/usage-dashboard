@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - docs/**
+      - site/**
       - .github/workflows/deploy-docs.yml
   workflow_dispatch:
 
@@ -40,13 +41,19 @@ jobs:
         working-directory: docs
         run: npm run docs:build
 
+      - name: Assemble site (landing + docs)
+        run: |
+          mkdir -p _site/docs
+          cp -r site/. _site/
+          cp -r docs/.vitepress/dist/. _site/docs/
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/.vitepress/dist
+          path: _site
 
   deploy:
     needs: build

@@ -8,7 +8,7 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claud
 
 ## Documentation
 
-Full documentation — installation, configuration, providers, integrations, the browser extension, and development — lives on the [documentation site](https://skulldorom.github.io/usage-dashboard/).
+Full documentation — installation, configuration, providers, integrations, the browser extension, and development — lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/).
 
 ## Quick start
 
@@ -26,7 +26,7 @@ Open through the frontend container, which also proxies API traffic to the backe
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
 
-First-run admin setup is log-based: the backend prints a one-time setup code when no password exists yet. See [First-run setup](https://skulldorom.github.io/usage-dashboard/getting-started/first-run.html) for details.
+First-run admin setup is log-based: the backend prints a one-time setup code when no password exists yet. See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-started/first-run.html) for details.
 
 ## Features
 
@@ -44,7 +44,7 @@ First-run admin setup is log-based: the backend prints a one-time setup code whe
 
 ## Development
 
-See the [documentation site](https://skulldorom.github.io/usage-dashboard/development/local-development.html) for local development, testing, and Docker image build instructions.
+See the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/development/local-development.html) for local development, testing, and Docker image build instructions.
 
 ## License
 

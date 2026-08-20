@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Usage Dashboard — self-hosted API usage dashboard</title>
+    <meta
+      name="description"
+      content="Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, and custom HTTP endpoints."
+    />
+    <link rel="icon" type="image/svg+xml" href="./logo.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --cyan: #06c8ff;
+        --violet: #8f3cff;
+        --purple: #5a0b92;
+      }
+
+      * { box-sizing: border-box; }
+      html { background: #08050f; }
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        overflow-x: hidden;
+        color: #fbf9ff;
+        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at 78% -10%, rgba(103, 18, 170, 0.32), transparent 34%),
+          radial-gradient(circle at 30% 110%, rgba(17, 109, 168, 0.13), transparent 38%), #08050f;
+      }
+      a { color: inherit; text-decoration: none; }
+      ::selection { color: #05020a; background: #48dbff; }
+
+      .network-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        opacity: 0.42;
+        pointer-events: none;
+        mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.72) 45%, transparent 92%);
+      }
+      .network-backdrop::before {
+        content: "";
+        position: absolute;
+        width: 560px;
+        height: 560px;
+        right: -150px;
+        top: -220px;
+        background: rgba(96, 15, 156, 0.34);
+        filter: blur(90px);
+        border-radius: 50%;
+      }
+      .network-backdrop svg { width: 100%; height: 100%; min-height: 720px; }
+      .network-lines { fill: none; stroke: rgba(137, 56, 200, 0.47); stroke-width: 1; }
+      .network-lines path:nth-child(even) { stroke: rgba(4, 193, 245, 0.17); }
+      .network-nodes { fill: rgba(12, 206, 255, 0.75); filter: drop-shadow(0 0 7px #06c8ff); }
+
+      .site-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 26px clamp(24px, 5vw, 64px) 0;
+      }
+      .header-links { display: flex; align-items: center; gap: 12px; }
+      .text-link {
+        color: #b5adc1;
+        font-size: 0.88rem;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+        transition: color 0.18s ease;
+      }
+      .text-link:hover { color: #fff; }
+      .pill-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 8px 15px;
+        border: 1px solid rgba(6, 200, 255, 0.42);
+        border-radius: 999px;
+        color: #20cffa;
+        font-size: 0.85rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        background: rgba(6, 200, 255, 0.07);
+        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+      }
+      .pill-button:hover {
+        color: #fff;
+        border-color: rgba(6, 200, 255, 0.7);
+        background: rgba(6, 200, 255, 0.14);
+        transform: translateY(-1px);
+      }
+      .pill-button svg { width: 15px; height: 15px; flex: none; }
+      .brand-lockup { display: flex; align-items: center; gap: 12px; }
+      .brand-mark { width: 45px; height: 42px; object-fit: contain; filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35)); }
+      .brand-lockup strong { display: block; color: #fff; font-size: 1.05rem; letter-spacing: -0.02em; }
+      .brand-lockup .brand-sub { display: block; margin-top: 1px; color: #82798e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.13em; }
+
+      .github-icon-button {
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 12px;
+        color: #d8d2de;
+        background: rgba(255, 255, 255, 0.025);
+        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+      }
+      .github-icon-button:hover {
+        color: #fff;
+        border-color: rgba(6, 200, 255, 0.48);
+        background: rgba(6, 200, 255, 0.08);
+        transform: translateY(-1px);
+      }
+      .github-icon-button.small { width: 44px; height: 44px; }
+      .github-icon-button.large { width: 60px; height: 60px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28); }
+      .github-logo { width: 20px; height: 20px; display: block; }
+      .github-icon-button.large .github-logo { width: 26px; height: 26px; }
+
+      .landing-page { min-height: calc(100vh - 160px); display: grid; align-items: center; padding: 40px clamp(24px, 5vw, 64px) 40px; }
+      .landing-hero {
+        position: relative;
+        min-height: 560px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 410px);
+        gap: clamp(28px, 5vw, 64px);
+        align-items: center;
+        padding: clamp(30px, 5vw, 64px);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        border-radius: 28px;
+        background: linear-gradient(145deg, rgba(27, 19, 40, 0.88), rgba(12, 9, 18, 0.88));
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
+        backdrop-filter: blur(14px);
+        overflow: hidden;
+      }
+      .landing-hero::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 30%);
+      }
+      .landing-orb {
+        position: absolute;
+        width: 360px;
+        height: 360px;
+        right: 10%;
+        top: -120px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(6, 200, 255, 0.28), rgba(143, 60, 255, 0.13) 45%, transparent 70%);
+        filter: blur(8px);
+      }
+      .landing-copy { position: relative; z-index: 1; max-width: 760px; }
+      .page-kicker {
+        display: block;
+        color: #20cffa;
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+      .landing-copy h1 {
+        margin: 0;
+        max-width: 760px;
+        font-size: clamp(3rem, 7vw, 6.3rem);
+        line-height: 0.88;
+        font-weight: 800;
+        letter-spacing: -0.045em;
+      }
+      .landing-description {
+        max-width: 650px;
+        margin: 26px 0 0;
+        color: #aaa2b9;
+        font-size: 1.05rem;
+        line-height: 1.75;
+      }
+      .landing-actions { display: flex; align-items: center; gap: 14px; margin-top: 32px; }
+
+      .cta-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 14px 24px;
+        border-radius: 999px;
+        color: #05020a;
+        font-weight: 800;
+        font-size: 0.95rem;
+        letter-spacing: -0.01em;
+        background: linear-gradient(115deg, #06c8ff, #8f3cff);
+        box-shadow: 0 12px 34px rgba(6, 200, 255, 0.28);
+        transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+      }
+      .cta-button:hover { transform: translateY(-2px); box-shadow: 0 16px 42px rgba(143, 60, 255, 0.4); filter: brightness(1.06); }
+      .cta-button svg { width: 18px; height: 18px; flex: none; }
+
+      .landing-card-stack { position: relative; z-index: 1; display: grid; gap: 16px; }
+      .landing-stat-card {
+        min-height: 118px;
+        padding: 22px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
+        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
+      }
+      .landing-stat-card.primary {
+        border-color: rgba(6, 200, 255, 0.32);
+        background: linear-gradient(145deg, rgba(6, 200, 255, 0.16), rgba(143, 60, 255, 0.09));
+      }
+      .landing-stat-card span {
+        display: block;
+        color: #91879f;
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+      .landing-stat-card strong {
+        display: block;
+        margin-top: 13px;
+        color: #fff;
+        font-size: clamp(1.45rem, 3vw, 2.2rem);
+        line-height: 1;
+        letter-spacing: -0.04em;
+      }
+
+      .site-footer {
+        padding: 0 clamp(24px, 5vw, 64px) 30px;
+        color: #5e566a;
+        font-size: 0.78rem;
+        text-align: center;
+      }
+
+      @media (max-width: 900px) {
+        .landing-page { min-height: calc(100vh - 130px); }
+        .landing-hero { grid-template-columns: 1fr; min-height: auto; }
+        .landing-card-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      }
+
+      @media (max-width: 600px) {
+        .site-header { padding-top: 18px; }
+        .landing-page { padding: 24px 18px 32px; }
+        .landing-copy h1 { font-size: 3.1rem; }
+        .landing-card-stack { grid-template-columns: 1fr; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="network-backdrop" aria-hidden="true">
+      <svg viewBox="0 0 1200 760" preserveAspectRatio="xMidYMid slice">
+        <g class="network-lines">
+          <path d="M-20 180 170 45 320 210 520 85 690 245 905 55 1220 190" />
+          <path d="M15 545 195 335 400 610 575 350 805 570 1015 300 1225 515" />
+          <path d="M170 45 195 335 320 210 400 610 520 85 575 350 690 245 805 570 905 55 1015 300" />
+          <path d="M-20 180 195 335 520 85 805 570 1220 190M15 545 320 210 575 350 905 55 1225 515" />
+          <path d="M170 45 400 610M320 210 690 245M520 85 1015 300M575 350 1220 190" />
+        </g>
+        <g class="network-nodes">
+          <circle cx="170" cy="45" r="3" />
+          <circle cx="320" cy="210" r="3" />
+          <circle cx="520" cy="85" r="3" />
+          <circle cx="690" cy="245" r="3" />
+          <circle cx="905" cy="55" r="3" />
+          <circle cx="195" cy="335" r="3" />
+          <circle cx="400" cy="610" r="3" />
+          <circle cx="575" cy="350" r="3" />
+          <circle cx="805" cy="570" r="3" />
+          <circle cx="1015" cy="300" r="3" />
+        </g>
+      </svg>
+    </div>
+
+    <header class="site-header">
+      <a class="brand-lockup" href="./" aria-label="Usage Dashboard home">
+        <img class="brand-mark" src="./logo.svg" alt="" aria-hidden="true" />
+        <span>
+          <strong>Usage</strong>
+          <span class="brand-sub">Command Center</span>
+        </span>
+      </a>
+      <nav class="header-links" aria-label="Site links">
+        <a
+          class="pill-button"
+          href="./docs/"
+          aria-label="Open documentation"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+          </svg>
+          Docs
+        </a>
+        <a
+          class="pill-button"
+          href="./extension.html"
+          aria-label="Browser companion extension landing page"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.7 3.1a4.6 4.6 0 0 1 3.4 0l2.3-1.3a7.7 7.7 0 0 1 3.5 3.2l-.1 2.7a4.7 4.7 0 0 1-2.3 3.9l-2.3 1.3a4.6 4.6 0 0 1-4.7 0l-2.3-1.3a4.7 4.7 0 0 1-2.4-4v-2.6l2.2-1.2.1.1Zm-1.3 2.8-2-1.2A7.8 7.8 0 0 0 4.3 12v2.5l2-1.1a4.7 4.7 0 0 1 2.7-5.5Zm8.9 1.7a7.8 7.8 0 0 0-1.9-2.5L14 8.4a4.7 4.7 0 0 1-2.4 4l-2.3 1.3v2.4l2.3 1.3a4.7 4.7 0 0 0 5.3-.4l2 1.1V12a7.8 7.8 0 0 0-.3-2.4Zm-7.2 8.4 2.3-1.3 2.3 1.3v2.5a7.8 7.8 0 0 1-4.6 0v-2.5Z" />
+          </svg>
+          Extension
+        </a>
+        <a
+          class="github-icon-button small"
+          href="https://github.com/Skulldorom/usage-dashboard"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="View project on GitHub"
+          title="View project on GitHub"
+        >
+        <svg class="github-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <path
+            fill="currentColor"
+            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+          />
+        </svg>
+      </a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="landing-page">
+        <div class="landing-hero glass-panel">
+          <div class="landing-orb" aria-hidden="true"></div>
+          <div class="landing-copy">
+            <span class="page-kicker">Private telemetry command center</span>
+            <h1>Usage Dashboard</h1>
+            <p class="landing-description">
+              Monitor provider balances, polling health, and Homepage widget data
+              from one self-hosted dashboard.
+            </p>
+            <div class="landing-actions">
+              <a
+                class="cta-button"
+                href="./docs/getting-started/installation.html"
+                aria-label="Get started with Usage Dashboard — Installation guide"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <path
+                    fill="currentColor"
+                    d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z"
+                  />
+                </svg>
+                Get Started
+              </a>
+              <a
+                class="github-icon-button small"
+                href="https://github.com/Skulldorom/usage-dashboard"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="View project on GitHub"
+                title="View project on GitHub"
+              >
+                <svg class="github-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                  <path
+                    fill="currentColor"
+                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+                  />
+                </svg>
+              </a>
+            </div>
+          </div>
+          <div class="landing-card-stack" aria-hidden="true">
+            <div class="landing-stat-card primary">
+              <span>Access</span>
+              <strong>Secured</strong>
+            </div>
+            <div class="landing-stat-card">
+              <span>Provider telemetry</span>
+              <strong>Encrypted</strong>
+            </div>
+            <div class="landing-stat-card">
+              <span>Recovery</span>
+              <strong>Log codes</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      © <span id="year"></span> Skulldorom
+    </footer>
+
+    <script>
+      document.getElementById("year").textContent = new Date().getFullYear();
+    </script>
+  </body>
+</html>

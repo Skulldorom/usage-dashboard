@@ -6,17 +6,18 @@ export default defineConfig({
   title: 'Usage Dashboard',
   description:
     'Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, and custom HTTP endpoints.',
-  base: '/usage-dashboard/',
+  base: '/usage-dashboard/docs/',
   cleanUrls: false,
   lastUpdated: true,
+  appearance: 'dark',
   head: [
-    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/usage-dashboard/logo.svg' }],
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/usage-dashboard/docs/logo.svg' }],
   ],
 
   themeConfig: {
     logo: '/logo.svg',
     nav: [
-      { text: 'Docs', link: '/getting-started/' },
+      { text: 'Home', link: 'https://skulldorom.github.io/usage-dashboard/' },
       { text: 'Browser Extension', link: '/extension/' },
       { text: 'GitHub', link: 'https://github.com/Skulldorom/usage-dashboard' },
     ],
