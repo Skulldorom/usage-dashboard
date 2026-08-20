@@ -73,6 +73,26 @@ describe('extensionBridge', () => {
     vi.useRealTimers()
   })
 
+
+  it('pre-authorizes the dashboard origin before token creation', async () => {
+    const { runtime, calls } = runtimeWithResponses([{ ok: true, protocolVersion: 1, authorized: true }])
+    const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 20 })
+
+    const result = await bridge.authorizeOrigin({ target: chromeTarget })
+
+    expect(result).toMatchObject({ status: 'authorized' })
+    expect(calls).toEqual([
+      { extensionId: 'chrome-id', message: { type: 'usage-dashboard:authorize-origin', protocolVersion: 1 } },
+    ])
+  })
+
+  it('maps pre-authorization permission denial without a token', async () => {
+    const { runtime } = runtimeWithResponses([{ ok: false, protocolVersion: 1, code: 'permission-denied' }])
+    const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 20 })
+
+    await expect(bridge.authorizeOrigin({ target: chromeTarget })).resolves.toMatchObject({ status: 'permission-denied' })
+  })
+
   it('configures a target with token only and no dashboard url', async () => {
     const { runtime, calls } = runtimeWithResponses([{ ok: true, configured: true, reachable: false, protocolVersion: 1 }])
     const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 20 })
@@ -101,6 +121,18 @@ describe('extensionBridge', () => {
       protocolVersion: 1,
       token: 'udt_secret',
       replaceExisting: true,
+    })
+  })
+
+  it('preserves error details for unknown configure failures', async () => {
+    const { runtime } = runtimeWithResponses([{ ok: false, protocolVersion: 1, code: 'origin-mismatch', error: 'Origin did not match the saved dashboard.' }])
+    const bridge = createExtensionBridge({ runtime, targets: [chromeTarget], timeoutMs: 20 })
+
+    const result = await bridge.configure({ target: chromeTarget, token: 'udt_secret' })
+
+    expect(result).toMatchObject({
+      status: 'origin-mismatch',
+      error: 'Origin did not match the saved dashboard.',
     })
   })
 })

@@ -42,6 +42,10 @@ function statusFromError(message = '') {
   return 'error'
 }
 
+function responseErrorMessage(response) {
+  return response?.error || response?.detail || response?.message || ''
+}
+
 function mapConfigureResponse(response) {
   if (response?.ok && response.protocolVersion === EXTENSION_PROTOCOL_VERSION) {
     return {
@@ -54,8 +58,8 @@ function mapConfigureResponse(response) {
   if (response?.protocolVersion && response.protocolVersion !== EXTENSION_PROTOCOL_VERSION) {
     return { status: 'incompatible-protocol', response }
   }
-  if (!response?.ok && response?.code) return { status: response.code, response }
-  return { status: 'error', response }
+  if (!response?.ok && response?.code) return { status: response.code, error: responseErrorMessage(response), response }
+  return { status: 'error', error: responseErrorMessage(response), response }
 }
 
 export function createExtensionBridge({ runtime = defaultRuntime(), targets = getExtensionTargets(), timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
@@ -96,6 +100,23 @@ export function createExtensionBridge({ runtime = defaultRuntime(), targets = ge
     return { status: 'not-installed' }
   }
 
+  async function authorizeOrigin({ target }) {
+    if (!runtime?.sendMessage) return { status: 'unsupported-browser' }
+    if (!target) return { status: 'not-installed' }
+
+    const result = await sendRuntimeMessage({
+      runtime,
+      target,
+      timeoutMs,
+      message: { type: EXTENSION_MESSAGE_TYPES.authorizeOrigin, protocolVersion: EXTENSION_PROTOCOL_VERSION },
+    })
+    if (result.timedOut) return { status: 'timeout' }
+    if (result.error) return { status: statusFromError(result.error), error: result.error }
+    if (result.response?.ok && result.response.protocolVersion === EXTENSION_PROTOCOL_VERSION) return { status: 'authorized', response: result.response }
+    if (!result.response?.ok && result.response?.code) return { status: result.response.code, error: responseErrorMessage(result.response), response: result.response }
+    return { status: 'error', error: responseErrorMessage(result.response), response: result.response }
+  }
+
   async function configure({ target, token, replaceExisting = false }) {
     if (!runtime?.sendMessage) return { status: 'unsupported-browser' }
     if (!target) return { status: 'not-installed' }
@@ -109,7 +130,7 @@ export function createExtensionBridge({ runtime = defaultRuntime(), targets = ge
     return mapConfigureResponse(result.response)
   }
 
-  return { ping, configure }
+  return { ping, authorizeOrigin, configure }
 }
 
 export const extensionBridge = createExtensionBridge()
