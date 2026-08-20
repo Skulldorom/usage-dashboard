@@ -12,7 +12,7 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claud
 
 ## Documentation
 
-Full documentation — installation, configuration, providers, integrations, the browser extension, and development — lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/).
+Full documentation - installation, configuration, providers, integrations, the browser extension, and development - lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/).
 
 ## Quick start
 

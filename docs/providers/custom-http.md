@@ -7,12 +7,12 @@ metrics from the JSON response using JSON paths.
 
 Choose **Custom HTTP** in Settings and provide:
 
-- **Base URL** — the absolute endpoint host, e.g. `https://api.example.com`.
-- **Path** — the relative path, e.g. `/v1/billing`.
-- **Method** — `GET` or `POST`.
-- **Auth header** — header name and template. The encrypted API key is inserted
+- **Base URL** - the absolute endpoint host, e.g. `https://api.example.com`.
+- **Path** - the relative path, e.g. `/v1/billing`.
+- **Method** - `GET` or `POST`.
+- **Auth header** - header name and template. The encrypted API key is inserted
   via the `{api_key}` placeholder.
-- **Metrics** — one or more `{ label, path, unit, maximum_path }` entries.
+- **Metrics** - one or more `{ label, path, unit, maximum_path }` entries.
 
 ## Example metric config
 
@@ -23,14 +23,19 @@ Choose **Custom HTTP** in Settings and provide:
   "auth_header_name": "Authorization",
   "auth_header_template": "Bearer {api_key}",
   "metrics": [
-    { "label": "remaining", "path": "$.credits.remaining", "unit": "credits", "maximum_path": "$.credits.limit" }
+    {
+      "label": "remaining",
+      "path": "$.credits.remaining",
+      "unit": "credits",
+      "maximum_path": "$.credits.limit"
+    }
   ]
 }
 ```
 
 ## Security
 
-- Secrets must not go in the base URL or path — the backend rejects
+- Secrets must not go in the base URL or path - the backend rejects
   credential-looking URLs and paths.
 - The host must be a public hostname. Requests to `localhost` or to hosts that
   resolve to private, loopback, link-local, reserved, or multicast addresses are

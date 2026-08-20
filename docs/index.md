@@ -13,9 +13,9 @@ a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
 
 ## Start here
 
-- [Installation](/getting-started/installation) — Docker Compose quick start.
-- [First-run setup](/getting-started/first-run) — create the admin password.
-- [Environment variables](/configuration/environment) — the configuration reference.
-- [Providers](/providers/) — supported providers and their endpoints.
-- [Homepage Dashboard](/integrations/homepage) — the Homepage widget.
-- [Browser Extension](/extension/) — the Chrome/Brave companion.
+- [Installation](/getting-started/installation) - Docker Compose quick start.
+- [First-run setup](/getting-started/first-run) - create the admin password.
+- [Environment variables](/configuration/environment) - the configuration reference.
+- [Providers](/providers/) - supported providers and their endpoints.
+- [Homepage Dashboard](/integrations/homepage) - the Homepage widget.
+- [Browser Extension](/extension/) - the Chrome/Brave companion.

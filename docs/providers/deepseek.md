@@ -10,10 +10,10 @@ A standard DeepSeek API key.
 
 ## Metrics
 
-- `total_balance` — combined balance.
-- `granted_balance` — granted (free) balance.
-- `topped_up_balance` — balance you topped up.
-- `available` — whether the account balance API is currently available.
+- `total_balance` - combined balance.
+- `granted_balance` - granted (free) balance.
+- `topped_up_balance` - balance you topped up.
+- `available` - whether the account balance API is currently available.
 
 ## Notes
 

@@ -1,4 +1,4 @@
-# Browser Extension — Getting Started
+# Browser Extension - Getting Started
 
 The Usage Dashboard extension is a companion client for a self-hosted Usage
 Dashboard instance that **you** operate. It shows provider usage and polling
@@ -12,14 +12,14 @@ status in a toolbar popup without opening the dashboard.
 
 ## Availability
 
-| Browser | Status |
-| --- | --- |
-| Chrome | Live — Chrome Web Store |
-| Brave | Live — same Web Store listing (Chromium) |
-| Firefox | Roadmap — WebExtension port |
-| Microsoft Edge | Roadmap — Chromium |
-| Opera | Roadmap — Chromium |
-| Safari | Roadmap — Web Extension conversion |
+| Browser        | Status                                   |
+| -------------- | ---------------------------------------- |
+| Chrome         | Live - Chrome Web Store                  |
+| Brave          | Live - same Web Store listing (Chromium) |
+| Firefox        | Roadmap - WebExtension port              |
+| Microsoft Edge | Roadmap - Chromium                       |
+| Opera          | Roadmap - Chromium                       |
+| Safari         | Roadmap - Web Extension conversion       |
 
 ## Connect
 

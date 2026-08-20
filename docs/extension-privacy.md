@@ -1,4 +1,4 @@
-# Usage Dashboard Extension — Privacy Policy
+# Usage Dashboard Extension - Privacy Policy
 
 Last updated: 2026-08-20
 
@@ -10,7 +10,7 @@ extension") handles data. The extension is a companion client for a self-hosted
 ## Data stored locally
 
 The extension stores the following information on your device using
-`chrome.storage.local` (local browser storage only — **not**
+`chrome.storage.local` (local browser storage only - **not**
 `chrome.storage.sync`, and never sent to any server operated by the extension
 developer):
 
@@ -25,7 +25,7 @@ None of this data is transmitted to the extension developer or any third party.
 ## What data the extension sends, and where
 
 The extension only makes network requests to the **single server origin you
-configure** — your own Usage Dashboard instance. Specifically, it calls:
+configure** - your own Usage Dashboard instance. Specifically, it calls:
 
 - `GET /api/v1/usage`
 - `GET /api/v1/poll/status`

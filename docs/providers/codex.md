@@ -17,16 +17,16 @@ refreshed automatically before they expire.
 
 ## Metrics
 
-- `plan_type` — your Codex plan.
-- `session_remaining_percent` / `session_reset_at` — remaining in the current session window.
-- `weekly_remaining_percent` / `weekly_reset_at` — remaining in the weekly window.
-- `reset_credits_available` — credits available for a rate-limit reset.
-- `limit_reached` — whether the current window is exhausted.
-- `review_session_remaining_percent` / `review_weekly_remaining_percent` — code review windows, when present.
+- `plan_type` - your Codex plan.
+- `session_remaining_percent` / `session_reset_at` - remaining in the current session window.
+- `weekly_remaining_percent` / `weekly_reset_at` - remaining in the weekly window.
+- `reset_credits_available` - credits available for a rate-limit reset.
+- `limit_reached` - whether the current window is exhausted.
+- `review_session_remaining_percent` / `review_weekly_remaining_percent` - code review windows, when present.
 
 ## Notes
 
 - If the OAuth token is rejected (401/403), re-authorize the Codex provider from
   Settings.
-- Refresh tokens that expire cannot be silently recovered — re-run the OAuth
+- Refresh tokens that expire cannot be silently recovered - re-run the OAuth
   handshake to reconnect.

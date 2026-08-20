@@ -13,7 +13,7 @@ export ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print
 pytest
 ```
 
-Start the API with uvicorn (see `backend/app/main.py`) pointing at a database —
+Start the API with uvicorn (see `backend/app/main.py`) pointing at a database -
 the default falls back to SQLite for local use.
 
 ## Frontend

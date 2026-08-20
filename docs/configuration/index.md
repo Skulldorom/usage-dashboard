@@ -3,10 +3,10 @@
 Usage Dashboard is configured almost entirely through environment variables,
 passed to the backend and frontend containers via `.env` and `docker-compose.yml`.
 
-- [Environment variables](/configuration/environment) — the full reference.
-- [Authentication](/configuration/authentication) — admin password, sessions, and setup/reset codes.
-- [API tokens](/configuration/api-tokens) — scoped tokens for integrations.
-- [Automatic polling](/configuration/polling) — background usage polling.
+- [Environment variables](/configuration/environment) - the full reference.
+- [Authentication](/configuration/authentication) - admin password, sessions, and setup/reset codes.
+- [API tokens](/configuration/api-tokens) - scoped tokens for integrations.
+- [Automatic polling](/configuration/polling) - background usage polling.
 
 ## Where variables live
 

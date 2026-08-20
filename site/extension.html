@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Usage Dashboard Extension — browser companion</title>
+    <title>Usage Dashboard Extension - browser companion</title>
     <meta
       name="description"
       content="Get the Usage Dashboard browser extension for Chrome and Brave, with additional browser support on the roadmap."
@@ -24,19 +24,36 @@
         --purple: #4c1d95;
       }
 
-      * { box-sizing: border-box; }
-      html { background: #090713; }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: #090713;
+      }
       body {
         margin: 0;
         min-width: 320px;
         min-height: 100vh;
         overflow-x: hidden;
         color: #fbf9ff;
-        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family:
+          "Inter",
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
         background: #090713;
       }
-      a { color: inherit; text-decoration: none; }
-      ::selection { color: #05020a; background: #48dbff; }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      ::selection {
+        color: #05020a;
+        background: #48dbff;
+      }
 
       .network-backdrop {
         position: fixed;
@@ -45,12 +62,30 @@
         overflow: hidden;
         opacity: 0.42;
         pointer-events: none;
-        mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.72) 45%, transparent 92%);
+        mask-image: linear-gradient(
+          to bottom,
+          #000 0%,
+          rgba(0, 0, 0, 0.72) 45%,
+          transparent 92%
+        );
       }
-      .network-backdrop svg { width: 100%; height: 100%; min-height: 720px; }
-      .network-lines { fill: none; stroke: rgba(160, 178, 196, 0.35); stroke-width: 1; }
-      .network-lines path:nth-child(even) { stroke: rgba(4, 193, 245, 0.17); }
-      .network-nodes { fill: rgba(12, 206, 255, 0.75); filter: drop-shadow(0 0 7px #06c8ff); }
+      .network-backdrop svg {
+        width: 100%;
+        height: 100%;
+        min-height: 720px;
+      }
+      .network-lines {
+        fill: none;
+        stroke: rgba(160, 178, 196, 0.35);
+        stroke-width: 1;
+      }
+      .network-lines path:nth-child(even) {
+        stroke: rgba(4, 193, 245, 0.17);
+      }
+      .network-nodes {
+        fill: rgba(12, 206, 255, 0.75);
+        filter: drop-shadow(0 0 7px #06c8ff);
+      }
 
       .site-header {
         display: flex;
@@ -59,12 +94,37 @@
         gap: 20px;
         padding: 26px clamp(24px, 5vw, 64px) 0;
       }
-      .brand-lockup { display: flex; align-items: center; gap: 12px; }
-      .brand-mark { width: 45px; height: 42px; object-fit: contain; filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35)); }
-      .brand-lockup strong { display: block; color: #fff; font-size: 1.05rem; letter-spacing: -0.02em; }
-      .brand-lockup .brand-sub { display: block; margin-top: 1px; color: #82798e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.13em; }
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand-mark {
+        width: 45px;
+        height: 42px;
+        object-fit: contain;
+        filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35));
+      }
+      .brand-lockup strong {
+        display: block;
+        color: #fff;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+      }
+      .brand-lockup .brand-sub {
+        display: block;
+        margin-top: 1px;
+        color: #82798e;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+      }
 
-      .header-links { display: flex; align-items: center; gap: 12px; }
+      .header-links {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
       .text-link {
         color: #b5adc1;
         font-size: 0.88rem;
@@ -72,7 +132,9 @@
         letter-spacing: 0.02em;
         transition: color 0.18s ease;
       }
-      .text-link:hover { color: #fff; }
+      .text-link:hover {
+        color: #fff;
+      }
       .pill-button {
         display: inline-flex;
         align-items: center;
@@ -85,7 +147,11 @@
         font-weight: 700;
         letter-spacing: 0.01em;
         background: rgba(6, 200, 255, 0.07);
-        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        transition:
+          color 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease,
+          transform 0.18s ease;
       }
       .pill-button:hover {
         color: #fff;
@@ -93,7 +159,11 @@
         background: rgba(6, 200, 255, 0.14);
         transform: translateY(-1px);
       }
-      .pill-button svg { width: 15px; height: 15px; flex: none; }
+      .pill-button svg {
+        width: 15px;
+        height: 15px;
+        flex: none;
+      }
 
       .github-icon-button {
         display: inline-grid;
@@ -102,15 +172,26 @@
         border-radius: 12px;
         color: #d8d2de;
         background: rgba(255, 255, 255, 0.025);
-        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        transition:
+          color 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease,
+          box-shadow 0.18s ease;
       }
       .github-icon-button:hover {
         color: #fff;
         border-color: rgba(6, 200, 255, 0.48);
         background: rgba(6, 200, 255, 0.08);
       }
-      .github-icon-button.small { width: 44px; height: 44px; }
-      .github-logo { width: 20px; height: 20px; display: block; }
+      .github-icon-button.small {
+        width: 44px;
+        height: 44px;
+      }
+      .github-logo {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
 
       .page-kicker {
         display: block;
@@ -126,9 +207,21 @@
         margin: 0 auto;
         padding: 72px clamp(24px, 5vw, 64px) 90px;
       }
-      .browsers-head { text-align: center; max-width: 640px; margin: 0 auto 44px; }
-      .browsers-head h2 { margin: 0; font-size: clamp(1.8rem, 4vw, 2.8rem); letter-spacing: -0.03em; }
-      .browsers-head p { margin: 14px 0 0; color: #aaa2b9; line-height: 1.7; }
+      .browsers-head {
+        text-align: center;
+        max-width: 640px;
+        margin: 0 auto 44px;
+      }
+      .browsers-head h2 {
+        margin: 0;
+        font-size: clamp(1.8rem, 4vw, 2.8rem);
+        letter-spacing: -0.03em;
+      }
+      .browsers-head p {
+        margin: 14px 0 0;
+        color: #aaa2b9;
+        line-height: 1.7;
+      }
       .browsers-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -143,7 +236,9 @@
         border-radius: 20px;
         background: rgba(22, 17, 38, 0.82);
         box-shadow: none;
-        transition: border-color 0.18s ease, background 0.18s ease;
+        transition:
+          border-color 0.18s ease,
+          background 0.18s ease;
       }
       a.browser-card:hover {
         border-color: rgba(6, 200, 255, 0.42);
@@ -167,9 +262,24 @@
         background: rgba(255, 255, 255, 0.05);
         color: #d8d2de;
       }
-      .browser-icon img { width: 28px; height: 28px; display: block; }
-      .browser-card strong { display: block; color: #fff; font-size: 1.02rem; letter-spacing: -0.01em; }
-      .browser-card small { display: block; margin-top: 3px; color: #82798e; font-size: 0.78rem; line-height: 1.45; }
+      .browser-icon img {
+        width: 28px;
+        height: 28px;
+        display: block;
+      }
+      .browser-card strong {
+        display: block;
+        color: #fff;
+        font-size: 1.02rem;
+        letter-spacing: -0.01em;
+      }
+      .browser-card small {
+        display: block;
+        margin-top: 3px;
+        color: #82798e;
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
       .browser-card .badge {
         margin-left: auto;
         padding: 5px 10px;
@@ -185,9 +295,22 @@
         background: #06c8ff;
         box-shadow: none;
       }
-      .browser-card .badge.soon { color: #91879f; background: rgba(255, 255, 255, 0.06); }
-      .browser-card .arrow { margin-left: auto; color: #6f657f; font-weight: 800; transition: transform 0.18s ease, color 0.18s ease; }
-      a.browser-card:hover .arrow { color: #20cffa; transform: translateX(3px); }
+      .browser-card .badge.soon {
+        color: #91879f;
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .browser-card .arrow {
+        margin-left: auto;
+        color: #6f657f;
+        font-weight: 800;
+        transition:
+          transform 0.18s ease,
+          color 0.18s ease;
+      }
+      a.browser-card:hover .arrow {
+        color: #20cffa;
+        transform: translateX(3px);
+      }
 
       .setup-section {
         max-width: 880px;
@@ -200,10 +323,25 @@
         border-radius: 22px;
         background: rgba(6, 200, 255, 0.08);
       }
-      .setup-card h2 { margin: 0; font-size: clamp(1.35rem, 3vw, 1.8rem); letter-spacing: -0.02em; }
-      .setup-card p { margin: 10px 0 0; color: #aaa2b9; line-height: 1.7; }
-      .setup-card ol { margin: 16px 0 0; padding-left: 22px; color: #c6becf; line-height: 1.65; }
-      .setup-card li + li { margin-top: 6px; }
+      .setup-card h2 {
+        margin: 0;
+        font-size: clamp(1.35rem, 3vw, 1.8rem);
+        letter-spacing: -0.02em;
+      }
+      .setup-card p {
+        margin: 10px 0 0;
+        color: #aaa2b9;
+        line-height: 1.7;
+      }
+      .setup-card ol {
+        margin: 16px 0 0;
+        padding-left: 22px;
+        color: #c6becf;
+        line-height: 1.65;
+      }
+      .setup-card li + li {
+        margin-top: 6px;
+      }
 
       .site-footer {
         padding: 0 clamp(24px, 5vw, 64px) 30px;
@@ -211,16 +349,28 @@
         font-size: 0.78rem;
         text-align: center;
       }
-      .site-footer a { color: #8a8197; text-decoration: underline; text-underline-offset: 3px; }
-      .site-footer a:hover { color: #cfc6da; }
+      .site-footer a {
+        color: #8a8197;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      .site-footer a:hover {
+        color: #cfc6da;
+      }
 
       @media (max-width: 600px) {
-        .site-header { padding-top: 18px; }
-        .browsers-section { padding: 52px 18px 64px; }
+        .site-header {
+          padding-top: 18px;
+        }
+        .browsers-section {
+          padding: 52px 18px 64px;
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
+        *,
+        *::before,
+        *::after {
           scroll-behavior: auto !important;
           transition-duration: 0.01ms !important;
           animation-duration: 0.01ms !important;
@@ -235,9 +385,15 @@
         <g class="network-lines">
           <path d="M-20 180 170 45 320 210 520 85 690 245 905 55 1220 190" />
           <path d="M15 545 195 335 400 610 575 350 805 570 1015 300 1225 515" />
-          <path d="M170 45 195 335 320 210 400 610 520 85 575 350 690 245 805 570 905 55 1015 300" />
-          <path d="M-20 180 195 335 520 85 805 570 1220 190M15 545 320 210 575 350 905 55 1225 515" />
-          <path d="M170 45 400 610M320 210 690 245M520 85 1015 300M575 350 1220 190" />
+          <path
+            d="M170 45 195 335 320 210 400 610 520 85 575 350 690 245 805 570 905 55 1015 300"
+          />
+          <path
+            d="M-20 180 195 335 520 85 805 570 1220 190M15 545 320 210 575 350 905 55 1225 515"
+          />
+          <path
+            d="M170 45 400 610M320 210 690 245M520 85 1015 300M575 350 1220 190"
+          />
         </g>
         <g class="network-nodes">
           <circle cx="170" cy="45" r="3" />
@@ -263,13 +419,16 @@
         </span>
       </a>
       <nav class="header-links" aria-label="Site links">
-        <a
-          class="pill-button"
-          href="./docs/"
-          aria-label="Open documentation"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+        <a class="pill-button" href="./docs/" aria-label="Open documentation">
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+            />
           </svg>
           Docs
         </a>
@@ -278,7 +437,12 @@
           href="./"
           aria-label="Usage Dashboard landing page"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            focusable="false"
+          >
             <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
           </svg>
           Dashboard
@@ -289,7 +453,8 @@
           target="_blank"
           rel="noreferrer"
           aria-label="Extension privacy policy"
-        >Privacy</a>
+          >Privacy</a
+        >
         <a
           class="github-icon-button small"
           href="https://github.com/Skulldorom/usage-dashboard"
@@ -298,7 +463,12 @@
           aria-label="View project on GitHub"
           title="View project on GitHub"
         >
-          <svg class="github-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+          <svg
+            class="github-logo"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
             <path
               fill="currentColor"
               d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
@@ -314,9 +484,9 @@
           <span class="page-kicker">Get the extension</span>
           <h2>Available in your browser</h2>
           <p>
-            Chrome and Brave are live in the Chrome Web Store. Firefox, Edge, and the rest are
-            on the roadmap — the extension is a Manifest V3 build, so Chromium-based browsers
-            are covered today.
+            Chrome and Brave are live in the Chrome Web Store. Firefox, Edge,
+            and the rest are on the roadmap - the extension is a Manifest V3
+            build, so Chromium-based browsers are covered today.
           </p>
         </div>
         <div class="browsers-grid">
@@ -349,12 +519,15 @@
             </span>
             <span>
               <strong>Brave</strong>
-              <small>Chromium — same Web Store listing</small>
+              <small>Chromium - same Web Store listing</small>
             </span>
             <span class="badge live" aria-hidden="true">Live</span>
           </a>
 
-          <div class="browser-card coming-soon" aria-label="Firefox support coming soon">
+          <div
+            class="browser-card coming-soon"
+            aria-label="Firefox support coming soon"
+          >
             <span class="browser-icon" aria-hidden="true">
               <img src="./assets/browser-firefox.svg" alt="" loading="lazy" />
             </span>
@@ -365,18 +538,24 @@
             <span class="badge soon" aria-hidden="true">Coming soon</span>
           </div>
 
-          <div class="browser-card coming-soon" aria-label="Microsoft Edge support coming soon">
+          <div
+            class="browser-card coming-soon"
+            aria-label="Microsoft Edge support coming soon"
+          >
             <span class="browser-icon" aria-hidden="true">
               <img src="./assets/browser-edge.svg" alt="" loading="lazy" />
             </span>
             <span>
               <strong>Microsoft Edge</strong>
-              <small>Chromium — Edge Add-ons pending</small>
+              <small>Chromium - Edge Add-ons pending</small>
             </span>
             <span class="badge soon" aria-hidden="true">Coming soon</span>
           </div>
 
-          <div class="browser-card coming-soon" aria-label="Safari support coming soon">
+          <div
+            class="browser-card coming-soon"
+            aria-label="Safari support coming soon"
+          >
             <span class="browser-icon" aria-hidden="true">
               <img src="./assets/browser-safari.svg" alt="" loading="lazy" />
             </span>
@@ -387,13 +566,16 @@
             <span class="badge soon" aria-hidden="true">Coming soon</span>
           </div>
 
-          <div class="browser-card coming-soon" aria-label="Opera support coming soon">
+          <div
+            class="browser-card coming-soon"
+            aria-label="Opera support coming soon"
+          >
             <span class="browser-icon" aria-hidden="true">
               <img src="./assets/browser-opera.svg" alt="" loading="lazy" />
             </span>
             <span>
               <strong>Opera</strong>
-              <small>Chromium — store listing pending</small>
+              <small>Chromium - store listing pending</small>
             </span>
             <span class="badge soon" aria-hidden="true">Coming soon</span>
           </div>
@@ -403,23 +585,37 @@
       <section class="setup-section" aria-labelledby="setup-heading">
         <div class="setup-card">
           <span class="page-kicker">Connect it</span>
-          <h2 id="setup-heading">Paste your dashboard URL before one-click setup</h2>
+          <h2 id="setup-heading">
+            Paste your dashboard URL before one-click setup
+          </h2>
           <p>
-            The extension only talks to the self-hosted Usage Dashboard instance you configure.
-            One-click setup still needs that URL saved in the extension first.
+            The extension only talks to the self-hosted Usage Dashboard instance
+            you configure. One-click setup still needs that URL saved in the
+            extension first.
           </p>
           <ol>
             <li>Install and pin the extension.</li>
-            <li>Open your dashboard settings and copy the URL from <strong>Integrations → Browser extension</strong>.</li>
-            <li>Open the extension <strong>Options</strong> page and paste that dashboard URL.</li>
-            <li>Return to the dashboard and use <strong>Connect extension</strong>, or use manual setup to paste a token yourself.</li>
+            <li>
+              Open your dashboard settings and copy the URL from
+              <strong>Integrations → Browser extension</strong>.
+            </li>
+            <li>
+              Open the extension <strong>Options</strong> page and paste that
+              dashboard URL.
+            </li>
+            <li>
+              Return to the dashboard and use
+              <strong>Connect extension</strong>, or use manual setup to paste a
+              token yourself.
+            </li>
           </ol>
         </div>
       </section>
     </main>
 
     <footer class="site-footer">
-      © <span id="year"></span> Skulldorom · <a href="./extension-privacy.html">Extension privacy</a>
+      © <span id="year"></span> Skulldorom ·
+      <a href="./extension-privacy.html">Extension privacy</a>
     </footer>
 
     <script>

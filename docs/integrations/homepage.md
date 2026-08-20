@@ -21,7 +21,7 @@ external hostname.
 Two widget formats are supported. The UI generator defaults to the dynamic
 provider list because it matches the dashboard provider rows.
 
-## Option A — Dynamic list (one row per provider)
+## Option A - Dynamic list (one row per provider)
 
 Recommended default. Requires Homepage >= 1.1.0. Set `display: dynamic-list` and
 use the object-style `mappings` below. Each enabled provider config becomes a row
@@ -45,7 +45,7 @@ with its label on the left and usage-left text on the right.
         format: text
 ```
 
-`display: dynamic-list` is mandatory — omitting it causes
+`display: dynamic-list` is mandatory - omitting it causes
 `TypeError: s.slice is not a function` because Homepage tries to treat the
 object-style mappings as a block-display array.
 
@@ -59,7 +59,7 @@ The existing scalar fields (`summary`, `configured_providers`,
 `healthy_providers`, `degraded_providers`) and flattened `metrics` object remain
 in the response for use with Option B or extra mappings.
 
-## Option B — Block display (scalar fields)
+## Option B - Block display (scalar fields)
 
 The `block` display shows individual fields as labelled rows. Use this for a
 compact summary tile:

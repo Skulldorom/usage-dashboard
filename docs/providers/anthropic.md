@@ -9,7 +9,7 @@ hours.
 ## Credential
 
 This requires an **Anthropic Admin API key**, created under
-**Console → Settings → Organization → Admin API Keys** — not a normal inference
+**Console → Settings → Organization → Admin API Keys** - not a normal inference
 key.
 
 ## Metrics

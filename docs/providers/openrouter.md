@@ -11,11 +11,11 @@ Your OpenRouter API key.
 
 ## Metrics
 
-- `limit_remaining` — credits remaining against your limit.
-- `usage_daily` — credits used today.
-- `usage_weekly` — credits used this week.
-- `usage_monthly` — credits used this month.
-- `limit` — your configured credit limit.
+- `limit_remaining` - credits remaining against your limit.
+- `usage_daily` - credits used today.
+- `usage_weekly` - credits used this week.
+- `usage_monthly` - credits used this month.
+- `limit` - your configured credit limit.
 
 ## Notes
 

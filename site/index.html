@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Usage Dashboard — self-hosted API usage dashboard</title>
+    <title>Usage Dashboard - self-hosted API usage dashboard</title>
     <meta
       name="description"
       content="Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, and custom HTTP endpoints."
@@ -24,19 +24,36 @@
         --purple: #4c1d95;
       }
 
-      * { box-sizing: border-box; }
-      html { background: #090713; }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        background: #090713;
+      }
       body {
         margin: 0;
         min-width: 320px;
         min-height: 100vh;
         overflow-x: hidden;
         color: #fbf9ff;
-        font-family: "Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family:
+          "Inter",
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
         background: #090713;
       }
-      a { color: inherit; text-decoration: none; }
-      ::selection { color: #05020a; background: #48dbff; }
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+      ::selection {
+        color: #05020a;
+        background: #48dbff;
+      }
 
       .network-backdrop {
         position: fixed;
@@ -45,12 +62,30 @@
         overflow: hidden;
         opacity: 0.42;
         pointer-events: none;
-        mask-image: linear-gradient(to bottom, #000 0%, rgba(0, 0, 0, 0.72) 45%, transparent 92%);
+        mask-image: linear-gradient(
+          to bottom,
+          #000 0%,
+          rgba(0, 0, 0, 0.72) 45%,
+          transparent 92%
+        );
       }
-      .network-backdrop svg { width: 100%; height: 100%; min-height: 720px; }
-      .network-lines { fill: none; stroke: rgba(160, 178, 196, 0.35); stroke-width: 1; }
-      .network-lines path:nth-child(even) { stroke: rgba(4, 193, 245, 0.17); }
-      .network-nodes { fill: rgba(12, 206, 255, 0.75); filter: drop-shadow(0 0 7px #06c8ff); }
+      .network-backdrop svg {
+        width: 100%;
+        height: 100%;
+        min-height: 720px;
+      }
+      .network-lines {
+        fill: none;
+        stroke: rgba(160, 178, 196, 0.35);
+        stroke-width: 1;
+      }
+      .network-lines path:nth-child(even) {
+        stroke: rgba(4, 193, 245, 0.17);
+      }
+      .network-nodes {
+        fill: rgba(12, 206, 255, 0.75);
+        filter: drop-shadow(0 0 7px #06c8ff);
+      }
 
       .site-header {
         display: flex;
@@ -59,7 +94,11 @@
         gap: 20px;
         padding: 26px clamp(24px, 5vw, 64px) 0;
       }
-      .header-links { display: flex; align-items: center; gap: 12px; }
+      .header-links {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
       .text-link {
         color: #b5adc1;
         font-size: 0.88rem;
@@ -67,7 +106,9 @@
         letter-spacing: 0.02em;
         transition: color 0.18s ease;
       }
-      .text-link:hover { color: #fff; }
+      .text-link:hover {
+        color: #fff;
+      }
       .pill-button {
         display: inline-flex;
         align-items: center;
@@ -80,7 +121,11 @@
         font-weight: 700;
         letter-spacing: 0.01em;
         background: rgba(6, 200, 255, 0.07);
-        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+        transition:
+          color 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease,
+          transform 0.18s ease;
       }
       .pill-button:hover {
         color: #fff;
@@ -88,11 +133,36 @@
         background: rgba(6, 200, 255, 0.14);
         transform: translateY(-1px);
       }
-      .pill-button svg { width: 15px; height: 15px; flex: none; }
-      .brand-lockup { display: flex; align-items: center; gap: 12px; }
-      .brand-mark { width: 45px; height: 42px; object-fit: contain; filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35)); }
-      .brand-lockup strong { display: block; color: #fff; font-size: 1.05rem; letter-spacing: -0.02em; }
-      .brand-lockup .brand-sub { display: block; margin-top: 1px; color: #82798e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.13em; }
+      .pill-button svg {
+        width: 15px;
+        height: 15px;
+        flex: none;
+      }
+      .brand-lockup {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .brand-mark {
+        width: 45px;
+        height: 42px;
+        object-fit: contain;
+        filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35));
+      }
+      .brand-lockup strong {
+        display: block;
+        color: #fff;
+        font-size: 1.05rem;
+        letter-spacing: -0.02em;
+      }
+      .brand-lockup .brand-sub {
+        display: block;
+        margin-top: 1px;
+        color: #82798e;
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.13em;
+      }
 
       .social-icon-button {
         display: inline-grid;
@@ -101,7 +171,12 @@
         border-radius: 12px;
         color: #d8d2de;
         background: rgba(255, 255, 255, 0.025);
-        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+        transition:
+          color 0.18s ease,
+          border-color 0.18s ease,
+          background 0.18s ease,
+          transform 0.18s ease,
+          box-shadow 0.18s ease;
       }
       .social-icon-button:hover {
         color: #fff;
@@ -109,12 +184,31 @@
         background: rgba(6, 200, 255, 0.08);
         transform: translateY(-1px);
       }
-      .social-icon-button.small { width: 44px; height: 44px; }
-      .social-icon-button.large { width: 60px; height: 60px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28); }
-      .social-logo { width: 20px; height: 20px; display: block; }
-      .social-icon-button.large .social-logo { width: 26px; height: 26px; }
+      .social-icon-button.small {
+        width: 44px;
+        height: 44px;
+      }
+      .social-icon-button.large {
+        width: 60px;
+        height: 60px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
+      }
+      .social-logo {
+        width: 20px;
+        height: 20px;
+        display: block;
+      }
+      .social-icon-button.large .social-logo {
+        width: 26px;
+        height: 26px;
+      }
 
-      .landing-page { min-height: calc(100vh - 160px); display: grid; align-items: center; padding: 40px clamp(24px, 5vw, 64px) 40px; }
+      .landing-page {
+        min-height: calc(100vh - 160px);
+        display: grid;
+        align-items: center;
+        padding: 40px clamp(24px, 5vw, 64px) 40px;
+      }
       .landing-hero {
         position: relative;
         width: min(100%, 1240px);
@@ -132,7 +226,11 @@
         backdrop-filter: blur(14px);
         overflow: hidden;
       }
-      .landing-copy { position: relative; z-index: 1; max-width: 760px; }
+      .landing-copy {
+        position: relative;
+        z-index: 1;
+        max-width: 760px;
+      }
       .page-kicker {
         display: block;
         color: #20cffa;
@@ -157,7 +255,12 @@
         font-size: 1.05rem;
         line-height: 1.75;
       }
-      .landing-actions { display: flex; align-items: center; gap: 14px; margin-top: 32px; }
+      .landing-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        margin-top: 32px;
+      }
 
       .cta-button {
         display: inline-flex;
@@ -172,16 +275,28 @@
         letter-spacing: -0.01em;
         background: #06c8ff;
         box-shadow: none;
-        transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+        transition:
+          background 0.18s ease,
+          border-color 0.18s ease,
+          color 0.18s ease;
       }
       .cta-button:hover {
         color: #08050f;
         border-color: rgba(99, 227, 255, 0.7);
         background: #63e3ff;
       }
-      .cta-button svg { width: 18px; height: 18px; flex: none; }
+      .cta-button svg {
+        width: 18px;
+        height: 18px;
+        flex: none;
+      }
 
-      .landing-card-stack { position: relative; z-index: 1; display: grid; gap: 16px; }
+      .landing-card-stack {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: 16px;
+      }
       .landing-stat-card {
         min-height: 118px;
         padding: 22px;
@@ -219,20 +334,37 @@
       }
 
       @media (max-width: 900px) {
-        .landing-page { min-height: calc(100vh - 130px); }
-        .landing-hero { grid-template-columns: 1fr; min-height: auto; }
-        .landing-card-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .landing-page {
+          min-height: calc(100vh - 130px);
+        }
+        .landing-hero {
+          grid-template-columns: 1fr;
+          min-height: auto;
+        }
+        .landing-card-stack {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
       }
 
       @media (max-width: 600px) {
-        .site-header { padding-top: 18px; }
-        .landing-page { padding: 24px 18px 32px; }
-        .landing-copy h1 { font-size: 3.1rem; }
-        .landing-card-stack { grid-template-columns: 1fr; }
+        .site-header {
+          padding-top: 18px;
+        }
+        .landing-page {
+          padding: 24px 18px 32px;
+        }
+        .landing-copy h1 {
+          font-size: 3.1rem;
+        }
+        .landing-card-stack {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
+        *,
+        *::before,
+        *::after {
           scroll-behavior: auto !important;
           transition-duration: 0.01ms !important;
           animation-duration: 0.01ms !important;
@@ -247,9 +379,15 @@
         <g class="network-lines">
           <path d="M-20 180 170 45 320 210 520 85 690 245 905 55 1220 190" />
           <path d="M15 545 195 335 400 610 575 350 805 570 1015 300 1225 515" />
-          <path d="M170 45 195 335 320 210 400 610 520 85 575 350 690 245 805 570 905 55 1015 300" />
-          <path d="M-20 180 195 335 520 85 805 570 1220 190M15 545 320 210 575 350 905 55 1225 515" />
-          <path d="M170 45 400 610M320 210 690 245M520 85 1015 300M575 350 1220 190" />
+          <path
+            d="M170 45 195 335 320 210 400 610 520 85 575 350 690 245 805 570 905 55 1015 300"
+          />
+          <path
+            d="M-20 180 195 335 520 85 805 570 1220 190M15 545 320 210 575 350 905 55 1225 515"
+          />
+          <path
+            d="M170 45 400 610M320 210 690 245M520 85 1015 300M575 350 1220 190"
+          />
         </g>
         <g class="network-nodes">
           <circle cx="170" cy="45" r="3" />
@@ -275,13 +413,16 @@
         </span>
       </a>
       <nav class="header-links" aria-label="Site links">
-        <a
-          class="pill-button"
-          href="./docs/"
-          aria-label="Open documentation"
-        >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-            <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
+        <a class="pill-button" href="./docs/" aria-label="Open documentation">
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"
+            />
           </svg>
           Docs
         </a>
@@ -290,8 +431,15 @@
           href="./extension.html"
           aria-label="Browser companion extension landing page"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" focusable="false">
-            <path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.7 3.1a4.6 4.6 0 0 1 3.4 0l2.3-1.3a7.7 7.7 0 0 1 3.5 3.2l-.1 2.7a4.7 4.7 0 0 1-2.3 3.9l-2.3 1.3a4.6 4.6 0 0 1-4.7 0l-2.3-1.3a4.7 4.7 0 0 1-2.4-4v-2.6l2.2-1.2.1.1Zm-1.3 2.8-2-1.2A7.8 7.8 0 0 0 4.3 12v2.5l2-1.1a4.7 4.7 0 0 1 2.7-5.5Zm8.9 1.7a7.8 7.8 0 0 0-1.9-2.5L14 8.4a4.7 4.7 0 0 1-2.4 4l-2.3 1.3v2.4l2.3 1.3a4.7 4.7 0 0 0 5.3-.4l2 1.1V12a7.8 7.8 0 0 0-.3-2.4Zm-7.2 8.4 2.3-1.3 2.3 1.3v2.5a7.8 7.8 0 0 1-4.6 0v-2.5Z" />
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.7 3.1a4.6 4.6 0 0 1 3.4 0l2.3-1.3a7.7 7.7 0 0 1 3.5 3.2l-.1 2.7a4.7 4.7 0 0 1-2.3 3.9l-2.3 1.3a4.6 4.6 0 0 1-4.7 0l-2.3-1.3a4.7 4.7 0 0 1-2.4-4v-2.6l2.2-1.2.1.1Zm-1.3 2.8-2-1.2A7.8 7.8 0 0 0 4.3 12v2.5l2-1.1a4.7 4.7 0 0 1 2.7-5.5Zm8.9 1.7a7.8 7.8 0 0 0-1.9-2.5L14 8.4a4.7 4.7 0 0 1-2.4 4l-2.3 1.3v2.4l2.3 1.3a4.7 4.7 0 0 0 5.3-.4l2 1.1V12a7.8 7.8 0 0 0-.3-2.4Zm-7.2 8.4 2.3-1.3 2.3 1.3v2.5a7.8 7.8 0 0 1-4.6 0v-2.5Z"
+            />
           </svg>
           Extension
         </a>
@@ -303,7 +451,12 @@
           aria-label="Support Skulldorom on Ko-fi"
           title="Support Skulldorom on Ko-fi"
         >
-          <svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <svg
+            class="social-logo"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+            focusable="false"
+          >
             <path
               fill="currentColor"
               d="M11.351 2.715c-2.7 0-4.986.025-6.83.26C2.078 3.285 0 5.154 0 8.61c0 3.506.182 6.13 1.585 8.493 1.584 2.701 4.233 4.182 7.662 4.182h.83c4.209 0 6.494-2.234 7.637-4a9.5 9.5 0 0 0 1.091-2.338C21.792 14.688 24 12.22 24 9.208v-.415c0-3.247-2.13-5.507-5.792-5.87-1.558-.156-2.65-.208-6.857-.208m0 1.947c4.208 0 5.09.052 6.571.182 2.624.311 4.13 1.584 4.13 4v.39c0 2.156-1.792 3.844-3.87 3.844h-.935l-.156.649c-.208 1.013-.597 1.818-1.039 2.546-.909 1.428-2.545 3.064-5.922 3.064h-.805c-2.571 0-4.831-.883-6.078-3.195-1.09-2-1.298-4.155-1.298-7.506 0-2.181.857-3.402 3.012-3.714 1.533-.233 3.559-.26 6.39-.26m6.547 2.287c-.416 0-.65.234-.65.546v2.935c0 .311.234.545.65.545 1.324 0 2.051-.754 2.051-2s-.727-2.026-2.052-2.026m-10.39.182c-1.818 0-3.013 1.48-3.013 3.142 0 1.533.858 2.857 1.949 3.897.727.701 1.87 1.429 2.649 1.896a1.47 1.47 0 0 0 1.507 0c.78-.467 1.922-1.195 2.623-1.896 1.117-1.039 1.974-2.364 1.974-3.897 0-1.662-1.247-3.142-3.039-3.142-1.065 0-1.792.545-2.338 1.298-.493-.753-1.246-1.298-2.312-1.298"
@@ -318,13 +471,18 @@
           aria-label="View project on GitHub"
           title="View project on GitHub"
         >
-        <svg class="social-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-          <path
-            fill="currentColor"
-            d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-          />
-        </svg>
-      </a>
+          <svg
+            class="social-logo"
+            viewBox="0 0 16 16"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              fill="currentColor"
+              d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
+            />
+          </svg>
+        </a>
       </nav>
     </header>
 
@@ -335,14 +493,14 @@
             <span class="page-kicker">Private telemetry command center</span>
             <h1>Usage Dashboard</h1>
             <p class="landing-description">
-              Monitor provider balances, polling health, and Homepage widget data
-              from one self-hosted dashboard.
+              Monitor provider balances, polling health, and Homepage widget
+              data from one self-hosted dashboard.
             </p>
             <div class="landing-actions">
               <a
                 class="cta-button"
                 href="./docs/getting-started/installation.html"
-                aria-label="Get started with Usage Dashboard — Installation guide"
+                aria-label="Get started with Usage Dashboard - Installation guide"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                   <path
@@ -360,7 +518,12 @@
                 aria-label="Support Skulldorom on Ko-fi"
                 title="Support Skulldorom on Ko-fi"
               >
-                <svg class="social-logo" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <svg
+                  class="social-logo"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  focusable="false"
+                >
                   <path
                     fill="currentColor"
                     d="M11.351 2.715c-2.7 0-4.986.025-6.83.26C2.078 3.285 0 5.154 0 8.61c0 3.506.182 6.13 1.585 8.493 1.584 2.701 4.233 4.182 7.662 4.182h.83c4.209 0 6.494-2.234 7.637-4a9.5 9.5 0 0 0 1.091-2.338C21.792 14.688 24 12.22 24 9.208v-.415c0-3.247-2.13-5.507-5.792-5.87-1.558-.156-2.65-.208-6.857-.208m0 1.947c4.208 0 5.09.052 6.571.182 2.624.311 4.13 1.584 4.13 4v.39c0 2.156-1.792 3.844-3.87 3.844h-.935l-.156.649c-.208 1.013-.597 1.818-1.039 2.546-.909 1.428-2.545 3.064-5.922 3.064h-.805c-2.571 0-4.831-.883-6.078-3.195-1.09-2-1.298-4.155-1.298-7.506 0-2.181.857-3.402 3.012-3.714 1.533-.233 3.559-.26 6.39-.26m6.547 2.287c-.416 0-.65.234-.65.546v2.935c0 .311.234.545.65.545 1.324 0 2.051-.754 2.051-2s-.727-2.026-2.052-2.026m-10.39.182c-1.818 0-3.013 1.48-3.013 3.142 0 1.533.858 2.857 1.949 3.897.727.701 1.87 1.429 2.649 1.896a1.47 1.47 0 0 0 1.507 0c.78-.467 1.922-1.195 2.623-1.896 1.117-1.039 1.974-2.364 1.974-3.897 0-1.662-1.247-3.142-3.039-3.142-1.065 0-1.792.545-2.338 1.298-.493-.753-1.246-1.298-2.312-1.298"
@@ -375,7 +538,12 @@
                 aria-label="View project on GitHub"
                 title="View project on GitHub"
               >
-                <svg class="social-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                <svg
+                  class="social-logo"
+                  viewBox="0 0 16 16"
+                  aria-hidden="true"
+                  focusable="false"
+                >
                   <path
                     fill="currentColor"
                     d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
@@ -402,9 +570,7 @@
       </section>
     </main>
 
-    <footer class="site-footer">
-      © <span id="year"></span> Skulldorom
-    </footer>
+    <footer class="site-footer">© <span id="year"></span> Skulldorom</footer>
 
     <script>
       document.getElementById("year").textContent = new Date().getFullYear();

@@ -31,7 +31,7 @@ See [Homepage Dashboard](/integrations/homepage).
 
 - **OpenAI**: ensure the key is an **organization admin** key.
 - **Anthropic**: ensure the key is an **Admin API key**, not an inference key.
-- **Codex**: a 401/403 means the OAuth token was rejected — re-authorize from
+- **Codex**: a 401/403 means the OAuth token was rejected - re-authorize from
   Settings.
 - **Custom HTTP**: the host must be public; private/internal addresses are
   rejected to prevent SSRF.

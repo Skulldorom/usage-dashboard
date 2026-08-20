@@ -11,8 +11,8 @@ BACKEND_IMAGE=usage-dashboard-backend:local FRONTEND_IMAGE=usage-dashboard-front
 
 ## Image layout
 
-- `backend/Dockerfile` — the FastAPI service, multi-stage with a runtime target.
-- `frontend/Dockerfile` — builds the Vite app, then serves it with nginx as the
+- `backend/Dockerfile` - the FastAPI service, multi-stage with a runtime target.
+- `frontend/Dockerfile` - builds the Vite app, then serves it with nginx as the
   static frontend **and** API proxy. The nginx entrypoint renders
   `/runtime-config.js` from environment variables (e.g. `EXTENSION_TARGET_*_ID`).
 

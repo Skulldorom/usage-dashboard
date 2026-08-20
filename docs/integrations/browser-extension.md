@@ -7,7 +7,7 @@ provider usage in your toolbar. It talks only to your own self-hosted instance.
   Store. Firefox, Edge, Opera, and Safari builds are on the roadmap.
 - **Getting started**: see the [extension guide](/extension/).
 - **Privacy**: the extension stores data locally and sends it only to your own
-  instance — see the [privacy policy](/extension-privacy).
+  instance - see the [privacy policy](/extension-privacy).
 
 ## One-click setup
 
@@ -18,8 +18,8 @@ That saved URL tells the extension which self-hosted instance may configure it.
 A signed-in dashboard page can then hand off a connection to the extension through
 a minimal, write-only external API:
 
-- `usage-dashboard:ping` — check protocol compatibility before creating credentials.
-- `usage-dashboard:configure` — send a bearer token for the page's own origin.
+- `usage-dashboard:ping` - check protocol compatibility before creating credentials.
+- `usage-dashboard:configure` - send a bearer token for the page's own origin.
 
 The extension derives the dashboard URL from the sending page's browser-provided
 origin and never trusts a URL supplied in the message body.
