@@ -6,7 +6,7 @@
     <title>Usage Dashboard Extension — browser companion</title>
     <meta
       name="description"
-      content="The Usage Dashboard browser extension: provider balances, polling health, and usage telemetry from your self-hosted dashboard, right in the toolbar. Available for Chrome and Brave."
+      content="Get the Usage Dashboard browser extension for Chrome and Brave, with additional browser support on the roadmap."
     />
     <link rel="icon" type="image/svg+xml" href="./logo.svg" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -92,50 +92,16 @@
         border-radius: 12px;
         color: #d8d2de;
         background: rgba(255, 255, 255, 0.025);
-        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+        transition: color 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
       }
       .github-icon-button:hover {
         color: #fff;
         border-color: rgba(6, 200, 255, 0.48);
         background: rgba(6, 200, 255, 0.08);
-        transform: translateY(-1px);
       }
       .github-icon-button.small { width: 44px; height: 44px; }
       .github-logo { width: 20px; height: 20px; display: block; }
 
-      .landing-page { min-height: calc(100vh - 160px); display: grid; align-items: center; padding: 40px clamp(24px, 5vw, 64px) 40px; }
-      .landing-hero {
-        position: relative;
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(280px, 410px);
-        gap: clamp(28px, 5vw, 64px);
-        align-items: center;
-        padding: clamp(30px, 5vw, 64px);
-        border: 1px solid rgba(255, 255, 255, 0.09);
-        border-radius: 28px;
-        background: linear-gradient(145deg, rgba(27, 19, 40, 0.88), rgba(12, 9, 18, 0.88));
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
-        backdrop-filter: blur(14px);
-        overflow: hidden;
-      }
-      .landing-hero::after {
-        content: "";
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-        background: linear-gradient(115deg, rgba(255, 255, 255, 0.035), transparent 30%);
-      }
-      .landing-orb {
-        position: absolute;
-        width: 360px;
-        height: 360px;
-        right: 10%;
-        top: -120px;
-        border-radius: 999px;
-        background: radial-gradient(circle, rgba(6, 200, 255, 0.28), rgba(143, 60, 255, 0.13) 45%, transparent 70%);
-        filter: blur(8px);
-      }
-      .landing-copy { position: relative; z-index: 1; max-width: 760px; }
       .page-kicker {
         display: block;
         color: #20cffa;
@@ -145,70 +111,6 @@
         text-transform: uppercase;
         margin-bottom: 10px;
       }
-      .landing-copy h1 {
-        margin: 0;
-        max-width: 760px;
-        font-size: clamp(2.6rem, 6vw, 5.2rem);
-        line-height: 0.92;
-        font-weight: 800;
-        letter-spacing: -0.045em;
-      }
-      .landing-description {
-        max-width: 650px;
-        margin: 26px 0 0;
-        color: #aaa2b9;
-        font-size: 1.05rem;
-        line-height: 1.75;
-      }
-      .landing-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; margin-top: 32px; }
-
-      .store-button {
-        display: inline-flex;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 22px;
-        border-radius: 999px;
-        color: #05020a;
-        font-weight: 800;
-        font-size: 0.95rem;
-        letter-spacing: -0.01em;
-        background: linear-gradient(115deg, #06c8ff, #8f3cff);
-        box-shadow: 0 12px 34px rgba(6, 200, 255, 0.28);
-        transition: transform 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
-      }
-      .store-button:hover { transform: translateY(-2px); box-shadow: 0 16px 42px rgba(143, 60, 255, 0.4); filter: brightness(1.06); }
-      .store-button svg { width: 20px; height: 20px; flex: none; }
-
-      .landing-card-stack { position: relative; z-index: 1; display: grid; gap: 16px; }
-      .landing-stat-card {
-        min-height: 118px;
-        padding: 22px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 20px;
-        background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
-        box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-      }
-      .landing-stat-card.primary {
-        border-color: rgba(6, 200, 255, 0.32);
-        background: linear-gradient(145deg, rgba(6, 200, 255, 0.16), rgba(143, 60, 255, 0.09));
-      }
-      .landing-stat-card span {
-        display: block;
-        color: #91879f;
-        font-size: 0.7rem;
-        font-weight: 800;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-      }
-      .landing-stat-card strong {
-        display: block;
-        margin-top: 13px;
-        color: #fff;
-        font-size: clamp(1.45rem, 3vw, 2.2rem);
-        line-height: 1;
-        letter-spacing: -0.04em;
-      }
-
       .browsers-section {
         max-width: 1180px;
         margin: 0 auto;
@@ -231,10 +133,9 @@
         border-radius: 20px;
         background: linear-gradient(145deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025));
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.22);
-        transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
       }
       a.browser-card:hover {
-        transform: translateY(-3px);
         border-color: rgba(6, 200, 255, 0.42);
         background: linear-gradient(145deg, rgba(6, 200, 255, 0.12), rgba(143, 60, 255, 0.06));
         box-shadow: 0 22px 60px rgba(0, 0, 0, 0.3);
@@ -288,17 +189,8 @@
       .site-footer a { color: #8a8197; text-decoration: underline; text-underline-offset: 3px; }
       .site-footer a:hover { color: #cfc6da; }
 
-      @media (max-width: 900px) {
-        .landing-page { min-height: calc(100vh - 130px); }
-        .landing-hero { grid-template-columns: 1fr; min-height: auto; }
-        .landing-card-stack { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      }
-
       @media (max-width: 600px) {
         .site-header { padding-top: 18px; }
-        .landing-page { padding: 24px 18px 32px; }
-        .landing-copy h1 { font-size: 2.8rem; }
-        .landing-card-stack { grid-template-columns: 1fr; }
         .browsers-section { padding: 52px 18px 64px; }
       }
 
@@ -367,67 +259,6 @@
     </header>
 
     <main>
-      <section class="landing-page">
-        <div class="landing-hero">
-          <div class="landing-orb" aria-hidden="true"></div>
-          <div class="landing-copy">
-            <span class="page-kicker">Browser companion for Usage Dashboard</span>
-            <h1>Provider telemetry, right in the toolbar</h1>
-            <p class="landing-description">
-              The Usage Dashboard extension shows current provider balances, usage, polling
-              health, and alerts from your self-hosted dashboard — without opening a tab.
-              Click any provider card to jump straight to the dashboard.
-            </p>
-            <div class="landing-actions">
-              <a
-                class="store-button"
-                href="https://chromewebstore.google.com/detail/lajooelgpfeholbdkmammfladpefohgk"
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Add the Usage Dashboard extension from the Chrome Web Store"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                  <path
-                    fill="currentColor"
-                    d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.7 3.1a4.6 4.6 0 0 1 3.4 0l2.3-1.3a7.7 7.7 0 0 1 3.5 3.2l-.1 2.7a4.7 4.7 0 0 1-2.3 3.9l-2.3 1.3a4.6 4.6 0 0 1-4.7 0l-2.3-1.3a4.7 4.7 0 0 1-2.4-4v-2.6l2.2-1.2.1.1Zm-1.3 2.8-2-1.2A7.8 7.8 0 0 0 4.3 12v2.5l2-1.1a4.7 4.7 0 0 1 2.7-5.5Zm8.9 1.7a7.8 7.8 0 0 0-1.9-2.5L14 8.4a4.7 4.7 0 0 1-2.4 4l-2.3 1.3v2.4l2.3 1.3a4.7 4.7 0 0 0 5.3-.4l2 1.1V12a7.8 7.8 0 0 0-.3-2.4Zm-7.2 8.4 2.3-1.3 2.3 1.3v2.5a7.8 7.8 0 0 1-4.6 0v-2.5Z"
-                  />
-                </svg>
-                Add to Chrome / Brave
-              </a>
-              <a
-                class="github-icon-button small"
-                href="https://github.com/Skulldorom/usage-dashboard"
-                target="_blank"
-                rel="noreferrer"
-                aria-label="View project on GitHub"
-                title="View project on GitHub"
-              >
-                <svg class="github-logo" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
-                  <path
-                    fill="currentColor"
-                    d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.57 7.57 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"
-                  />
-                </svg>
-              </a>
-            </div>
-          </div>
-          <div class="landing-card-stack" aria-hidden="true">
-            <div class="landing-stat-card primary">
-              <span>Balances</span>
-              <strong>At a glance</strong>
-            </div>
-            <div class="landing-stat-card">
-              <span>Polling health</span>
-              <strong>Live</strong>
-            </div>
-            <div class="landing-stat-card">
-              <span>Provider alerts</span>
-              <strong>Thresholds</strong>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section class="browsers-section" id="browsers">
         <div class="browsers-head">
           <span class="page-kicker">Get the extension</span>
