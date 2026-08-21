@@ -7,9 +7,11 @@ import {
   confidenceColor,
   formatMetricValue,
   isDeltaMetric,
+  overviewTotalCards,
   peakLabel,
   primaryValue,
   rangeToParams,
+  unitLabel,
 } from './analyticsFormat.js'
 
 describe('compactNumber', () => {
@@ -117,5 +119,28 @@ describe('bucketWallClock', () => {
   it('falls back to hour 0 / Monday for empty input', () => {
     expect(bucketWallClock(null)).toEqual({ hour: 0, weekday: 0 })
     expect(bucketWallClock(undefined)).toEqual({ hour: 0, weekday: 0 })
+  })
+})
+
+describe('unitLabel', () => {
+  it('maps known units to friendly labels', () => {
+    expect(unitLabel('tokens')).toBe('Tokens')
+    expect(unitLabel('requests')).toBe('Requests')
+    expect(unitLabel('credits')).toBe('Credits')
+    expect(unitLabel('%')).toBe('Quota used')
+    expect(unitLabel('USD')).toBe('Cost (USD)')
+    expect(unitLabel('')).toBe('')
+  })
+})
+
+describe('overviewTotalCards', () => {
+  it('excludes percent and sorts by value descending', () => {
+    const cards = overviewTotalCards({ tokens: 100, USD: 42, '%': 80, credits: 10 })
+    expect(cards.map((c) => c.unit)).toEqual(['tokens', 'USD', 'credits'])
+    expect(cards[0].label).toBe('Tokens')
+  })
+  it('returns an empty list for empty totals', () => {
+    expect(overviewTotalCards(null)).toEqual([])
+    expect(overviewTotalCards({})).toEqual([])
   })
 })

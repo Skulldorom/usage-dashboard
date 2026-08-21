@@ -86,3 +86,21 @@ export function bucketWallClock(start) {
   }
   return { hour: Number.isNaN(hour) ? 0 : hour, weekday }
 }
+
+export function unitLabel(unit) {
+  if (!unit) return ''
+  if (unit === '%') return 'Quota used'
+  if (unit === 'tokens') return 'Tokens'
+  if (unit === 'requests') return 'Requests'
+  if (unit === 'credits') return 'Credits'
+  if (/^[A-Z]{3}$/.test(unit)) return `Cost (${unit})`
+  return unit
+}
+
+export function overviewTotalCards(totals) {
+  // Like-unit totals; "%" is a ratio and is excluded from summable cards.
+  return Object.entries(totals || {})
+    .filter(([unit]) => unit !== '%')
+    .map(([unit, value]) => ({ unit, value, label: unitLabel(unit) }))
+    .sort((a, b) => b.value - a.value)
+}

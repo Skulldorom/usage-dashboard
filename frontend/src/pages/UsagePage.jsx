@@ -26,6 +26,7 @@ import {
   confidenceColor,
   formatMetricValue,
   isDeltaMetric,
+  overviewTotalCards,
   peakLabel,
   rangeToParams,
 } from '../lib/analyticsFormat.js'
@@ -286,22 +287,16 @@ function DailyTable({ rows, metricType, unit }) {
   )
 }
 
-function OverviewCards({ summary }) {
-  if (!summary || summary.providers.length === 0) return null
+function OverviewTotalsCards({ totals }) {
+  const cards = overviewTotalCards(totals)
+  if (cards.length === 0) return null
   return (
     <Grid container spacing={2}>
-      {summary.providers.map((card) => (
-        <Grid size={{ xs: 12, sm: 6, md: 4 }} key={card.provider_config_id}>
+      {cards.map((card) => (
+        <Grid size={{ xs: 6, md: 3 }} key={card.unit}>
           <Box className="summary-card glass-panel">
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <div className="summary-label">{card.provider} · {card.metric.replaceAll('_', ' ')}</div>
-              <Chip size="small" color={confidenceColor(card.confidence)} label={card.confidence} />
-            </Stack>
-            <div className="summary-value">{formatMetricValue(card.usage_week, card.unit)}</div>
-            <Typography variant="caption" color="text.secondary">
-              avg {formatMetricValue(card.avg_per_day, card.unit)}/day
-              {card.trend_pct !== null && card.trend_pct !== undefined ? ` · ${card.trend_pct > 0 ? '+' : ''}${card.trend_pct}% vs last week` : ''}
-            </Typography>
+            <div className="summary-label">{card.label}</div>
+            <div className="summary-value">{formatMetricValue(card.value, card.unit)}</div>
           </Box>
         </Grid>
       ))}
@@ -309,10 +304,84 @@ function OverviewCards({ summary }) {
   )
 }
 
+function ProviderComparisonTable({ providers }) {
+  if (!providers || providers.length === 0) {
+    return <Typography variant="body2" color="text.secondary">No provider data to compare yet.</Typography>
+  }
+  return (
+    <Box className="usage-table" component="table">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Usage</th>
+          <th>Share</th>
+          <th>Quota used</th>
+          <th>Trend</th>
+        </tr>
+      </thead>
+      <tbody>
+        {providers.map((row) => (
+          <tr key={row.config_id}>
+            <td>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</td>
+            <td>{formatMetricValue(row.value, row.unit)}</td>
+            <td>{row.share_pct === null || row.share_pct === undefined ? '—' : `${row.share_pct}%`}</td>
+            <td>{row.utilization_pct === null || row.utilization_pct === undefined ? '—' : `${row.utilization_pct}%`}</td>
+            <td>{row.trend_pct === null || row.trend_pct === undefined ? '—' : `${row.trend_pct > 0 ? '+' : ''}${row.trend_pct}%`}</td>
+          </tr>
+        ))}
+      </tbody>
+    </Box>
+  )
+}
+
+const SERIES_COLORS = ['#06c8ff', '#8b5cf6', '#38e6a1', '#ffbf69', '#ff6685', '#a78bfa', '#63e3ff', '#f0abfc']
+
+function UtilizationChart({ comparison }) {
+  if (!comparison || comparison.length === 0) {
+    return <Typography variant="body2" color="text.secondary">No quota-tracking providers to overlay.</Typography>
+  }
+  const width = 720
+  const height = 220
+  const pad = { top: 12, right: 12, bottom: 26, left: 34 }
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+  const maxLen = Math.max(...comparison.map((series) => (series.buckets || []).length))
+  const x = (index) => pad.left + (maxLen > 1 ? (index / (maxLen - 1)) * innerW : innerW / 2)
+  const y = (value) => pad.top + (1 - Math.max(0, Math.min(100, Number(value))) / 100) * innerH
+
+  return (
+    <Box>
+      <svg viewBox={`0 0 ${width} ${height}`} className="usage-chart" role="img" aria-label="Provider utilization overlay" preserveAspectRatio="none">
+        {[0, 25, 50, 75, 100].map((tick) => (
+          <g key={tick}>
+            <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <text x={pad.left - 6} y={y(tick) + 3} textAnchor="end" className="usage-axis-label">{tick}%</text>
+          </g>
+        ))}
+        {comparison.map((series, seriesIndex) => {
+          const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length]
+          const points = (series.buckets || []).map((bucket, index) => ({ index, value: bucket.value })).filter((point) => typeof point.value === 'number')
+          if (points.length < 2) return null
+          const d = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${x(point.index)} ${y(point.value)}`).join(' ')
+          return <path key={series.config_id} d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        })}
+      </svg>
+      <Stack direction="row" spacing={2} flexWrap="wrap" mt={1}>
+        {comparison.map((series, seriesIndex) => (
+          <Stack key={series.config_id} direction="row" spacing={0.75} alignItems="center">
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
+            <Typography variant="caption" color="text.secondary">{series.provider}{series.label && series.label !== 'main' ? ` · ${series.label}` : ''}</Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
 export default function UsagePage() {
   const [configs, setConfigs] = useState([])
-  const [summary, setSummary] = useState(null)
-  const [selectedId, setSelectedId] = useState('')
+  const [overview, setOverview] = useState(null)
+  const [selectedId, setSelectedId] = useState('all')
   const [providerInfo, setProviderInfo] = useState(null)
   const [metric, setMetric] = useState('')
   const [interval, setInterval] = useState('day')
@@ -331,11 +400,9 @@ export default function UsagePage() {
       setLoading(true)
       setError('')
       try {
-        const [usage, analyticsSummary] = await Promise.all([api.usage(), api.analyticsSummary().catch(() => null)])
+        const usage = await api.usage()
         if (cancelled) return
         setConfigs(usage)
-        setSummary(analyticsSummary)
-        if (usage.length > 0) setSelectedId(String(usage[0].config.id))
       } catch (err) {
         if (!cancelled) setError(err.message)
       } finally {
@@ -347,7 +414,24 @@ export default function UsagePage() {
   }, [])
 
   useEffect(() => {
-    if (!selectedId) return
+    if (selectedId !== 'all') return
+    let cancelled = false
+    const { from, to } = rangeToParams(range)
+    async function loadOverview() {
+      setError('')
+      try {
+        const data = await api.analyticsOverview({ interval, timezone: TIMEZONE, from, to })
+        if (!cancelled) setOverview(data)
+      } catch (err) {
+        if (!cancelled) setError(err.message)
+      }
+    }
+    loadOverview()
+    return () => { cancelled = true }
+  }, [selectedId, interval, range])
+
+  useEffect(() => {
+    if (!selectedId || selectedId === 'all') return
     let cancelled = false
     async function loadProvider() {
       setError('')
@@ -372,7 +456,7 @@ export default function UsagePage() {
   }, [selectedId])
 
   useEffect(() => {
-    if (!selectedId || !metric) return
+    if (!selectedId || selectedId === 'all' || !metric) return
     let cancelled = false
     const { from, to } = rangeToParams(range)
     async function loadData() {
@@ -442,6 +526,7 @@ export default function UsagePage() {
                 <FormControl size="small" sx={{ minWidth: 200 }}>
                   <InputLabel>Provider</InputLabel>
                   <Select value={selectedId} label="Provider" onChange={(event) => setSelectedId(event.target.value)}>
+                    <MenuItem value="all">All providers</MenuItem>
                     {configs.map((item) => (
                       <MenuItem key={item.config.id} value={String(item.config.id)}>{item.config.provider} · {item.config.label}</MenuItem>
                     ))}
@@ -476,6 +561,25 @@ export default function UsagePage() {
               </Stack>
             </CardContent>
           </Card>
+
+          {selectedId === 'all' && overview && (
+            <Stack spacing={2.5}>
+              <OverviewTotalsCards totals={overview.totals} />
+              <Card variant="outlined" className="glass-panel">
+                <CardContent>
+                  <Typography variant="overline" color="primary.main">Quota utilization</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={1}>Percentage of each provider's own quota consumed.</Typography>
+                  <UtilizationChart comparison={overview.comparison} />
+                </CardContent>
+              </Card>
+              <Card variant="outlined" className="glass-panel">
+                <CardContent>
+                  <Typography variant="overline" color="primary.main">By provider</Typography>
+                  <Box mt={1}><ProviderComparisonTable providers={overview.providers} /></Box>
+                </CardContent>
+              </Card>
+            </Stack>
+          )}
 
           {providerInfo && !providerInfo.supported && (
             <Alert severity="info">This provider exposes generic point history only — advanced analytics (forecasts, pacing) are unavailable.</Alert>
@@ -523,8 +627,6 @@ export default function UsagePage() {
               </Grid>
             </Grid>
           )}
-
-          {summary && <OverviewCards summary={summary} />}
         </Stack>
       )}
     </>
