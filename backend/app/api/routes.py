@@ -414,6 +414,38 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
     return snapshot, native
 
 
+def _as_utc(value):
+    if value is None:
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _observation_row(config: ProviderConfig, obs) -> UsageObservation:
+    return UsageObservation(
+        provider_config_id=config.id,
+        provider=config.provider,
+        metric=obs.metric,
+        value=obs.value,
+        unit=obs.unit,
+        kind=obs.kind,
+        source=obs.source,
+        observed_at=obs.observed_at,
+        window_start=obs.window_start,
+        window_end=obs.window_end,
+        reset_at=obs.reset_at,
+    )
+
+
+def _observation_key(obs) -> tuple:
+    """A stable identity for an observation, independent of naive/aware tz mixing."""
+    return (
+        obs.metric,
+        _as_utc(getattr(obs, "window_start", None)),
+        _as_utc(getattr(obs, "window_end", None)),
+        _as_utc(obs.observed_at),
+    )
+
+
 async def _ingest_observations(session: AsyncSession, config: ProviderConfig, snapshot: UsageSnapshot, native: list[dict]) -> None:
     """Derive and persist normalized observations for a freshly polled snapshot."""
     capabilities = get_adapter_class(config.provider).analytics or {}
@@ -435,44 +467,35 @@ async def _ingest_observations(session: AsyncSession, config: ProviderConfig, sn
         for obs in observations:
             if obs.observed_at != snapshot.checked_at:
                 continue
-            session.add(
-                UsageObservation(
-                    provider_config_id=config.id,
-                    provider=config.provider,
-                    metric=obs.metric,
-                    value=obs.value,
-                    unit=obs.unit,
-                    kind=obs.kind,
-                    source=obs.source,
-                    observed_at=obs.observed_at,
-                    window_start=obs.window_start,
-                    window_end=obs.window_end,
-                    reset_at=obs.reset_at,
-                )
-            )
+            session.add(_observation_row(config, obs))
     if native:
-        await session.execute(
-            delete(UsageObservation).where(
-                UsageObservation.provider_config_id == config.id,
-                UsageObservation.source == "native",
-            )
-        )
-        for obs in normalize_native(native):
-            session.add(
-                UsageObservation(
-                    provider_config_id=config.id,
-                    provider=config.provider,
-                    metric=obs.metric,
-                    value=obs.value,
-                    unit=obs.unit,
-                    kind=obs.kind,
-                    source=obs.source,
-                    observed_at=obs.observed_at,
-                    window_start=obs.window_start,
-                    window_end=obs.window_end,
-                    reset_at=obs.reset_at,
+        # Upsert native history rather than delete-and-reinsert. Providers return
+        # a rolling window (Anthropic 24h, OpenAI 30d), so wiping the dataset each
+        # poll would cap retained native history at that window.
+        native_obs = normalize_native(native)
+        if native_obs:
+            lower = min(obs.observed_at for obs in native_obs)
+            upper = max(obs.observed_at for obs in native_obs)
+            existing = (
+                await session.execute(
+                    select(UsageObservation).where(
+                        UsageObservation.provider_config_id == config.id,
+                        UsageObservation.source == "native",
+                        UsageObservation.observed_at >= lower,
+                        UsageObservation.observed_at <= upper,
+                    )
                 )
-            )
+            ).scalars().all()
+            by_key = {_observation_key(row): row for row in existing}
+            for obs in native_obs:
+                row = by_key.get(_observation_key(obs))
+                if row is not None:
+                    row.value = obs.value
+                    row.unit = obs.unit
+                    row.kind = obs.kind
+                    row.reset_at = obs.reset_at
+                else:
+                    session.add(_observation_row(config, obs))
     await session.commit()
 
 

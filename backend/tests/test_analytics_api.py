@@ -235,3 +235,70 @@ async def test_poll_ingests_observations(sqlite_db, monkeypatch):
         rows = (await session.execute(select(UsageObservation).where(UsageObservation.provider_config_id == config.id))).scalars().all()
         deltas = [row.value for row in rows if row.kind == "delta"]
     assert deltas == [40.0]
+
+
+class NativeFakeAdapter(ProviderAdapter):
+    id = "nativefake"
+    name = "Native Fake"
+    description = "Fake provider with native history"
+    default_base_url = "https://fake.example"
+    metric_names = ["tokens"]
+    analytics = analytics_spec(
+        supported=True,
+        native_history=True,
+        metrics={"tokens": metric_spec(type_="counter", unit="tokens", direction="increasing")},
+    )
+    native: list[dict] = []
+
+    async def fetch_usage(self) -> ProviderUsage:
+        return ProviderUsage(status="healthy", summary="ok", metrics=[Metric("tokens", 10, "tokens")], raw={})
+
+    @staticmethod
+    def native_observations(raw):
+        return NativeFakeAdapter.native
+
+
+@pytest.mark.asyncio
+async def test_native_history_upsert_preserves_prior_buckets(sqlite_db, monkeypatch):
+    Session = sqlite_db
+    monkeypatch.setitem(ADAPTERS, "nativefake", NativeFakeAdapter)
+    config = await _create_config(Session, provider="nativefake")
+    base = datetime(2026, 8, 20, 14, 0, tzinfo=UTC)
+
+    def bucket(hour, value):
+        start = base + timedelta(hours=hour)
+        return {
+            "metric": "tokens",
+            "value": value,
+            "unit": "tokens",
+            "observed_at": start,
+            "window_start": start,
+            "window_end": start + timedelta(hours=1),
+            "kind": "delta",
+        }
+
+    # Poll 1: provider returns hours 0 and 1.
+    NativeFakeAdapter.native = [bucket(0, 5.0), bucket(1, 6.0)]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
+
+    # Poll 2: rolling window has advanced — hour 0 dropped, hour 2 added.
+    NativeFakeAdapter.native = [bucket(1, 6.0), bucket(2, 7.0)]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
+
+    async with Session() as session:
+        rows = (
+            await session.execute(
+                select(UsageObservation).where(
+                    UsageObservation.provider_config_id == config.id,
+                    UsageObservation.source == "native",
+                )
+            )
+        ).scalars().all()
+
+    by_hour = {row.window_start.hour: row.value for row in rows}
+    assert len(rows) == 3
+    assert by_hour[14] == 5.0  # offset 0, preserved not wiped by the rolling window
+    assert by_hour[15] == 6.0  # offset 1, updated in place, no duplicate
+    assert by_hour[16] == 7.0  # offset 2, newly inserted
