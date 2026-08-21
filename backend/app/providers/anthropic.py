@@ -28,7 +28,7 @@ class AnthropicAdapter(ProviderAdapter):
         supported=True,
         native_history=True,
         metrics={
-            "input_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),
+            "input_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing", overview=True),
             "output_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),
             "cache_creation_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),
             "cache_read_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),

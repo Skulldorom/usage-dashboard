@@ -23,7 +23,7 @@ class OpenAIAdapter(ProviderAdapter):
                 aggregations=["daily"], deltas=False, window="30d",
             ),
             "daily_cost": metric_spec(
-                type_="counter", unit="USD", direction="increasing", aggregations=["daily"],
+                type_="counter", unit="USD", direction="increasing", aggregations=["daily"], overview=True,
             ),
         },
     )

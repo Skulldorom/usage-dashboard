@@ -104,6 +104,7 @@ export const api = {
   pollStatus: () => request('/poll/status'),
   homepage: () => request('/homepage'),
   analyticsSummary: () => request('/analytics/summary'),
+  analyticsOverview: (params = {}) => request(`/analytics/overview?${new URLSearchParams(params)}`),
   analyticsProvider: (id) => request(`/analytics/providers/${id}`),
   analyticsTimeseries: (id, params = {}) => request(`/analytics/providers/${id}/timeseries?${new URLSearchParams(params)}`),
   analyticsDaily: (id, params = {}) => request(`/analytics/providers/${id}/daily?${new URLSearchParams(params)}`),

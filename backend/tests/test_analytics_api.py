@@ -313,3 +313,87 @@ async def test_native_history_upsert_persists_dedupes_and_updates(sqlite_db, mon
     assert by_start[naive_base + timedelta(hours=24)] == 48.0
     # New hour 25 was inserted.
     assert by_start[naive_base + timedelta(hours=25)] == 50.0
+
+
+@pytest.mark.asyncio
+async def test_overview_totals_and_like_unit_share(sqlite_db):
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    openai = await _create_config(Session, provider="openai")
+    openrouter = await _create_config(Session, provider="openrouter")
+    base = datetime.now(UTC) - timedelta(days=2)
+
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+    ])
+    await _seed_observations(Session, openai, [
+        {"metric": "daily_cost", "value": 5.0, "unit": "USD", "kind": "delta", "observed_at": base},
+    ])
+    await _seed_observations(Session, openrouter, [
+        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["totals"]["tokens"] == 100.0
+    assert payload["totals"]["USD"] == 5.0
+    assert payload["totals"]["credits"] == 10.0
+
+    by_provider = {p["provider"]: p for p in payload["providers"]}
+    # Each provider is the only one in its like-unit group, so share is 100%.
+    assert by_provider["anthropic"]["unit"] == "tokens"
+    assert by_provider["anthropic"]["share_pct"] == 100.0
+    assert by_provider["openai"]["unit"] == "USD"
+    assert by_provider["openrouter"]["unit"] == "credits"
+
+
+@pytest.mark.asyncio
+async def test_overview_utilization_comparison(sqlite_db):
+    Session = sqlite_db
+    codex = await _create_config(Session, provider="codex")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, codex, [
+        {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(hours=24)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["comparison"], "codex should appear in the utilization comparison"
+    series = next(s for s in payload["comparison"] if s["provider"] == "codex")
+    assert series["metric"] == "weekly_remaining_percent"
+    values = [b["value"] for b in series["buckets"] if b["value"] is not None]
+    # remaining 60 -> 40% consumed; remaining 50 -> 50% consumed.
+    assert 40.0 in values
+    assert 50.0 in values
+
+
+@pytest.mark.asyncio
+async def test_overview_uses_declared_headline_not_sum(sqlite_db):
+    """Overlapping same-unit deltas must not inflate the headline or totals."""
+    Session = sqlite_db
+    openrouter = await _create_config(Session, provider="openrouter")
+    base = datetime.now(UTC) - timedelta(days=2)
+    # daily + weekly + monthly all report credits but overlap; only usage_monthly
+    # is declared the overview metric, so it alone should count.
+    await _seed_observations(Session, openrouter, [
+        {"metric": "usage_daily", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        {"metric": "usage_weekly", "value": 20.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        {"metric": "usage_monthly", "value": 30.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["totals"]["credits"] == 30.0  # not 60.0
+    row = next(p for p in payload["providers"] if p["provider"] == "openrouter")
+    assert row["value"] == 30.0
+    assert row["unit"] == "credits"

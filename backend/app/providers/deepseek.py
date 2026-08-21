@@ -18,7 +18,7 @@ class DeepSeekAdapter(ProviderAdapter):
         supported=True,
         native_history=False,
         metrics={
-            "total_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
+            "total_balance": metric_spec(type_="balance", unit="USD", direction="decreasing", overview=True),
             "granted_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
             "topped_up_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
         },

@@ -30,6 +30,9 @@ def metric_spec(
     maximum: float | int | None = None,
     reset_metric: str | None = None,
     window: str | None = None,
+    capacity_metric: str | None = None,
+    utilization: bool = False,
+    overview: bool = False,
 ) -> dict:
     """Build a normalized per-metric capability spec with safe defaults."""
     if type_ not in METRIC_TYPES:
@@ -43,8 +46,11 @@ def metric_spec(
         "maximum": maximum,
         "reset_metric": reset_metric,
         "window": window,
+        "capacity_metric": capacity_metric,
+        "utilization": utilization,
+        "overview": overview,
     }
-    return {key: value for key, value in spec.items() if value is not None}
+    return {key: value for key, value in spec.items() if value is not None and value is not False}
 
 
 def analytics_spec(
@@ -67,3 +73,17 @@ def is_delta_capable(metric_type: str) -> bool:
 
 def is_point_type(metric_type: str) -> bool:
     return metric_type in POINT_TYPES
+
+
+def overview_metric(capabilities: dict | None) -> tuple[str, dict] | None:
+    """Return the explicitly declared headline metric (label, spec), if any.
+
+    The headline is deterministic — declared via ``overview=True`` — rather than
+    inferred from summed unit totals, so overlapping or derived metrics never
+    inflate a provider's headline value.
+    """
+    metrics = (capabilities or {}).get("metrics") or {}
+    for label, spec in metrics.items():
+        if spec.get("overview"):
+            return label, spec
+    return None
