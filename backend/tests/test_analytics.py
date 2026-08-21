@@ -13,7 +13,7 @@ from app.analytics.forecast import forecast_for_metric, rates_from_deltas, susta
 from app.analytics.normalizer import normalize_native, normalize_snapshots
 from app.analytics.reset import compute_delta, detect_reset, window_changed
 from app.analytics.types import Observation
-from app.analytics.utilization import utilization_metric, utilization_value
+from app.analytics.utilization import utilization_metric, utilization_observations, utilization_value
 from app.providers.anthropic import AnthropicAdapter
 from app.providers.openai import OpenAIAdapter
 
@@ -335,3 +335,31 @@ def test_utilization_metric_prefers_marked_metric():
     )
     label, _ = utilization_metric(caps)
     assert label == "b"
+
+
+def test_utilization_capacity_joined_at_or_before():
+    base = datetime(2026, 8, 21, 14, 0, tzinfo=UTC)
+    spec = {"type": "remaining", "capacity_metric": "limit"}
+    point_obs = [
+        Observation(metric="limit_remaining", value=80.0, unit="credits", observed_at=base + timedelta(seconds=2), kind="point", source="snapshot"),
+    ]
+    capacity_obs = [
+        Observation(metric="limit", value=100.0, unit="credits", observed_at=base, kind="point", source="snapshot"),
+    ]
+    # Capacity persisted ~2s before the usage observation — must still pair.
+    result = utilization_observations(point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs)
+    assert len(result) == 1
+    assert result[0].value == 20.0
+
+
+def test_utilization_ignores_capacity_from_after_observation():
+    base = datetime(2026, 8, 21, 14, 0, tzinfo=UTC)
+    spec = {"type": "remaining", "capacity_metric": "limit"}
+    point_obs = [
+        Observation(metric="limit_remaining", value=80.0, unit="credits", observed_at=base, kind="point", source="snapshot"),
+    ]
+    capacity_obs = [
+        Observation(metric="limit", value=100.0, unit="credits", observed_at=base + timedelta(seconds=10), kind="point", source="snapshot"),
+    ]
+    result = utilization_observations(point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs)
+    assert result == []

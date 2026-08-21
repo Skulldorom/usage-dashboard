@@ -330,7 +330,7 @@ async def test_overview_totals_and_like_unit_share(sqlite_db):
         {"metric": "daily_cost", "value": 5.0, "unit": "USD", "kind": "delta", "observed_at": base},
     ])
     await _seed_observations(Session, openrouter, [
-        {"metric": "usage_daily", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
     ])
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -372,3 +372,28 @@ async def test_overview_utilization_comparison(sqlite_db):
     # remaining 60 -> 40% consumed; remaining 50 -> 50% consumed.
     assert 40.0 in values
     assert 50.0 in values
+
+
+@pytest.mark.asyncio
+async def test_overview_uses_declared_headline_not_sum(sqlite_db):
+    """Overlapping same-unit deltas must not inflate the headline or totals."""
+    Session = sqlite_db
+    openrouter = await _create_config(Session, provider="openrouter")
+    base = datetime.now(UTC) - timedelta(days=2)
+    # daily + weekly + monthly all report credits but overlap; only usage_monthly
+    # is declared the overview metric, so it alone should count.
+    await _seed_observations(Session, openrouter, [
+        {"metric": "usage_daily", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        {"metric": "usage_weekly", "value": 20.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        {"metric": "usage_monthly", "value": 30.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["totals"]["credits"] == 30.0  # not 60.0
+    row = next(p for p in payload["providers"] if p["provider"] == "openrouter")
+    assert row["value"] == 30.0
+    assert row["unit"] == "credits"
