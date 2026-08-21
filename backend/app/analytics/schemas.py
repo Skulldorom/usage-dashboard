@@ -107,3 +107,31 @@ class AnalyticsSummaryCard(BaseModel):
 
 class AnalyticsSummary(BaseModel):
     providers: list[AnalyticsSummaryCard]
+
+
+class OverviewProvider(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    unit: str | None = None
+    value: float | None = None
+    share_pct: float | None = None
+    utilization_pct: float | None = None
+    trend_pct: float | None = None
+    coverage: float = 0.0
+    confidence: str = "low"
+
+
+class OverviewComparisonSeries(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    metric: str
+    buckets: list[AnalyticsBucket]
+
+
+class AnalyticsOverview(BaseModel):
+    period: dict
+    totals: dict[str, float]
+    providers: list[OverviewProvider]
+    comparison: list[OverviewComparisonSeries]

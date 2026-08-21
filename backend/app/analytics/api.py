@@ -24,13 +24,17 @@ from app.analytics.schemas import (
     AnalyticsDailyRow,
     AnalyticsHourlyRow,
     AnalyticsMetricInfo,
+    AnalyticsOverview,
     AnalyticsProviderInfo,
     AnalyticsSummary,
     AnalyticsSummaryCard,
     AnalyticsTimeseries,
     CoverageInfo,
+    OverviewComparisonSeries,
+    OverviewProvider,
 )
 from app.analytics.types import Observation
+from app.analytics.utilization import utilization_metric, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
 from app.models import ProviderConfig, UsageObservation
@@ -517,3 +521,141 @@ async def summary(session: AsyncSession = Depends(get_session)):
             )
         )
     return AnalyticsSummary(providers=cards)
+
+
+def _provider_unit_totals(observations: list[Observation], start: datetime, end: datetime) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for obs in observations:
+        if obs.kind != "delta" or not obs.unit:
+            continue
+        if obs.observed_at < start or obs.observed_at >= end:
+            continue
+        totals[obs.unit] = totals.get(obs.unit, 0.0) + obs.value
+    return totals
+
+
+def _headline_unit(unit_totals: dict[str, float]) -> str | None:
+    candidates = {unit: value for unit, value in unit_totals.items() if unit != "%"}
+    if candidates:
+        return max(candidates, key=lambda unit: candidates[unit])
+    if "%" in unit_totals:
+        return "%"
+    return None
+
+
+def _period_trend(observations: list[Observation], unit: str | None, start: datetime, end: datetime) -> float | None:
+    if unit is None:
+        return None
+    span = end - start
+    current = sum(
+        obs.value for obs in observations
+        if obs.kind == "delta" and obs.unit == unit and start <= obs.observed_at < end
+    )
+    previous = sum(
+        obs.value for obs in observations
+        if obs.kind == "delta" and obs.unit == unit and (start - span) <= obs.observed_at < start
+    )
+    if previous:
+        return round((current - previous) / previous * 100, 1)
+    return None
+
+
+@router.get(
+    "/overview",
+    response_model=AnalyticsOverview,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def overview(
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    interval: str = "day",
+    timezone: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    if interval not in aggregation.INTERVALS:
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+
+    configs = (
+        await session.execute(select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id)))
+    ).scalars().all()
+
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ is not None else now
+    start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+
+    totals: dict[str, float] = {}
+    providers: list[OverviewProvider] = []
+    comparison: list[OverviewComparisonSeries] = []
+
+    for config in configs:
+        capabilities = _capabilities_for(config.provider)
+        observations = await _load_observations(session, config.id)
+        unit_totals = _provider_unit_totals(observations, start, end)
+
+        for unit, value in unit_totals.items():
+            if unit != "%":
+                totals[unit] = totals.get(unit, 0.0) + value
+
+        util_pct: float | None = None
+        util_buckets = None
+        util = utilization_metric(capabilities) if capabilities else None
+        if util:
+            util_metric_name, util_spec = util
+            point_obs = [obs for obs in observations if obs.metric == util_metric_name]
+            capacity_obs = (
+                [obs for obs in observations if obs.metric == util_spec.get("capacity_metric")]
+                if util_spec.get("capacity_metric")
+                else None
+            )
+            util_obs = utilization_observations(
+                point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
+            )
+            if util_obs:
+                latest = max(util_obs, key=lambda obs: obs.observed_at)
+                util_pct = latest.value
+                util_buckets = fill_buckets(
+                    bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
+                    interval=interval, start=start, end=end, tz=timezone,
+                )
+
+        headline_unit = _headline_unit(unit_totals)
+        value = unit_totals.get(headline_unit) if headline_unit else None
+        cov = series_coverage(observations)
+        providers.append(
+            OverviewProvider(
+                config_id=config.id,
+                provider=config.provider,
+                label=config.label,
+                unit=headline_unit,
+                value=round(value, 4) if value is not None else None,
+                utilization_pct=round(util_pct, 4) if util_pct is not None else None,
+                trend_pct=_period_trend(observations, headline_unit, start, end),
+                coverage=cov["coverage"],
+                confidence=confidence_level(observations, coverage=cov["coverage"])["level"],
+            )
+        )
+
+        if util_buckets is not None:
+            comparison.append(
+                OverviewComparisonSeries(
+                    config_id=config.id,
+                    provider=config.provider,
+                    label=config.label,
+                    metric=util_metric_name,
+                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in util_buckets],
+                )
+            )
+
+    # Share % is scoped to like-unit groups so "95% of tokens" is honest.
+    for provider in providers:
+        if provider.unit and provider.unit != "%" and provider.value is not None:
+            total = totals.get(provider.unit, 0.0)
+            if total > 0:
+                provider.share_pct = round(provider.value / total * 100, 2)
+
+    return AnalyticsOverview(
+        period={"start": start.isoformat(), "end": end.isoformat()},
+        totals={unit: round(value, 4) for unit, value in totals.items()},
+        providers=providers,
+        comparison=comparison,
+    )
