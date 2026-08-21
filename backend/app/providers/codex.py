@@ -5,6 +5,7 @@ from typing import Any
 
 import httpx
 
+from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 OPENAI_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -80,6 +81,17 @@ class CodexAdapter(ProviderAdapter):
         {"metric": "review_weekly_remaining_percent", "label": "Review weekly remaining", "unit": "%", "direction": "decreasing"},
         {"metric": "reset_credits_available", "label": "Reset credits available", "unit": "credits", "direction": "decreasing"},
     ]
+    analytics = analytics_spec(
+        supported=True,
+        native_history=False,
+        metrics={
+            "session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="session_reset_at", window="session"),
+            "weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="weekly_reset_at", window="week"),
+            "review_session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_session_reset_at", window="session"),
+            "review_weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_weekly_reset_at", window="week"),
+            "reset_credits_available": metric_spec(type_="balance", unit="credits", direction="decreasing"),
+        },
+    )
 
     def __init__(
         self,

@@ -1,4 +1,6 @@
 import httpx
+
+from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 class DeepSeekAdapter(ProviderAdapter):
@@ -12,6 +14,15 @@ class DeepSeekAdapter(ProviderAdapter):
         {"metric": "granted_balance", "label": "Granted balance", "unit": "USD", "direction": "decreasing"},
         {"metric": "topped_up_balance", "label": "Topped-up balance", "unit": "USD", "direction": "decreasing"},
     ]
+    analytics = analytics_spec(
+        supported=True,
+        native_history=False,
+        metrics={
+            "total_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
+            "granted_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
+            "topped_up_balance": metric_spec(type_="balance", unit="USD", direction="decreasing"),
+        },
+    )
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
         async with httpx.AsyncClient(timeout=self.timeout) as client:

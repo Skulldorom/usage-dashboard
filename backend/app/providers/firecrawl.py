@@ -1,5 +1,8 @@
 from datetime import datetime
 import httpx
+
+from app.analytics.capabilities import analytics_spec, metric_spec
+from app.analytics.normalizer import parse_time
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 
@@ -14,6 +17,16 @@ class FirecrawlAdapter(ProviderAdapter):
         {"metric": "credits_remaining", "label": "Credits remaining", "unit": "credits", "direction": "decreasing"},
         {"metric": "credits_used", "label": "Credits used", "unit": "credits", "direction": "increasing"},
     ]
+    analytics = analytics_spec(
+        supported=True,
+        native_history=True,
+        metrics={
+            "credits_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing"),
+            "credits_used": metric_spec(type_="counter", unit="credits", direction="increasing", reset_metric="billing_period_end", window="billing"),
+            "usage_percent": metric_spec(type_="counter", unit="%", direction="increasing", maximum=100, reset_metric="billing_period_end", window="billing"),
+            "plan_credits": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
+        },
+    )
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}"}
@@ -129,3 +142,53 @@ class FirecrawlAdapter(ProviderAdapter):
             summary = f"{summary}. {plan_label}: {plan_credits:,.0f} credits being refreshed on {FirecrawlAdapter._format_date(billing_period_end)}"
 
         return ProviderUsage(status=status, summary=summary, metrics=metrics, raw={"credit_usage": credit_data, "historical_credit_usage": historical_data or {}})
+
+    @staticmethod
+    def native_observations(raw: dict) -> list[dict]:
+        """Expand per-period credit usage from the historical credit response.
+
+        Tolerantly reads a handful of common period field names and skips
+        periods that cannot be placed in time, so schema drift degrades to
+        snapshot-derived analytics rather than fabricating buckets.
+        """
+        historical = raw.get("historical_credit_usage") or {}
+        periods = historical.get("periods") or []
+        if not isinstance(periods, list):
+            return []
+        observations: list[dict] = []
+        for period in periods:
+            if not isinstance(period, dict):
+                continue
+            start = _first_time(period, ("startDate", "start_date", "from", "date", "periodStart", "period_start"))
+            end = _first_time(period, ("endDate", "end_date", "to", "periodEnd", "period_end"))
+            if start is None and end is None:
+                continue
+            used = FirecrawlAdapter._first_number(
+                period.get("totalCredits"),
+                period.get("total_credits"),
+                period.get("creditsUsed"),
+                period.get("credits_used"),
+                period.get("usedCredits"),
+            )
+            if used is None:
+                continue
+            observations.append(
+                {
+                    "metric": "credits_used",
+                    "value": used,
+                    "unit": "credits",
+                    "observed_at": start or end,
+                    "window_start": start,
+                    "window_end": end,
+                    "kind": "delta",
+                }
+            )
+        return observations
+
+
+def _first_time(record: dict, keys: tuple[str, ...]) -> datetime | None:
+    for key in keys:
+        parsed = parse_time(record.get(key))
+        if parsed is not None:
+            return parsed
+    return None
