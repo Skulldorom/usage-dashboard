@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  bucketWallClock,
   changeStatus,
   chartPoints,
   compactNumber,
@@ -103,5 +104,18 @@ describe('rangeToParams', () => {
     const now = new Date('2026-08-21T12:00:00Z')
     const params = rangeToParams('nope', now)
     expect(params.from).toBe('2026-07-22T12:00:00.000Z')
+  })
+})
+
+describe('bucketWallClock', () => {
+  it('derives hour and Monday-first weekday from the bucket offset', () => {
+    // 2026-08-20 is a Thursday; Monday-first indexing => Thursday = 3.
+    expect(bucketWallClock('2026-08-20T14:00:00-04:00')).toEqual({ hour: 14, weekday: 3 })
+    // 2026-08-24 is a Monday => 0.
+    expect(bucketWallClock('2026-08-24T00:00:00+00:00')).toEqual({ hour: 0, weekday: 0 })
+  })
+  it('falls back to hour 0 / Monday for empty input', () => {
+    expect(bucketWallClock(null)).toEqual({ hour: 0, weekday: 0 })
+    expect(bucketWallClock(undefined)).toEqual({ hour: 0, weekday: 0 })
   })
 })

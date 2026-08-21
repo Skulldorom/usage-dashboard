@@ -20,6 +20,7 @@ import ProviderIcon from '../components/ProviderIcon.jsx'
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
+  bucketWallClock,
   changeStatus,
   chartPoints,
   confidenceColor,
@@ -126,11 +127,9 @@ function UsageHeatmap({ buckets, metricType }) {
   for (const bucket of buckets || []) {
     const value = isDeltaMetric(metricType) ? bucket.total : bucket.value
     if (typeof value !== 'number') continue
-    const date = new Date(bucket.start)
-    const day = (date.getDay() + 6) % 7 // Monday-first
-    const hour = date.getHours()
-    grid[day][hour] += value
-    if (grid[day][hour] > max) max = grid[day][hour]
+    const { hour, weekday } = bucketWallClock(bucket.start)
+    grid[weekday][hour] += value
+    if (grid[weekday][hour] > max) max = grid[weekday][hour]
   }
   const hasData = max > 0
 

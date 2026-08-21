@@ -68,3 +68,21 @@ export function rangeToParams(range, now = new Date()) {
   const from = new Date(now.getTime() - days * 86_400_000).toISOString()
   return { from, to }
 }
+
+export function bucketWallClock(start) {
+  // `start` is a timezone-aware ISO string (e.g. "2026-08-20T14:00:00-04:00").
+  // Extract the wall-clock hour and day-of-week from the bucket's own offset
+  // rather than the browser's local timezone, so cells land correctly around
+  // timezone/DST boundaries regardless of the viewing machine's locale.
+  const iso = String(start ?? '')
+  const hour = Number.parseInt(iso.slice(11, 13), 10)
+  let weekday = 0
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.slice(0, 10))
+  if (match) {
+    const year = Number(match[1])
+    const month = Number(match[2])
+    const day = Number(match[3])
+    weekday = (new Date(Date.UTC(year, month - 1, day)).getUTCDay() + 6) % 7
+  }
+  return { hour: Number.isNaN(hour) ? 0 : hour, weekday }
+}
