@@ -86,7 +86,7 @@ class CodexAdapter(ProviderAdapter):
         native_history=False,
         metrics={
             "session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="session_reset_at", window="session"),
-            "weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="weekly_reset_at", window="week"),
+            "weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="weekly_reset_at", window="week", utilization=True),
             "review_session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_session_reset_at", window="session"),
             "review_weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_weekly_reset_at", window="week"),
             "reset_credits_available": metric_spec(type_="balance", unit="credits", direction="decreasing"),

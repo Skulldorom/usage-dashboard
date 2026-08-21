@@ -19,7 +19,7 @@ class OpenRouterAdapter(ProviderAdapter):
         supported=True,
         native_history=False,
         metrics={
-            "limit_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing"),
+            "limit_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing", capacity_metric="limit", utilization=True),
             "usage_daily": metric_spec(type_="counter", unit="credits", direction="increasing", window="24h"),
             "usage_weekly": metric_spec(type_="counter", unit="credits", direction="increasing", window="7d"),
             "usage_monthly": metric_spec(type_="counter", unit="credits", direction="increasing", window="30d"),

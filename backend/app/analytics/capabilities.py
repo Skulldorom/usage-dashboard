@@ -30,6 +30,8 @@ def metric_spec(
     maximum: float | int | None = None,
     reset_metric: str | None = None,
     window: str | None = None,
+    capacity_metric: str | None = None,
+    utilization: bool = False,
 ) -> dict:
     """Build a normalized per-metric capability spec with safe defaults."""
     if type_ not in METRIC_TYPES:
@@ -43,8 +45,10 @@ def metric_spec(
         "maximum": maximum,
         "reset_metric": reset_metric,
         "window": window,
+        "capacity_metric": capacity_metric,
+        "utilization": utilization,
     }
-    return {key: value for key, value in spec.items() if value is not None}
+    return {key: value for key, value in spec.items() if value is not None and value is not False}
 
 
 def analytics_spec(
