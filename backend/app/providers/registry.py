@@ -33,6 +33,7 @@ def list_providers() -> list[dict]:
             "metrics": cls.metric_names,
             "alert_metrics": cls.alert_metrics,
             "icon": PROVIDER_ICONS.get(cls.id),
+            "analytics": cls.analytics,
         }
         for cls in ADAPTERS.values()
     ]

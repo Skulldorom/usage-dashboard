@@ -40,6 +40,7 @@ export default defineConfig({
           { text: 'Authentication', link: '/configuration/authentication' },
           { text: 'API tokens', link: '/configuration/api-tokens' },
           { text: 'Automatic polling', link: '/configuration/polling' },
+          { text: 'Usage analytics', link: '/configuration/analytics' },
         ],
       },
       {

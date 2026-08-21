@@ -27,8 +27,10 @@ import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
+import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
+import UsagePage from "./pages/UsagePage.jsx";
 import {
   UNAUTHORIZED_EVENT,
   api,
@@ -208,6 +210,7 @@ function NetworkBackdrop() {
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: <DashboardRoundedIcon /> },
+  { to: "/usage", label: "Usage", icon: <InsightsRoundedIcon /> },
   { to: "/settings", label: "Settings", icon: <SettingsRoundedIcon /> },
 ];
 
@@ -673,6 +676,7 @@ function Shell() {
         ) : (
           <Routes>
             <Route path="/" element={<DashboardPage />} />
+            <Route path="/usage" element={<UsagePage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         )}

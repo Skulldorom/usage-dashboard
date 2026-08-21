@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     admin_recovery_code_expire_minutes: int = Field(default=30, ge=1)
     backend_cors_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     request_timeout_seconds: float = 20.0
-    snapshot_retention_days: int = 90
+    snapshot_retention_days: int = 180
+    analytics_hourly_retention_days: int = 365
     auto_poll_enabled: bool = True
     auto_poll_interval_minutes: int = Field(default=60, ge=1)
     custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")

@@ -1,5 +1,6 @@
 import httpx
 
+from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 class OpenRouterAdapter(ProviderAdapter):
@@ -14,6 +15,17 @@ class OpenRouterAdapter(ProviderAdapter):
         {"metric": "usage_weekly", "label": "Weekly usage", "unit": "credits", "direction": "increasing"},
         {"metric": "usage_monthly", "label": "Monthly usage", "unit": "credits", "direction": "increasing"},
     ]
+    analytics = analytics_spec(
+        supported=True,
+        native_history=False,
+        metrics={
+            "limit_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing"),
+            "usage_daily": metric_spec(type_="counter", unit="credits", direction="increasing", window="24h"),
+            "usage_weekly": metric_spec(type_="counter", unit="credits", direction="increasing", window="7d"),
+            "usage_monthly": metric_spec(type_="counter", unit="credits", direction="increasing", window="30d"),
+            "limit": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
+        },
+    )
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}

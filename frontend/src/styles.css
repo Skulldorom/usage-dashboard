@@ -1264,6 +1264,54 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   }
 }
 
+/* Usage analytics page */
+.usage-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.usage-chart-empty {
+  padding: 24px;
+  text-align: center;
+}
+.usage-axis-label {
+  font-size: 10px;
+  fill: #aaa2b9;
+}
+.usage-heatmap-wrap {
+  overflow-x: auto;
+}
+.usage-heatmap {
+  display: block;
+}
+.usage-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.usage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.usage-table th,
+.usage-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.usage-table th {
+  color: #aaa2b9;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.usage-table td {
+  color: #fbf9ff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
