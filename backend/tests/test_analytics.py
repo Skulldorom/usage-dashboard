@@ -13,6 +13,7 @@ from app.analytics.forecast import forecast_for_metric, rates_from_deltas, susta
 from app.analytics.normalizer import normalize_native, normalize_snapshots
 from app.analytics.reset import compute_delta, detect_reset, window_changed
 from app.analytics.types import Observation
+from app.analytics.utilization import utilization_metric, utilization_value
 from app.providers.anthropic import AnthropicAdapter
 from app.providers.openai import OpenAIAdapter
 
@@ -299,3 +300,38 @@ def test_normalize_native_wraps_into_observations():
     assert len(observations) == 1
     assert observations[0].source == "native"
     assert observations[0].value == 7.0
+
+
+# --- utilization -----------------------------------------------------------
+
+def test_utilization_value_counter_percent():
+    assert utilization_value(40.0, spec={"type": "counter", "maximum": 100}) == 40.0
+
+
+def test_utilization_value_remaining_inverts_to_consumed():
+    assert utilization_value(54.0, spec={"type": "remaining", "maximum": 100}) == 46.0
+
+
+def test_utilization_value_remaining_uses_capacity_metric():
+    assert utilization_value(80.0, spec={"type": "remaining", "capacity_metric": "limit"}, capacity=100) == 20.0
+
+
+def test_utilization_value_returns_none_without_quota():
+    assert utilization_value(5.0, spec={"type": "gauge"}) is None
+    assert utilization_value(5.0, spec={"type": "counter"}) is None  # no maximum
+
+
+def test_utilization_value_clamps_to_0_100():
+    assert utilization_value(150.0, spec={"type": "counter", "maximum": 100}) == 100.0
+    assert utilization_value(-10.0, spec={"type": "remaining", "maximum": 100}) == 100.0
+
+
+def test_utilization_metric_prefers_marked_metric():
+    caps = analytics_spec(
+        metrics={
+            "a": metric_spec(type_="remaining", unit="%", maximum=100),
+            "b": metric_spec(type_="counter", unit="%", maximum=100, utilization=True),
+        }
+    )
+    label, _ = utilization_metric(caps)
+    assert label == "b"
