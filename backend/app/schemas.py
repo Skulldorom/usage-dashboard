@@ -20,7 +20,7 @@ class AuthTokenRead(BaseModel):
 
 
 
-API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read"}
+API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read", "analytics:read"}
 
 class ApiTokenCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)

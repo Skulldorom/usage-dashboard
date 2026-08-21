@@ -8,12 +8,13 @@ from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.analytics.normalizer import normalize_native, normalize_snapshots
 from app.core.auth import auth_status, bearer_scheme, create_api_token_record, homepage_auth, login_admin, request_password_reset, require_admin_auth, require_scope, reset_admin_password, revoke_admin_session, revoke_api_token_record, setup_admin_password
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.core.thresholds import build_alerts, provider_alert_state
 from app.database import engine, get_session
-from app.models import ApiToken, ProviderConfig, UsageSnapshot
+from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
 from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
@@ -396,7 +397,7 @@ async def config_history(config_id: int, hours: int = 168, limit: int = 500, ses
     return result.scalars().all()
 
 
-async def _snapshot_for_config(config: ProviderConfig) -> UsageSnapshot:
+async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, list[dict]]:
     try:
         adapter_cls = get_adapter_class(config.provider)
         crypto = _crypto()
@@ -406,9 +407,81 @@ async def _snapshot_for_config(config: ProviderConfig) -> UsageSnapshot:
         if updated_secret:
             config.encrypted_api_key = crypto.encrypt(updated_secret)
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
+        native = adapter.native_observations(usage.raw)
     except Exception as exc:
         snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status="error", summary=f"{config.label}: polling failed", metrics=[], raw={}, error=str(exc))
-    return snapshot
+        native = []
+    return snapshot, native
+
+
+async def _ingest_observations(session: AsyncSession, config: ProviderConfig, snapshot: UsageSnapshot, native: list[dict]) -> None:
+    """Derive and persist normalized observations for a freshly polled snapshot."""
+    capabilities = get_adapter_class(config.provider).analytics or {}
+    if snapshot.status != "error" and snapshot.metrics:
+        recent = (
+            await session.execute(
+                select(UsageSnapshot)
+                .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.id < snapshot.id)
+                .order_by(desc(UsageSnapshot.id))
+                .limit(3)
+            )
+        ).scalars().all()
+        previous = next((row for row in recent if row.metrics), None)
+        history = []
+        if previous is not None:
+            history.append({"checked_at": previous.checked_at, "metrics": previous.metrics})
+        history.append({"checked_at": snapshot.checked_at, "metrics": snapshot.metrics})
+        observations = normalize_snapshots(history, capabilities=capabilities)
+        for obs in observations:
+            if obs.observed_at != snapshot.checked_at:
+                continue
+            session.add(
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider=config.provider,
+                    metric=obs.metric,
+                    value=obs.value,
+                    unit=obs.unit,
+                    kind=obs.kind,
+                    source=obs.source,
+                    observed_at=obs.observed_at,
+                    window_start=obs.window_start,
+                    window_end=obs.window_end,
+                    reset_at=obs.reset_at,
+                )
+            )
+    if native:
+        await session.execute(
+            delete(UsageObservation).where(
+                UsageObservation.provider_config_id == config.id,
+                UsageObservation.source == "native",
+            )
+        )
+        for obs in normalize_native(native):
+            session.add(
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider=config.provider,
+                    metric=obs.metric,
+                    value=obs.value,
+                    unit=obs.unit,
+                    kind=obs.kind,
+                    source=obs.source,
+                    observed_at=obs.observed_at,
+                    window_start=obs.window_start,
+                    window_end=obs.window_end,
+                    reset_at=obs.reset_at,
+                )
+            )
+    await session.commit()
+
+
+async def _prune_old_observations(session: AsyncSession) -> None:
+    if settings.analytics_hourly_retention_days < 0:
+        return
+    cutoff = datetime.now(UTC) - timedelta(days=settings.analytics_hourly_retention_days)
+    await session.execute(delete(UsageObservation).where(UsageObservation.observed_at < cutoff))
+    await session.commit()
 
 
 async def _prune_old_snapshots(session: AsyncSession) -> None:
@@ -426,13 +499,17 @@ async def _prune_old_snapshots(session: AsyncSession) -> None:
 
 async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
     configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)).order_by(*_config_ordering()))).scalars().all()
-    snapshots = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
+    results = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
+    snapshots = [result[0] for result in results]
     if snapshots:
         session.add_all(snapshots)
         await session.commit()
         for snapshot in snapshots:
             await session.refresh(snapshot)
+        for config, (snapshot, native) in zip(configs, results):
+            await _ingest_observations(session, config, snapshot, native)
         await _prune_old_snapshots(session)
+        await _prune_old_observations(session)
     return snapshots
 
 
@@ -492,11 +569,13 @@ async def poll_config(config_id: int, session: AsyncSession = Depends(get_sessio
 
 
 async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
-    snapshot = await _snapshot_for_config(config)
+    snapshot, native = await _snapshot_for_config(config)
     session.add(snapshot)
     await session.commit()
     await session.refresh(snapshot)
+    await _ingest_observations(session, config, snapshot, native)
     await _prune_old_snapshots(session)
+    await _prune_old_observations(session)
     return snapshot
 
 
