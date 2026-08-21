@@ -2,11 +2,11 @@
 
 # Usage Dashboard
 
+Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
+
 <p align="center">
   <a href="https://ko-fi.com/skulldorom"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
 </p>
-
-Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
 
 ![Usage Dashboard screenshot](screenshot.png)
 
