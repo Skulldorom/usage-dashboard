@@ -33,6 +33,8 @@ negative usage.
 - **Previous-period comparison** — current period vs. the equivalent prior period.
 - **Forecast** — rate-based projections, estimated exhaustion, and a sustainable
   daily pace, with a `high` / `medium` / `low` confidence indicator.
+- **All providers comparison** — a cross-provider view with like-unit totals,
+  a per-provider share table, and a quota-utilization overlay.
 
 Forecasts are deterministic and rate-based; they are scoped to the relevant
 reset window and never extrapolate a rolling total (like OpenAI's 30-day cost)
@@ -51,6 +53,7 @@ Historical analytics live under `GET /api/v1/analytics/*` and require the
 
 ```
 GET /api/v1/analytics/summary
+GET /api/v1/analytics/overview?interval=&from=&to=&timezone=
 GET /api/v1/analytics/providers/{config_id}
 GET /api/v1/analytics/providers/{config_id}/timeseries?metric=&interval=&from=&to=&timezone=
 GET /api/v1/analytics/providers/{config_id}/daily?metric=&from=&to=&timezone=
@@ -61,6 +64,18 @@ GET /api/v1/analytics/providers/{config_id}/comparison?metric=&window=day|week|m
 
 `interval` is one of `hour`, `day`, or `week`. Day and hour grouping honor the
 requested `timezone` (IANA name); the frontend passes the user's local timezone.
+
+## Cross-provider comparison
+
+Because providers report different units (tokens, USD, credits, percentages),
+the "All providers" view compares along two honest axes:
+
+- **Like-unit totals and share** — consumption is summed only within matching
+  units, and each provider's share is its fraction of its own unit group (so
+  "95% of tokens" is real, never tokens blended with USD).
+- **Quota utilization** — each quota-tracking provider's fraction of its own
+  quota consumed (0–100%), overlaid on one chart. Providers without a declared
+  quota (token/balance/cost providers) simply don't appear on the overlay.
 
 ## Retention
 
