@@ -103,4 +103,11 @@ export const api = {
   pollConfig: (id) => request(`/configs/${id}/poll`, { method: 'POST' }),
   pollStatus: () => request('/poll/status'),
   homepage: () => request('/homepage'),
+  analyticsSummary: () => request('/analytics/summary'),
+  analyticsProvider: (id) => request(`/analytics/providers/${id}`),
+  analyticsTimeseries: (id, params = {}) => request(`/analytics/providers/${id}/timeseries?${new URLSearchParams(params)}`),
+  analyticsDaily: (id, params = {}) => request(`/analytics/providers/${id}/daily?${new URLSearchParams(params)}`),
+  analyticsHourly: (id, params = {}) => request(`/analytics/providers/${id}/hourly?${new URLSearchParams(params)}`),
+  analyticsForecast: (id, params = {}) => request(`/analytics/providers/${id}/forecast?${new URLSearchParams(params)}`),
+  analyticsComparison: (id, params = {}) => request(`/analytics/providers/${id}/comparison?${new URLSearchParams(params)}`),
 }
