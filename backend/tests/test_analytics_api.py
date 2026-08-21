@@ -259,31 +259,34 @@ class NativeFakeAdapter(ProviderAdapter):
 
 
 @pytest.mark.asyncio
-async def test_native_history_upsert_preserves_prior_buckets(sqlite_db, monkeypatch):
+async def test_native_history_upsert_persists_dedupes_and_updates(sqlite_db, monkeypatch):
     Session = sqlite_db
     monkeypatch.setitem(ADAPTERS, "nativefake", NativeFakeAdapter)
     config = await _create_config(Session, provider="nativefake")
-    base = datetime(2026, 8, 20, 14, 0, tzinfo=UTC)
+    base = datetime(2026, 8, 20, 0, 0, tzinfo=UTC)
 
-    def bucket(hour, value):
-        start = base + timedelta(hours=hour)
-        return {
-            "metric": "tokens",
-            "value": value,
-            "unit": "tokens",
-            "observed_at": start,
-            "window_start": start,
-            "window_end": start + timedelta(hours=1),
-            "kind": "delta",
-        }
+    def buckets(start_hour, end_hour, factor):
+        return [
+            {
+                "metric": "tokens",
+                "value": float(hour) * factor,
+                "unit": "tokens",
+                "observed_at": base + timedelta(hours=hour),
+                "window_start": base + timedelta(hours=hour),
+                "window_end": base + timedelta(hours=hour + 1),
+                "kind": "delta",
+            }
+            for hour in range(start_hour, end_hour + 1)
+        ]
 
-    # Poll 1: provider returns hours 0 and 1.
-    NativeFakeAdapter.native = [bucket(0, 5.0), bucket(1, 6.0)]
+    # Poll 1: native hours 1..24 at factor 1.0.
+    NativeFakeAdapter.native = buckets(1, 24, factor=1.0)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
 
-    # Poll 2: rolling window has advanced — hour 0 dropped, hour 2 added.
-    NativeFakeAdapter.native = [bucket(1, 6.0), bucket(2, 7.0)]
+    # Poll 2: rolling window advances — native hours 2..25 at factor 2.0, so the
+    # overlapping hours 2..24 arrive again with *different* values.
+    NativeFakeAdapter.native = buckets(2, 25, factor=2.0)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
 
@@ -297,8 +300,16 @@ async def test_native_history_upsert_preserves_prior_buckets(sqlite_db, monkeypa
             )
         ).scalars().all()
 
-    by_hour = {row.window_start.hour: row.value for row in rows}
-    assert len(rows) == 3
-    assert by_hour[14] == 5.0  # offset 0, preserved not wiped by the rolling window
-    assert by_hour[15] == 6.0  # offset 1, updated in place, no duplicate
-    assert by_hour[16] == 7.0  # offset 2, newly inserted
+    naive_base = base.replace(tzinfo=None)
+    by_start = {row.window_start: row.value for row in rows}
+
+    # All 25 hours exist and nothing was duplicated.
+    assert len(rows) == 25
+    assert set(by_start) == {naive_base + timedelta(hours=h) for h in range(1, 26)}
+    # Hour 1 fell out of the provider's rolling window but must survive.
+    assert by_start[naive_base + timedelta(hours=1)] == 1.0
+    # Overlapping hours were updated in place to the poll-2 values.
+    assert by_start[naive_base + timedelta(hours=2)] == 4.0
+    assert by_start[naive_base + timedelta(hours=24)] == 48.0
+    # New hour 25 was inserted.
+    assert by_start[naive_base + timedelta(hours=25)] == 50.0
