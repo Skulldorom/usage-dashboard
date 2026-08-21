@@ -138,14 +138,17 @@ def forecast_for_metric(
             result["exhaustion_date"] = (current + timedelta(days=latest_point / avg_7d)).isoformat()
 
     if metric_type == "counter":
+        spent = None
         if window_start and reset_at:
-            result["spent_this_window"] = round(
-                _window_delta_sum(observations, since=_as_aware(window_start), until=current), 4
-            )
+            spent = round(_window_delta_sum(observations, since=_as_aware(window_start), until=current), 4)
+            result["spent_this_window"] = spent
         if avg_7d and avg_7d > 0 and reset_at:
             time_left = max((_as_aware(reset_at) - current).total_seconds(), 0.0)
-            projected = (avg_7d / _SECONDS_PER_DAY) * time_left
-            result["projected_window_end"] = round(projected, 4)
+            additional = (avg_7d / _SECONDS_PER_DAY) * time_left
+            result["projected_additional_usage"] = round(additional, 4)
+            if spent is not None:
+                # Total expected usage by the end of the window.
+                result["projected_window_end"] = round(spent + additional, 4)
 
     if metric_type == "rolling_total":
         result["value"] = latest_point

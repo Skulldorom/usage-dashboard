@@ -219,6 +219,20 @@ def test_forecast_balance_estimates_remaining_days():
     assert result["estimated_remaining_days"] == pytest.approx(5.0, abs=0.01)
 
 
+def test_forecast_counter_projects_total_window_end():
+    base = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+    reset = base + timedelta(days=30)
+    now = base + timedelta(days=15)
+    observations = [_obs("credits", 10.0, base + timedelta(days=day)) for day in range(15)]
+    result = forecast_for_metric(
+        observations, metric_type="counter", now=now, reset_at=reset, window_start=base,
+    )
+    assert result["spent_this_window"] == 150.0
+    assert result["projected_additional_usage"] == pytest.approx(150.0)
+    # projected_window_end must be the *total* at reset, not just the future usage.
+    assert result["projected_window_end"] == pytest.approx(300.0)
+
+
 def test_sustainable_pacing():
     pacing = sustainable_pacing(remaining=48.0, days_remaining=4.3, actual_per_day=16.4)
     assert pacing["safe_per_day"] == pytest.approx(11.16, abs=0.02)
