@@ -7,6 +7,8 @@ tokens, USD, credits, or percentages.
 
 from __future__ import annotations
 
+from bisect import bisect_right
+
 from app.analytics.types import Observation
 
 
@@ -55,23 +57,35 @@ def utilization_observations(
 ) -> list[Observation]:
     """Convert point readings into 0-100 utilization observations.
 
-    When ``spec`` declares a ``capacity_metric``, the capacity is joined from the
-    matching capacity observations by timestamp so a changing limit is honored.
+    When ``spec`` declares a ``capacity_metric``, the capacity is joined using
+    the latest capacity reading at-or-before each usage observation (not an
+    exact timestamp match), so a capacity and usage metric persisted even
+    milliseconds apart still pair correctly.
     """
-    capacity_by_time: dict = {}
+    capacity_points: list[tuple] = []
     capacity_metric_name = spec.get("capacity_metric")
     if capacity_metric_name and capacity_observations:
-        capacity_by_time = {
-            obs.observed_at: obs.value
-            for obs in capacity_observations
-            if obs.metric == capacity_metric_name and obs.kind == "point"
-        }
+        capacity_points = sorted(
+            (
+                (obs.observed_at, obs.value)
+                for obs in capacity_observations
+                if obs.metric == capacity_metric_name and obs.kind == "point"
+            ),
+            key=lambda item: item[0],
+        )
+    capacity_times = [item[0] for item in capacity_points]
+
+    def capacity_at(target) -> float | None:
+        if not capacity_times:
+            return None
+        index = bisect_right(capacity_times, target) - 1
+        return capacity_points[index][1] if index >= 0 else None
 
     result: list[Observation] = []
     for obs in point_observations:
         if obs.kind != "point" or obs.metric != metric:
             continue
-        capacity = capacity_by_time.get(obs.observed_at)
+        capacity = capacity_at(obs.observed_at)
         util = utilization_value(obs.value, spec=spec, capacity=capacity)
         if util is not None:
             result.append(

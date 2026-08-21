@@ -34,6 +34,7 @@ from app.analytics.schemas import (
     OverviewProvider,
 )
 from app.analytics.types import Observation
+from app.analytics.capabilities import overview_metric
 from app.analytics.utilization import utilization_metric, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
@@ -523,38 +524,19 @@ async def summary(session: AsyncSession = Depends(get_session)):
     return AnalyticsSummary(providers=cards)
 
 
-def _provider_unit_totals(observations: list[Observation], start: datetime, end: datetime) -> dict[str, float]:
-    totals: dict[str, float] = {}
-    for obs in observations:
-        if obs.kind != "delta" or not obs.unit:
-            continue
-        if obs.observed_at < start or obs.observed_at >= end:
-            continue
-        totals[obs.unit] = totals.get(obs.unit, 0.0) + obs.value
-    return totals
+def _metric_delta_sum(observations: list[Observation], metric: str, start: datetime, end: datetime) -> float:
+    return sum(
+        obs.value for obs in observations
+        if obs.kind == "delta" and obs.metric == metric and start <= obs.observed_at < end
+    )
 
 
-def _headline_unit(unit_totals: dict[str, float]) -> str | None:
-    candidates = {unit: value for unit, value in unit_totals.items() if unit != "%"}
-    if candidates:
-        return max(candidates, key=lambda unit: candidates[unit])
-    if "%" in unit_totals:
-        return "%"
-    return None
-
-
-def _period_trend(observations: list[Observation], unit: str | None, start: datetime, end: datetime) -> float | None:
-    if unit is None:
+def _period_trend(observations: list[Observation], metric: str | None, start: datetime, end: datetime) -> float | None:
+    if metric is None:
         return None
     span = end - start
-    current = sum(
-        obs.value for obs in observations
-        if obs.kind == "delta" and obs.unit == unit and start <= obs.observed_at < end
-    )
-    previous = sum(
-        obs.value for obs in observations
-        if obs.kind == "delta" and obs.unit == unit and (start - span) <= obs.observed_at < start
-    )
+    current = _metric_delta_sum(observations, metric, start, end)
+    previous = _metric_delta_sum(observations, metric, start - span, start)
     if previous:
         return round((current - previous) / previous * 100, 1)
     return None
@@ -590,11 +572,20 @@ async def overview(
     for config in configs:
         capabilities = _capabilities_for(config.provider)
         observations = await _load_observations(session, config.id)
-        unit_totals = _provider_unit_totals(observations, start, end)
 
-        for unit, value in unit_totals.items():
-            if unit != "%":
-                totals[unit] = totals.get(unit, 0.0) + value
+        # Headline is the single explicitly declared overview metric — never a
+        # sum of same-unit metrics, so overlapping windows (e.g. daily/weekly/
+        # monthly counters) can't inflate the value or its share.
+        headline = overview_metric(capabilities) if capabilities else None
+        headline_metric_name: str | None = None
+        headline_unit: str | None = None
+        headline_value: float | None = None
+        if headline:
+            headline_metric_name, headline_spec = headline
+            headline_unit = headline_spec.get("unit")
+            headline_value = _metric_delta_sum(observations, headline_metric_name, start, end)
+            if headline_unit and headline_unit != "%":
+                totals[headline_unit] = totals.get(headline_unit, 0.0) + headline_value
 
         util_pct: float | None = None
         util_buckets = None
@@ -618,8 +609,6 @@ async def overview(
                     interval=interval, start=start, end=end, tz=timezone,
                 )
 
-        headline_unit = _headline_unit(unit_totals)
-        value = unit_totals.get(headline_unit) if headline_unit else None
         cov = series_coverage(observations)
         providers.append(
             OverviewProvider(
@@ -627,9 +616,9 @@ async def overview(
                 provider=config.provider,
                 label=config.label,
                 unit=headline_unit,
-                value=round(value, 4) if value is not None else None,
+                value=round(headline_value, 4) if headline_value is not None else None,
                 utilization_pct=round(util_pct, 4) if util_pct is not None else None,
-                trend_pct=_period_trend(observations, headline_unit, start, end),
+                trend_pct=_period_trend(observations, headline_metric_name, start, end),
                 coverage=cov["coverage"],
                 confidence=confidence_level(observations, coverage=cov["coverage"])["level"],
             )
