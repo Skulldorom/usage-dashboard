@@ -50,7 +50,8 @@ stack supplies them through `.env`. Values with a default are optional.
 | --- | --- |
 | `AUTO_POLL_ENABLED` | Enables background provider polling. Defaults to `true`. |
 | `AUTO_POLL_INTERVAL_MINUTES` | Minutes between automatic provider polls. Defaults to `60`. |
-| `SNAPSHOT_RETENTION_DAYS` | Days of usage history to retain. Defaults to `90`. |
+| `SNAPSHOT_RETENTION_DAYS` | Days of raw usage snapshots to retain. Defaults to `180`. |
+| `ANALYTICS_HOURLY_RETENTION_DAYS` | Days of normalized hourly analytics observations to retain. Defaults to `365`. Daily aggregates are kept indefinitely once materialized. |
 | `REQUEST_TIMEOUT_SECONDS` | Seconds before an upstream provider request times out. Defaults to `20`. |
 
 ## Browser extension targets

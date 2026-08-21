@@ -8,12 +8,13 @@ Tokens use a `udt_` prefix and can carry one or more scopes.
 
 ## Scopes
 
-| Scope          | Grants                                                                                |
-| -------------- | ------------------------------------------------------------------------------------- |
-| `configs:read` | `GET /configs` - list provider configurations.                                        |
-| `history:read` | `GET /configs/{id}/history` - read usage history for a provider.                      |
-| `poll:write`   | `POST /poll`, `POST /configs/{id}/poll`, `GET /poll/status` - trigger and read polls. |
-| `usage:read`   | `GET /usage` and `GET /homepage` - read current usage and the Homepage payload.       |
+| Scope           | Grants                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------- |
+| `configs:read`  | `GET /configs` - list provider configurations.                                               |
+| `history:read`  | `GET /configs/{id}/history` - read raw usage history for a provider.                         |
+| `poll:write`    | `POST /poll`, `POST /configs/{id}/poll`, `GET /poll/status` - trigger and read polls.        |
+| `usage:read`    | `GET /usage` and `GET /homepage` - read current usage and the Homepage payload.              |
+| `analytics:read`| `GET /analytics/*` - read historical analytics, forecasts, and summaries.                    |
 
 ## Managing tokens
 
