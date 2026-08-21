@@ -22,7 +22,7 @@ class FirecrawlAdapter(ProviderAdapter):
         native_history=True,
         metrics={
             "credits_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing"),
-            "credits_used": metric_spec(type_="counter", unit="credits", direction="increasing", reset_metric="billing_period_end", window="billing"),
+            "credits_used": metric_spec(type_="counter", unit="credits", direction="increasing", reset_metric="billing_period_end", window="billing", overview=True),
             "usage_percent": metric_spec(type_="counter", unit="%", direction="increasing", maximum=100, reset_metric="billing_period_end", window="billing", utilization=True),
             "plan_credits": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
         },
