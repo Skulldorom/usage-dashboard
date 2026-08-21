@@ -1063,6 +1063,11 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   height: 18px;
   display: block;
 }
+.kofi-logo {
+  width: 18px;
+  height: 18px;
+  display: block;
+}
 
 @media (max-width: 900px) {
   :root {
