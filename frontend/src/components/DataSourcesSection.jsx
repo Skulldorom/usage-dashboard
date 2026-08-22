@@ -23,6 +23,8 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import { api } from '../api.js'
 
+const HERMES_SIDECAR_REPO_URL = 'https://github.com/Skulldorom/hermes-usage-sidecar'
+const HERMES_SIDECAR_DOCS_URL = 'https://skulldorom.github.io/usage-dashboard/docs/configuration/hermes-usage-sidecar.html'
 const STATUS_COLOR = { healthy: 'success', error: 'error', never_connected: 'default' }
 
 function parseMappings(text) {
@@ -226,19 +228,49 @@ export default function DataSourcesSection() {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Usage Dashboard polls a read-only Hermes-compatible <code>/usage</code>{" "}
-              endpoint for observed usage metadata. No prompts, responses, or
-              message contents are collected.
+              Usage Dashboard polls the read-only Hermes Usage Sidecar for
+              observed usage metadata. No prompts, responses, or message contents
+              are collected.
             </Typography>
             <Alert severity="info">
-              Hermes Agent does not ship this endpoint natively yet — point this
-              at a Hermes-compatible <code>/usage</code> endpoint (a plugin,
-              sidecar, or proxy) that serves the documented JSON contract. It is
-              not plug-and-play with a stock Hermes installation.
+              <Stack spacing={1}>
+                <Typography variant="subtitle2" component="p">
+                  Hermes Usage Sidecar required
+                </Typography>
+                <Typography variant="body2" component="p">
+                  Stock Hermes Agent does not expose the Usage Dashboard{' '}
+                  <code>/usage</code> contract directly. Install the sidecar on
+                  the machine running Hermes, then enter its URL and bearer token
+                  here. Hermes telemetry is supplemental and observational; it
+                  does not replace provider-reported authoritative usage.
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                  <Button
+                    component="a"
+                    href={HERMES_SIDECAR_DOCS_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    size="small"
+                    variant="outlined"
+                  >
+                    Installation guide
+                  </Button>
+                  <Button
+                    component="a"
+                    href={HERMES_SIDECAR_REPO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    size="small"
+                    variant="text"
+                  >
+                    GitHub repository
+                  </Button>
+                </Stack>
+              </Stack>
             </Alert>
             <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="hermes" helperText="Defaults to the source kind." />
-            <TextField label="Hermes base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://hermes-host:8080" fullWidth required />
-            <TextField label="API token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Optional bearer token. Stored encrypted." />
+            <TextField label="Hermes sidecar base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://127.0.0.1:8799" fullWidth required />
+            <TextField label="Bearer token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Token configured in USAGE_SIDECAR_TOKEN. Stored encrypted." />
             <TextField label="Profiles" value={form.profiles} onChange={(event) => setForm({ ...form, profiles: event.target.value })} placeholder="coder, default" helperText="Comma-separated. Leave blank for all profiles." />
             <TextField label="Provider mappings" value={form.provider_mappings} onChange={(event) => setForm({ ...form, provider_mappings: event.target.value })} placeholder="anthropic=anthropic, openrouter=openrouter" helperText="Optional overrides: hermes-provider=dashboard-provider, comma-separated." />
             <TextField label="Poll interval (minutes)" type="number" value={form.poll_interval_minutes} onChange={(event) => setForm({ ...form, poll_interval_minutes: event.target.value })} />

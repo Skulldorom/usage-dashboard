@@ -42,6 +42,7 @@ export default defineConfig({
           { text: 'Automatic polling', link: '/configuration/polling' },
           { text: 'Usage analytics', link: '/configuration/analytics' },
           { text: 'Data sources', link: '/configuration/data-sources' },
+          { text: 'Hermes Usage Sidecar', link: '/configuration/hermes-usage-sidecar' },
         ],
       },
       {

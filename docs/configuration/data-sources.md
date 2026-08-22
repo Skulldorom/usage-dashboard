@@ -44,16 +44,26 @@ clearly labels the figures as **Hermes-observed only**.
 
 ## Connecting Hermes
 
-1. In **Settings → Data sources**, click **Add Hermes source**.
-2. Enter the Hermes **base URL** and an optional **API token** (stored
-   encrypted at rest).
-3. Optionally restrict ingestion to specific **profiles** and provide
+Usage Dashboard connects to Hermes Agent through the supported
+[Hermes Usage Sidecar](./hermes-usage-sidecar.md). Stock Hermes does not expose
+this dashboard's `/usage` contract directly; install the sidecar on the machine
+running Hermes, then configure the dashboard to poll it.
+
+1. Install and verify the
+   [Hermes Usage Sidecar](./hermes-usage-sidecar.md).
+2. In **Settings → Data sources**, click **Add Hermes source**.
+3. Enter the sidecar **base URL** and **bearer token** (stored encrypted at
+   rest).
+4. Optionally restrict ingestion to specific **profiles** and provide
    **provider mappings** (`hermes-provider=dashboard-provider`) to align
    Hermes's provider identifiers with your configured providers.
-4. Set the **poll interval** and click **Connect**, then **Test connection**.
+5. Set the **poll interval** and click **Connect**, then **Test connection**.
 
 The dashboard will then poll `{base_url}/usage` and sync observed usage into the
-analytics history.
+analytics history. See
+[Installing the Hermes Usage Sidecar](./hermes-usage-sidecar.md) for the
+end-to-end setup steps, multi-profile behavior, token configuration,
+verification commands, and Docker networking notes.
 
 ### HTTP contract
 
@@ -95,13 +105,13 @@ session, profile, model, cost type, metric, value, unit), so re-fetching the
 same data still deduplicates while genuinely distinct observations are
 preserved.
 
-> **Not plug-and-play.** Hermes Agent does **not** currently ship a native usage
-> REST endpoint, so this integration is not drop-in with a stock Hermes
-> installation. You must point it at a Hermes-compatible `/usage` endpoint — a
-> small read-only Hermes plugin/endpoint that reads Hermes's session store, a
-> sidecar, or a proxy — that serves the contract above. The dashboard itself is
-> agnostic to how that endpoint is implemented, so any future native Hermes
-> endpoint that satisfies the same contract will work without changes.
+> **Hermes Usage Sidecar.** Hermes Agent does **not** currently ship a native
+> Usage Dashboard REST endpoint. For Hermes Agent, the supported implementation
+> is the standalone
+> [Hermes Usage Sidecar](./hermes-usage-sidecar.md), which reads Hermes usage
+> metadata read-only and serves the contract above. The dashboard remains
+> contract-compatible with any future native Hermes endpoint that returns the
+> same shape.
 
 ## Privacy
 
