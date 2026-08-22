@@ -41,6 +41,7 @@ export default defineConfig({
           { text: 'API tokens', link: '/configuration/api-tokens' },
           { text: 'Automatic polling', link: '/configuration/polling' },
           { text: 'Usage analytics', link: '/configuration/analytics' },
+          { text: 'Data sources', link: '/configuration/data-sources' },
         ],
       },
       {
