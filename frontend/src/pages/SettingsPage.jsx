@@ -36,6 +36,7 @@ import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import LaunchRoundedIcon from "@mui/icons-material/LaunchRounded";
 import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsActiveRounded";
 import { api } from "../api.js";
+import DataSourcesSection from "../components/DataSourcesSection.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
 import { formatThresholdRule } from "../lib/usageFormat.js";
 import {
@@ -1375,6 +1376,7 @@ export default function SettingsPage() {
           </div>
         )}
       </Paper>
+      <DataSourcesSection />
       <Paper
         id="integrations"
         className="settings-panel integrations-panel glass-panel"

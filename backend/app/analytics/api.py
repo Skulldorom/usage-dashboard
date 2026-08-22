@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
+from app.analytics.attribution import ATTRIBUTION_METRICS, attribute
 from app.analytics.confidence import confidence_level
 from app.analytics.forecast import forecast_for_metric, rates_from_deltas
 from app.analytics.schemas import (
@@ -40,7 +41,15 @@ from app.core.auth import require_scope
 from app.database import get_session
 from app.models import ProviderConfig, UsageObservation
 from app.providers.registry import get_adapter_class
-from app.schemas import ProviderConfigRead
+from app.schemas import (
+    Attribution,
+    AttributionMetric,
+    HermesBreakdown,
+    HermesBreakdownDaily,
+    HermesGroupRow,
+    HermesTotal,
+    ProviderConfigRead,
+)
 
 router = APIRouter()
 
@@ -647,4 +656,172 @@ async def overview(
         totals={unit: round(value, 4) for unit, value in totals.items()},
         providers=providers,
         comparison=comparison,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Hermes telemetry attribution & breakdown.
+# ---------------------------------------------------------------------------
+
+_ATTRIBUTION_UNITS = {
+    "cost": "USD",
+    "input_tokens": "tokens",
+    "output_tokens": "tokens",
+    "requests": "count",
+}
+_TOKEN_METRICS = frozenset(
+    {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
+)
+
+
+async def _load_hermes_rows(session: AsyncSession, start: datetime, end: datetime) -> list[UsageObservation]:
+    return (
+        await session.execute(
+            select(UsageObservation).where(
+                UsageObservation.source == "hermes",
+                UsageObservation.observed_at >= start,
+                UsageObservation.observed_at < end,
+            )
+        )
+    ).scalars().all()
+
+
+def _round_or_none(value: float) -> float | None:
+    return round(value, 4) if value else None
+
+
+@router.get(
+    "/providers/{config_id}/attribution",
+    response_model=Attribution,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def provider_attribution(
+    config_id: int,
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    session: AsyncSession = Depends(get_session),
+):
+    config = await _get_config(session, config_id)
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ is not None else now
+    start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+
+    provider_obs = await _load_observations(session, config_id, start=start, end=end)
+    hermes_rows = (
+        await session.execute(
+            select(UsageObservation).where(
+                UsageObservation.source == "hermes",
+                UsageObservation.provider_mapping == config.provider,
+                UsageObservation.observed_at >= start,
+                UsageObservation.observed_at < end,
+            )
+        )
+    ).scalars().all()
+
+    metrics: list[AttributionMetric] = []
+    for hermes_metric, aliases in ATTRIBUTION_METRICS:
+        hermes_observed = sum(r.value for r in hermes_rows if r.metric == hermes_metric) or None
+        provider_total = (
+            sum(o.value for o in provider_obs if o.kind == "delta" and o.metric in aliases) or None
+        )
+        if hermes_observed is None and provider_total is None:
+            continue
+        att = attribute(provider_total, hermes_observed)
+        metrics.append(
+            AttributionMetric(
+                metric=hermes_metric,
+                unit=_ATTRIBUTION_UNITS.get(hermes_metric),
+                provider_total=att["provider_total"],
+                hermes_observed=att["hermes_observed"],
+                attributed=att["attributed"],
+                unattributed=att["unattributed"],
+                overage=att["overage"],
+                attribution_pct=att["attribution_pct"],
+                status=att["status"],
+            )
+        )
+
+    return Attribution(
+        provider_config_id=config.id,
+        provider=config.provider,
+        label=config.label,
+        period={"start": start.isoformat(), "end": end.isoformat()},
+        metrics=metrics,
+    )
+
+
+@router.get(
+    "/hermes",
+    response_model=HermesBreakdown,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def hermes_breakdown(
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    session: AsyncSession = Depends(get_session),
+):
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ is not None else now
+    start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+
+    rows = await _load_hermes_rows(session, start, end)
+
+    totals: list[HermesTotal] = []
+    for metric in ("cost", "input_tokens", "output_tokens", "requests"):
+        value = sum(r.value for r in rows if r.metric == metric) or None
+        totals.append(HermesTotal(metric=metric, unit=_ATTRIBUTION_UNITS.get(metric), value=_round_or_none(value) if value else None))
+    tokens = sum(r.value for r in rows if r.metric in _TOKEN_METRICS) or None
+    totals.append(HermesTotal(metric="tokens", unit="tokens", value=_round_or_none(tokens) if tokens else None))
+
+    sessions = len({r.session_id for r in rows if r.session_id})
+
+    def _grouped(attribute: str) -> list[HermesGroupRow]:
+        groups: dict[str, dict[str, float]] = {}
+        for row in rows:
+            key = getattr(row, attribute) or "unknown"
+            bucket = groups.setdefault(key, {"cost": 0.0, "tokens": 0.0, "requests": 0.0})
+            if row.metric == "cost":
+                bucket["cost"] += row.value
+            elif row.metric in _TOKEN_METRICS:
+                bucket["tokens"] += row.value
+            elif row.metric == "requests":
+                bucket["requests"] += row.value
+        return [
+            HermesGroupRow(
+                key=key,
+                cost=_round_or_none(bucket["cost"]),
+                tokens=_round_or_none(bucket["tokens"]),
+                requests=_round_or_none(bucket["requests"]),
+            )
+            for key, bucket in sorted(groups.items())
+        ]
+
+    daily_groups: dict[str, dict[str, float]] = {}
+    for row in rows:
+        day = _aware(row.observed_at).date().isoformat()
+        bucket = daily_groups.setdefault(day, {"cost": 0.0, "tokens": 0.0, "requests": 0.0})
+        if row.metric == "cost":
+            bucket["cost"] += row.value
+        elif row.metric in _TOKEN_METRICS:
+            bucket["tokens"] += row.value
+        elif row.metric == "requests":
+            bucket["requests"] += row.value
+    daily = [
+        HermesBreakdownDaily(
+            date=day,
+            cost=_round_or_none(bucket["cost"]),
+            tokens=_round_or_none(bucket["tokens"]),
+            requests=_round_or_none(bucket["requests"]),
+        )
+        for day, bucket in sorted(daily_groups.items())
+    ]
+
+    return HermesBreakdown(
+        period={"start": start.isoformat(), "end": end.isoformat()},
+        totals=totals,
+        sessions=sessions,
+        by_provider=_grouped("provider_mapping"),
+        by_model=_grouped("model"),
+        by_profile=_grouped("profile"),
+        daily=daily,
     )

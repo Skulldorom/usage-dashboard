@@ -20,7 +20,7 @@ class AuthTokenRead(BaseModel):
 
 
 
-API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read", "analytics:read"}
+API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read", "analytics:read", "datasources:read"}
 
 class ApiTokenCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
@@ -279,3 +279,125 @@ class PollStatusRead(BaseModel):
     is_polling: bool
     last_polled_at: str | None
     next_poll_at: str | None
+
+
+# ---------------------------------------------------------------------------
+# Data sources (observed telemetry) — distinct from providers.
+# ---------------------------------------------------------------------------
+
+
+class DataSourceInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    metrics: list[str]
+
+
+class DataSourceConfigCreate(BaseModel):
+    kind: str = Field(..., examples=["hermes"])
+    name: str | None = Field(default=None, max_length=120)
+    base_url: str | None = None
+    token: str | None = None
+    profiles: list[str] | None = None
+    provider_mappings: dict[str, str] | None = None
+    poll_interval_minutes: int = Field(default=60, ge=1)
+    is_enabled: bool = True
+
+
+class DataSourceConfigUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    base_url: str | None = None
+    token: str | None = None
+    profiles: list[str] | None = None
+    provider_mappings: dict[str, str] | None = None
+    poll_interval_minutes: int | None = Field(default=None, ge=1)
+    is_enabled: bool | None = None
+
+    def has_update_for(self, field_name: str) -> bool:
+        return field_name in self.model_fields_set
+
+
+class DataSourceStatus(BaseModel):
+    status: str
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    consecutive_failures: int = 0
+    latest_error: str | None = None
+
+
+class DataSourceConfigRead(BaseModel):
+    id: int
+    kind: str
+    name: str
+    base_url: str | None
+    profiles: list[str] = Field(default_factory=list)
+    provider_mappings: dict[str, str] = Field(default_factory=dict)
+    poll_interval_minutes: int
+    is_enabled: bool
+    created_at: datetime
+    updated_at: datetime
+    token_masked: str = "••••••••"
+    status: DataSourceStatus | None = None
+
+
+class DataSourceSyncResult(BaseModel):
+    status: str
+    inserted: int = 0
+    observed: int = 0
+    error: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Hermes attribution / breakdown.
+# ---------------------------------------------------------------------------
+
+
+class AttributionMetric(BaseModel):
+    metric: str
+    unit: str | None = None
+    provider_total: float | None = None
+    hermes_observed: float | None = None
+    attributed: float | None = None
+    unattributed: float | None = None
+    overage: float | None = None
+    attribution_pct: float | None = None
+    status: str = "unavailable"
+
+
+class Attribution(BaseModel):
+    provider_config_id: int
+    provider: str
+    label: str
+    period: dict
+    metrics: list[AttributionMetric]
+
+
+class HermesGroupRow(BaseModel):
+    key: str
+    cost: float | None = None
+    tokens: float | None = None
+    requests: float | None = None
+
+
+class HermesBreakdownDaily(BaseModel):
+    date: str
+    cost: float | None = None
+    tokens: float | None = None
+    requests: float | None = None
+
+
+class HermesTotal(BaseModel):
+    metric: str
+    unit: str | None = None
+    value: float | None = None
+
+
+class HermesBreakdown(BaseModel):
+    period: dict
+    totals: list[HermesTotal]
+    sessions: int = 0
+    by_provider: list[HermesGroupRow]
+    by_model: list[HermesGroupRow]
+    by_profile: list[HermesGroupRow]
+    daily: list[HermesBreakdownDaily]

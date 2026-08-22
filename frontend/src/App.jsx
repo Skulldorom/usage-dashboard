@@ -216,6 +216,7 @@ const navItems = [
 
 const settingsSubmenuItems = [
   { href: "#provider-settings", label: "Provider settings" },
+  { href: "#data-sources", label: "Data sources" },
   { href: "#integrations", label: "Integrations" },
   { href: "#integration-tokens", label: "Integration tokens" },
 ];

@@ -17,6 +17,7 @@ import {
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { api } from '../api.js'
 import ProviderIcon from '../components/ProviderIcon.jsx'
+import { AttributionPanel, HermesBreakdownPanel } from '../components/HermesPanels.jsx'
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
@@ -578,6 +579,7 @@ export default function UsagePage() {
                   <Box mt={1}><ProviderComparisonTable providers={overview.providers} /></Box>
                 </CardContent>
               </Card>
+              <HermesBreakdownPanel range={range} />
             </Stack>
           )}
 
@@ -627,6 +629,8 @@ export default function UsagePage() {
               </Grid>
             </Grid>
           )}
+
+          {providerInfo && <AttributionPanel configId={selectedId} />}
         </Stack>
       )}
     </>
