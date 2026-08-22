@@ -68,11 +68,16 @@ class UsageSnapshot(Base):
 
 
 class UsageObservation(Base):
-    """Normalized analytics observation derived from snapshots or native history."""
+    """Normalized analytics observation derived from snapshots, native history,
+    or an external data source (e.g. Hermes telemetry)."""
 
     __tablename__ = "usage_observations"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    provider_config_id: Mapped[int] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True)
+    # Provider-backed observations link to a provider config; data-source
+    # observations (source="hermes") link to a data source instead and leave
+    # provider_config_id null.
+    provider_config_id: Mapped[int | None] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True, nullable=True)
+    data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_source_configs.id", ondelete="CASCADE"), index=True, nullable=True)
     provider: Mapped[str] = mapped_column(String(32), index=True)
     metric: Mapped[str] = mapped_column(String(120), index=True)
     value: Mapped[float] = mapped_column(Float)
@@ -83,3 +88,36 @@ class UsageObservation(Base):
     window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Telemetry provenance (Hermes and future data sources).
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+
+class DataSourceConfig(Base):
+    """Configuration for an external usage telemetry source (e.g. Hermes Agent).
+
+    Data sources are kept separate from providers: providers are the accounts
+    whose usage is being measured, while data sources supply observed telemetry
+    about usage flowing through them.
+    """
+
+    __tablename__ = "data_source_configs"
+    __table_args__ = (UniqueConstraint("kind", "name", name="uq_data_source_kind_name"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(32), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    encrypted_token: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extra: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    poll_interval_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    latest_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
