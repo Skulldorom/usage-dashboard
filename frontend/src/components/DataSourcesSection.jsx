@@ -226,10 +226,16 @@ export default function DataSourcesSection() {
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Usage Dashboard polls a read-only Hermes usage endpoint
-              (<code>/usage</code>) for observed usage metadata. No prompts,
-              responses, or message contents are collected.
+              Usage Dashboard polls a read-only Hermes-compatible <code>/usage</code>{" "}
+              endpoint for observed usage metadata. No prompts, responses, or
+              message contents are collected.
             </Typography>
+            <Alert severity="info">
+              Hermes Agent does not ship this endpoint natively yet — point this
+              at a Hermes-compatible <code>/usage</code> endpoint (a plugin,
+              sidecar, or proxy) that serves the documented JSON contract. It is
+              not plug-and-play with a stock Hermes installation.
+            </Alert>
             <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="hermes" helperText="Defaults to the source kind." />
             <TextField label="Hermes base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://hermes-host:8080" fullWidth required />
             <TextField label="API token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Optional bearer token. Stored encrypted." />

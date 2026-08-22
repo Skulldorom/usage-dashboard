@@ -68,6 +68,7 @@ The Hermes endpoint must return JSON in one of two shapes:
       "profile": "coder",
       "provider": "anthropic",
       "model": "claude-sonnet-4",
+      "event_id": "evt_01J5...",
       "input_tokens": 1234,
       "output_tokens": 567,
       "cache_read_tokens": 100,
@@ -86,10 +87,21 @@ or a bare array of those records. Recognized metric fields are `input_tokens`,
 `requests`, and `cost` (`USD`). `cost_type` may be `estimated`, `actual`, or
 `unavailable`. `timestamp` accepts an ISO-8601 string or epoch.
 
-Hermes Agent does not currently ship a native usage REST endpoint, so the
-byte-source that serves this contract (a small read-only Hermes plugin/endpoint
-that reads Hermes's session store, or an equivalent adapter) is wired
-separately. The dashboard is agnostic to it.
+Each record may include an `event_id` (or `id`) — a stable identifier for that
+source event. The dashboard stores it and enforces uniqueness per data source so
+re-syncing identical data is idempotent. Records without an event ID get a
+deterministic identity derived from their full provenance (provider, timestamp,
+session, profile, model, cost type, metric, value, unit), so re-fetching the
+same data still deduplicates while genuinely distinct observations are
+preserved.
+
+> **Not plug-and-play.** Hermes Agent does **not** currently ship a native usage
+> REST endpoint, so this integration is not drop-in with a stock Hermes
+> installation. You must point it at a Hermes-compatible `/usage` endpoint — a
+> small read-only Hermes plugin/endpoint that reads Hermes's session store, a
+> sidecar, or a proxy — that serves the contract above. The dashboard itself is
+> agnostic to how that endpoint is implemented, so any future native Hermes
+> endpoint that satisfies the same contract will work without changes.
 
 ## Privacy
 
