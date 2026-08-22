@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.core.thresholds import build_alerts, provider_alert_state
 from app.database import engine, get_session
+from app.health import default_max_stale_age, derive_health
 from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
@@ -27,6 +28,11 @@ _next_auto_poll_at: datetime | None = None
 _codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
 _codex_browser_flows: dict[str, codex_oauth.CodexBrowserStart] = {}
 _codex_device_lock = asyncio.Lock()
+
+# How many recent snapshots to scan when deriving provider health (last success,
+# consecutive failures, last-known-good). More than enough to cover meaningful
+# failure runs at any sane polling cadence.
+HEALTH_SCAN_LIMIT = 200
 
 
 def _crypto() -> CryptoService:
@@ -112,13 +118,21 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
         if not cfg.is_enabled:
             continue
         latest = row["latest"]
+        last_good = row.get("last_good")
+        health = row.get("health") or {}
+        status = health.get("status") or (latest.status if latest else "unknown")
+        # Health collapses a provider-level "degraded" (successful but partial)
+        # into "healthy"; surface the provider's own signal when present.
+        if status == "healthy" and latest is not None and latest.status == "degraded":
+            status = "degraded"
+        display = last_good if last_good is not None else latest
         provider_rows.append(
             HomepageProviderRow(
                 provider=cfg.provider,
                 config_id=cfg.id,
                 label=f"{cfg.provider} ({cfg.label})",
-                value=_homepage_usage_text(latest.metrics, latest.summary) if latest else "No usage snapshot yet",
-                status=latest.status if latest else "unknown",
+                value=_homepage_usage_text(display.metrics, display.summary) if display else "No usage snapshot yet",
+                status=status,
             )
         )
     return provider_rows
@@ -624,12 +638,27 @@ async def usage(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     payload = []
     for config in configs:
-        latest = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(1))).scalar_one_or_none()
-        alerts = build_alerts(latest.metrics if latest else [], config.alert_thresholds) if latest else []
+        recent = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(HEALTH_SCAN_LIMIT))).scalars().all()
+        latest = recent[0] if recent else None
+        health = derive_health(
+            [{"checked_at": snap.checked_at, "status": snap.status, "error": snap.error} for snap in recent],
+            now=datetime.now(UTC),
+            max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
+        )
+        # Preserve last-known-good only while it is still within policy (stale).
+        # When the last success is too old to be useful (error) we surface the
+        # failure instead of presenting stale values as current.
+        last_good = None
+        if health["status"] == "stale":
+            last_good = next((snap for snap in recent if snap.status != "error"), None)
+        alert_source = last_good if last_good is not None else latest
+        alerts = build_alerts(alert_source.metrics if alert_source else [], config.alert_thresholds) if alert_source else []
         payload.append(
             {
                 "config": _config_read(config),
                 "latest": latest,
+                "last_good": last_good,
+                "health": health,
                 "alerts": [AlertStateRead(**alert) for alert in alerts],
                 "alert_state": provider_alert_state(alerts),
             }

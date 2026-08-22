@@ -422,7 +422,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
             "config_id": no_snapshot.id,
             "label": "fake (scratch)",
             "value": "No usage snapshot yet",
-            "status": "unknown",
+            "status": "never_connected",
         },
     ]
 
@@ -1495,3 +1495,131 @@ async def test_providers_endpoint_exposes_alert_metrics_catalog():
 
     # Custom HTTP has no static metric catalog - the frontend falls back to free-text entry.
     assert by_id["custom_http"]["alert_metrics"] == []
+
+
+@pytest.mark.asyncio
+async def test_usage_health_stale_preserves_last_good(sqlite_db):
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
+        )
+        session.add(config)
+        await session.flush()
+        session.add_all(
+            [
+                UsageSnapshot(
+                    provider_config_id=config.id,
+                    provider="fake",
+                    status="healthy",
+                    summary="42 credits",
+                    metrics=[{"label": "remaining", "value": 42, "unit": "credits"}],
+                    raw={},
+                    checked_at=now - timedelta(hours=1),
+                ),
+                UsageSnapshot(
+                    provider_config_id=config.id,
+                    provider="fake",
+                    status="error",
+                    summary="",
+                    metrics=[],
+                    raw={},
+                    error="timeout",
+                    checked_at=now - timedelta(minutes=5),
+                ),
+            ]
+        )
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    item = response.json()[0]
+    assert item["health"]["status"] == "stale"
+    assert item["health"]["is_stale"] is True
+    assert item["health"]["consecutive_failures"] == 1
+    assert item["health"]["latest_error"] == "timeout"
+    assert item["health"]["last_success_at"] is not None
+    # Latest is the failed attempt; last_good carries the retained values.
+    assert item["latest"]["status"] == "error"
+    assert item["last_good"]["status"] == "healthy"
+    assert item["last_good"]["metrics"][0]["value"] == 42
+
+
+@pytest.mark.asyncio
+async def test_usage_health_healthy_omits_last_good(sqlite_db):
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
+        )
+        session.add(config)
+        await session.flush()
+        session.add(
+            UsageSnapshot(
+                provider_config_id=config.id,
+                provider="fake",
+                status="healthy",
+                summary="ok",
+                metrics=[{"label": "remaining", "value": 7}],
+                raw={},
+                checked_at=now - timedelta(minutes=2),
+            )
+        )
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    item = response.json()[0]
+    assert item["health"]["status"] == "healthy"
+    assert item["health"]["is_stale"] is False
+    assert item["latest"]["status"] == "healthy"
+    assert item["last_good"] is None
+
+
+@pytest.mark.asyncio
+async def test_usage_health_never_connected_and_error_states(sqlite_db):
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        empty = ProviderConfig(
+            provider="fake", label="empty", encrypted_api_key="encrypted", is_enabled=True
+        )
+        failing = ProviderConfig(
+            provider="fake", label="failing", encrypted_api_key="encrypted", is_enabled=True
+        )
+        session.add_all([empty, failing])
+        await session.flush()
+        session.add(
+            UsageSnapshot(
+                provider_config_id=failing.id,
+                provider="fake",
+                status="error",
+                summary="",
+                metrics=[],
+                raw={},
+                error="boom",
+                checked_at=now - timedelta(minutes=3),
+            )
+        )
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    by_label = {item["config"]["label"]: item for item in response.json()}
+    assert by_label["empty"]["health"]["status"] == "never_connected"
+    assert by_label["failing"]["health"]["status"] == "error"
+    assert by_label["failing"]["health"]["consecutive_failures"] == 1
+    assert by_label["failing"]["health"]["latest_error"] == "boom"
+    assert by_label["failing"]["last_good"] is None
