@@ -31,21 +31,54 @@ def normalize_provider_id(raw: str | None) -> str | None:
 
 
 def attribute(provider_total: float | None, hermes_observed: float | None) -> dict:
-    """Compute attribution for a single metric.
+    """Compute attribution for a single metric without double-counting.
 
     ``provider_total`` is authoritative; ``hermes_observed`` is the observed
-    subset. ``unattributed = provider_total - hermes_observed``. We never add
-    the two together.
+    subset. The result carries explicit ``attributed``/``unattributed``/``overage``
+    values plus a ``status``, and the attribution percentage is capped at 100%:
+
+    - ``attributed = min(provider_total, hermes_observed)``
+    - ``unattributed = max(provider_total - hermes_observed, 0)``
+    - ``overage = max(hermes_observed - provider_total, 0)``
+
+    ``unattributed`` can never be negative and the normal percentage can never
+    exceed 100%. Statuses: ``matched``, ``partial``, ``over_observed``,
+    ``provider_only``, ``hermes_only``, ``unavailable``.
     """
     result: dict = {
         "provider_total": provider_total,
         "hermes_observed": hermes_observed,
-        "attribution_pct": None,
+        "attributed": None,
         "unattributed": None,
+        "overage": None,
+        "attribution_pct": None,
+        "status": "unavailable",
     }
-    if provider_total is not None and hermes_observed is not None and provider_total > 0:
-        result["attribution_pct"] = round(hermes_observed / provider_total * 100, 1)
-        result["unattributed"] = round(provider_total - hermes_observed, 6)
+    if provider_total is None and hermes_observed is None:
+        return result
+    if provider_total is None:
+        result["status"] = "hermes_only"
+        return result
+    if hermes_observed is None:
+        result["status"] = "provider_only"
+        return result
+
+    result["attributed"] = round(min(provider_total, hermes_observed), 6)
+    result["unattributed"] = round(max(provider_total - hermes_observed, 0.0), 6)
+    result["overage"] = round(max(hermes_observed - provider_total, 0.0), 6)
+
+    if provider_total <= 0:
+        # Provider reports zero/negative usage; a percentage is meaningless.
+        result["status"] = "over_observed" if hermes_observed > 0 else "matched"
+        return result
+
+    result["attribution_pct"] = round(min(hermes_observed / provider_total * 100.0, 100.0), 1)
+    if hermes_observed > provider_total:
+        result["status"] = "over_observed"
+    elif hermes_observed < provider_total:
+        result["status"] = "partial"
+    else:
+        result["status"] = "matched"
     return result
 
 

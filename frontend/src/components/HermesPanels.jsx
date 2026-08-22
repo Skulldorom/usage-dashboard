@@ -153,6 +153,23 @@ export function HermesBreakdownPanel({ range }) {
   )
 }
 
+function attributionLine(m) {
+  switch (m.status) {
+    case 'matched':
+      return `${fmt(m.attributed, m.unit)} via Hermes · fully matched`
+    case 'partial':
+      return `${m.attribution_pct}% via Hermes · ${fmt(m.unattributed, m.unit)} unattributed`
+    case 'over_observed':
+      return `Hermes observed ${fmt(m.hermes_observed, m.unit)} vs provider ${fmt(m.provider_total, m.unit)}`
+    case 'hermes_only':
+      return `Hermes-observed ${fmt(m.hermes_observed, m.unit)} (provider total unavailable)`
+    case 'provider_only':
+      return `Provider-reported ${fmt(m.provider_total, m.unit)} (no Hermes data)`
+    default:
+      return 'No data'
+  }
+}
+
 export function AttributionPanel({ configId }) {
   const [data, setData] = useState(null)
 
@@ -172,6 +189,8 @@ export function AttributionPanel({ configId }) {
 
   if (!data || data.metrics.length === 0) return null
 
+  const hasOverage = data.metrics.some((m) => m.status === 'over_observed')
+
   return (
     <Card variant="outlined" className="glass-panel">
       <CardContent>
@@ -182,17 +201,20 @@ export function AttributionPanel({ configId }) {
         <Stack spacing={1}>
           {data.metrics.map((m) => (
             <Box key={m.metric}>
-              <Stack direction="row" justifyContent="space-between">
+              <Stack direction="row" justifyContent="space-between" gap={2}>
                 <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{m.metric.replaceAll('_', ' ')}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {m.provider_total !== null && m.provider_total !== undefined
-                    ? `${m.attribution_pct !== null && m.attribution_pct !== undefined ? `${m.attribution_pct}% via Hermes` : 'Hermes-observed'} · ${fmt(m.hermes_observed, m.unit)} of ${fmt(m.provider_total, m.unit)}`
-                    : `Hermes-observed ${fmt(m.hermes_observed, m.unit)} (provider total unavailable)`}
-                </Typography>
+                <Typography variant="body2" color="text.secondary">{attributionLine(m)}</Typography>
               </Stack>
             </Box>
           ))}
         </Stack>
+        {hasOverage && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            Hermes observed more usage than the provider reported for this period.
+            This can occur because of reporting delays, different measurement
+            windows, or estimated telemetry.
+          </Alert>
+        )}
         <Typography variant="caption" color="text.secondary" display="block" mt={1}>
           Hermes usage is an observed subset and is never added to provider totals.
         </Typography>

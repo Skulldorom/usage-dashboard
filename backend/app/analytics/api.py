@@ -731,10 +731,13 @@ async def provider_attribution(
             AttributionMetric(
                 metric=hermes_metric,
                 unit=_ATTRIBUTION_UNITS.get(hermes_metric),
-                provider_total=provider_total,
-                hermes_observed=hermes_observed,
-                attribution_pct=att["attribution_pct"],
+                provider_total=att["provider_total"],
+                hermes_observed=att["hermes_observed"],
+                attributed=att["attributed"],
                 unattributed=att["unattributed"],
+                overage=att["overage"],
+                attribution_pct=att["attribution_pct"],
+                status=att["status"],
             )
         )
 

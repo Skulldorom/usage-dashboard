@@ -345,8 +345,11 @@ class AttributionMetric(BaseModel):
     unit: str | None = None
     provider_total: float | None = None
     hermes_observed: float | None = None
-    attribution_pct: float | None = None
+    attributed: float | None = None
     unattributed: float | None = None
+    overage: float | None = None
+    attribution_pct: float | None = None
+    status: str = "unavailable"
 
 
 class Attribution(BaseModel):
