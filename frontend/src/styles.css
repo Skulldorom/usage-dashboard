@@ -465,6 +465,39 @@ input {
 .provider-status.status-error {
   color: #ff6685;
 }
+.provider-status.health-healthy {
+  color: #38e6a1;
+}
+.provider-status.health-stale {
+  color: #ffbf69;
+}
+.provider-status.health-error {
+  color: #ff6685;
+}
+.provider-status.health-never_connected {
+  color: #81798c;
+}
+.health-line {
+  margin: 8px 0 0 !important;
+}
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.health-dot-healthy {
+  background: #38e6a1;
+}
+.health-dot-stale {
+  background: #ffbf69;
+}
+.health-dot-error {
+  background: #ff6685;
+}
+.health-dot-never_connected {
+  background: #81798c;
+}
 .provider-actions {
   display: flex;
   align-items: center;
