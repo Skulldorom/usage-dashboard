@@ -22,9 +22,12 @@ import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import { api } from '../api.js'
+import {
+  HERMES_SIDECAR_DOCS_URL,
+  HERMES_SIDECAR_INSTALL_PROMPT,
+  HERMES_SIDECAR_REPO_URL,
+} from '../lib/hermesSidecarInstallPrompt.js'
 
-const HERMES_SIDECAR_REPO_URL = 'https://github.com/Skulldorom/hermes-usage-sidecar'
-const HERMES_SIDECAR_DOCS_URL = 'https://skulldorom.github.io/usage-dashboard/docs/configuration/hermes-usage-sidecar.html'
 const STATUS_COLOR = { healthy: 'success', error: 'error', never_connected: 'default' }
 
 function parseMappings(text) {
@@ -41,6 +44,57 @@ function parseProfiles(text) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
+}
+
+export function InstallWithHermesSection({ onCopyInstallPrompt }) {
+  return (
+    <Box
+      sx={{
+        border: 1,
+        borderColor: 'divider',
+        borderRadius: 2,
+        p: 2,
+        bgcolor: 'background.default',
+      }}
+    >
+      <Stack spacing={1}>
+        <Typography variant="subtitle2" component="h3">
+          Install with Hermes
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          Using Hermes Agent? Copy this prompt and send it to Hermes to install
+          and configure the Usage Sidecar automatically. The prompt only asks
+          Hermes to install the sidecar; it does not configure Usage Dashboard,
+          providers, mappings, or this data source form.
+        </Typography>
+        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }} useFlexGap>
+          <Button size="small" variant="contained" onClick={onCopyInstallPrompt}>
+            Copy installation prompt
+          </Button>
+          <Button
+            component="a"
+            href={HERMES_SIDECAR_DOCS_URL}
+            target="_blank"
+            rel="noreferrer"
+            size="small"
+            variant="outlined"
+          >
+            Manual installation
+          </Button>
+          <Button
+            component="a"
+            href={HERMES_SIDECAR_REPO_URL}
+            target="_blank"
+            rel="noreferrer"
+            size="small"
+            variant="text"
+          >
+            Sidecar repository
+          </Button>
+        </Stack>
+      </Stack>
+    </Box>
+  )
 }
 
 export default function DataSourcesSection() {
@@ -124,6 +178,19 @@ export default function DataSourcesSection() {
       await load()
     } catch (err) {
       setError(err.message)
+    }
+  }
+
+  async function copyInstallPrompt() {
+    setActionResult(null)
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        throw new Error('Clipboard copy is not available in this browser.')
+      }
+      await navigator.clipboard.writeText(HERMES_SIDECAR_INSTALL_PROMPT)
+      setActionResult({ type: 'success', text: 'Hermes installation prompt copied.' })
+    } catch (err) {
+      setActionResult({ type: 'error', text: err.message })
     }
   }
 
@@ -244,7 +311,7 @@ export default function DataSourcesSection() {
                   here. Hermes telemetry is supplemental and observational; it
                   does not replace provider-reported authoritative usage.
                 </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }} useFlexGap>
                   <Button
                     component="a"
                     href={HERMES_SIDECAR_DOCS_URL}
@@ -268,6 +335,7 @@ export default function DataSourcesSection() {
                 </Stack>
               </Stack>
             </Alert>
+            <InstallWithHermesSection onCopyInstallPrompt={copyInstallPrompt} />
             <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="hermes" helperText="Defaults to the source kind." />
             <TextField label="Hermes sidecar base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://127.0.0.1:8799" fullWidth required />
             <TextField label="Bearer token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Token configured in USAGE_SIDECAR_TOKEN. Stored encrypted." />
