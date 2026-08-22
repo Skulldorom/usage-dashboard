@@ -49,15 +49,24 @@ Usage Dashboard connects to Hermes Agent through the supported
 this dashboard's `/usage` contract directly; install the sidecar on the machine
 running Hermes, then configure the dashboard to poll it.
 
-1. Install and verify the
-   [Hermes Usage Sidecar](./hermes-usage-sidecar.md).
-2. In **Settings → Data sources**, click **Add Hermes source**.
-3. Enter the sidecar **base URL** and **bearer token** (stored encrypted at
-   rest).
-4. Optionally restrict ingestion to specific **profiles** and provide
+1. In **Settings → Data sources**, click **Add Hermes source**.
+2. In **Install with Hermes**, click **Copy installation prompt**.
+3. Paste the copied prompt into Hermes Agent on the machine that runs Hermes.
+4. Let Hermes inspect the current sidecar documentation, install the sidecar,
+   generate and store a bearer token, enable startup, and verify `/healthz` and
+   `/usage` without revealing the token in chat.
+5. Hermes will report where the bearer token is stored and the exact command you
+   can run to retrieve/copy it.
+6. Return to Usage Dashboard and enter the sidecar **base URL** and **bearer
+   token** (stored encrypted at rest).
+7. Optionally restrict ingestion to specific **profiles** and provide
    **provider mappings** (`hermes-provider=dashboard-provider`) to align
    Hermes's provider identifiers with your configured providers.
-5. Set the **poll interval** and click **Connect**, then **Test connection**.
+8. Set the **poll interval** and click **Connect**, then **Test connection**.
+
+The copied prompt is deliberately scoped to sidecar installation only. It does
+not configure Usage Dashboard, providers, provider mappings, or the Hermes data
+source form for you.
 
 The dashboard will then poll `{base_url}/usage` and sync observed usage into the
 analytics history. See
