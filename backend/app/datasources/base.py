@@ -54,10 +54,20 @@ class DataSource(ABC):
         Each record dict may carry:
           - ``timestamp`` (required; ISO-8601 string, epoch, or datetime)
           - ``provider`` (required; provider id, e.g. ``anthropic``)
+          - ``event_id`` or ``id`` (optional; stable source event identifier used
+            for idempotent ingestion)
           - ``model``, ``profile``, ``session_id``, ``cost_type`` (optional)
           - any of the metric fields in :data:`HERMES_METRIC_FIELDS`
         """
         raise NotImplementedError
+
+
+def _record_event_id(record: dict) -> str | None:
+    for key in ("event_id", "id"):
+        value = record.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return None
 
 
 def expand_observation_records(records: list[dict]) -> list[dict]:
@@ -65,7 +75,8 @@ def expand_observation_records(records: list[dict]) -> list[dict]:
 
     Returns dicts ready to persist as ``UsageObservation`` rows with
     ``source="hermes"``. Records with no usable timestamp or no numeric metric
-    fields are skipped.
+    fields are skipped. A record's ``event_id``/``id`` is carried through so the
+    ingestion layer can deduplicate on it.
     """
     observations: list[dict] = []
     for record in records or []:
@@ -73,6 +84,7 @@ def expand_observation_records(records: list[dict]) -> list[dict]:
         if observed_at is None:
             continue
         provider = _normalize_provider(record.get("provider"))
+        event_id = _record_event_id(record)
         for field, unit in HERMES_METRIC_FIELDS:
             value = record.get(field)
             if value is None:
@@ -97,6 +109,7 @@ def expand_observation_records(records: list[dict]) -> list[dict]:
                     "session_id": record.get("session_id"),
                     "cost_type": record.get("cost_type") if field == "cost" else None,
                     "provider_mapping": provider,
+                    "event_id": event_id,
                 }
             )
     return observations

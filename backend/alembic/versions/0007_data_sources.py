@@ -42,6 +42,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("session_id", sa.String(length=128), nullable=True))
         batch_op.add_column(sa.Column("cost_type", sa.String(length=16), nullable=True))
         batch_op.add_column(sa.Column("provider_mapping", sa.String(length=32), nullable=True))
+        batch_op.add_column(sa.Column("source_event_id", sa.String(length=64), nullable=True))
         batch_op.create_foreign_key(
             "fk_usage_observations_data_source_id",
             "data_source_configs",
@@ -50,12 +51,25 @@ def upgrade() -> None:
             ondelete="CASCADE",
         )
     op.create_index("ix_usage_observations_data_source_id", "usage_observations", ["data_source_id"])
+    # DB-level idempotency for data-source telemetry: unique per (data_source,
+    # source_event_id). Partial so provider observations (both columns NULL) are
+    # unaffected and two data sources may reuse the same event ID.
+    op.create_index(
+        "ux_usage_observations_source_event",
+        "usage_observations",
+        ["data_source_id", "source_event_id"],
+        unique=True,
+        sqlite_where=sa.text("data_source_id IS NOT NULL AND source_event_id IS NOT NULL"),
+        postgresql_where=sa.text("data_source_id IS NOT NULL AND source_event_id IS NOT NULL"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ux_usage_observations_source_event", table_name="usage_observations")
     op.drop_index("ix_usage_observations_data_source_id", table_name="usage_observations")
     with op.batch_alter_table("usage_observations") as batch_op:
         batch_op.drop_constraint("fk_usage_observations_data_source_id", type_="foreignkey")
+        batch_op.drop_column("source_event_id")
         batch_op.drop_column("provider_mapping")
         batch_op.drop_column("cost_type")
         batch_op.drop_column("session_id")

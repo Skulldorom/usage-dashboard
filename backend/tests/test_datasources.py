@@ -8,12 +8,15 @@ from pathlib import Path
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.auth import _hash_secret
 from app.core.config import settings
 from app.database import get_session
 from app.datasources.base import expand_observation_records
+from app.datasources.service import _persist_observations
 from app.main import app
 from app.models import AdminCredential, Base, DataSourceConfig, ProviderConfig, UsageObservation
 
@@ -247,3 +250,108 @@ async def test_hermes_breakdown_and_attribution(sqlite_db):
         # cost: provider reports no cost → provider_total None (observed only)
         assert metrics["cost"]["provider_total"] is None
         assert metrics["cost"]["hermes_observed"] == 2.5
+        assert metrics["cost"]["status"] == "hermes_only"
+        assert metrics["input_tokens"]["status"] == "partial"
+
+
+# --- deduplication ---
+
+
+def _record(**overrides):
+    base = {
+        "timestamp": "2026-08-22T12:00:00+00:00",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4",
+        "profile": "coder",
+        "session_id": "s1",
+        "input_tokens": 100,
+    }
+    base.update(overrides)
+    return base
+
+
+async def _make_source(Session, name="main"):
+    async with Session() as session:
+        source = DataSourceConfig(kind="hermes", name=name, base_url="http://x", is_enabled=True)
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        return source.id
+
+
+async def _persist(Session, source_id, records):
+    observations = expand_observation_records(records)
+    async with Session() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        return await _persist_observations(session, source, observations)
+
+
+async def _count(Session, source_id):
+    async with Session() as session:
+        return await session.scalar(
+            select(func.count(UsageObservation.id)).where(UsageObservation.data_source_id == source_id)
+        )
+
+
+@pytest.mark.asyncio
+async def test_resync_is_idempotent(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    assert await _persist(sqlite_db, source_id, [_record()]) == 1
+    assert await _persist(sqlite_db, source_id, [_record()]) == 0
+    assert await _count(sqlite_db, source_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_distinct_observations_at_same_timestamp_preserved(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    inserted = await _persist(sqlite_db, source_id, [_record(session_id="s1"), _record(session_id="s2")])
+    assert inserted == 2
+
+
+@pytest.mark.asyncio
+async def test_different_models_not_collapsed(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    inserted = await _persist(sqlite_db, source_id, [_record(model="claude-sonnet-4"), _record(model="claude-opus-4")])
+    assert inserted == 2
+
+
+@pytest.mark.asyncio
+async def test_explicit_event_id_dedupes(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    assert await _persist(sqlite_db, source_id, [_record(event_id="evt-1")]) == 1
+    assert await _persist(sqlite_db, source_id, [_record(event_id="evt-1")]) == 0
+
+
+@pytest.mark.asyncio
+async def test_different_sources_can_share_event_id(sqlite_db):
+    source_a = await _make_source(sqlite_db, name="a")
+    source_b = await _make_source(sqlite_db, name="b")
+    assert await _persist(sqlite_db, source_a, [_record(event_id="evt-shared")]) == 1
+    assert await _persist(sqlite_db, source_b, [_record(event_id="evt-shared")]) == 1
+    assert await _count(sqlite_db, source_a) == 1
+    assert await _count(sqlite_db, source_b) == 1
+
+
+@pytest.mark.asyncio
+async def test_db_unique_constraint_blocks_duplicate(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        session.add(
+            UsageObservation(
+                data_source_id=source_id, provider="anthropic", metric="input_tokens",
+                value=1.0, unit="tokens", kind="delta", source="hermes",
+                observed_at=now, source_event_id="dup-1",
+            )
+        )
+        await session.commit()
+        session.add(
+            UsageObservation(
+                data_source_id=source_id, provider="anthropic", metric="input_tokens",
+                value=1.0, unit="tokens", kind="delta", source="hermes",
+                observed_at=now, source_event_id="dup-1",
+            )
+        )
+        with pytest.raises(IntegrityError):
+            await session.commit()
+        await session.rollback()

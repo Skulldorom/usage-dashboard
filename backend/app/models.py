@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -72,6 +72,21 @@ class UsageObservation(Base):
     or an external data source (e.g. Hermes telemetry)."""
 
     __tablename__ = "usage_observations"
+    __table_args__ = (
+        # Idempotency guard for data-source telemetry: within a single data
+        # source, each source event ID is unique. Provider observations leave
+        # data_source_id/source_event_id NULL, so the partial predicate keeps
+        # them (and provider-only rows) untouched. Scoped to data_source_id so
+        # two Hermes instances may legitimately reuse the same event ID.
+        Index(
+            "ux_usage_observations_source_event",
+            "data_source_id",
+            "source_event_id",
+            unique=True,
+            sqlite_where=text("data_source_id IS NOT NULL AND source_event_id IS NOT NULL"),
+            postgresql_where=text("data_source_id IS NOT NULL AND source_event_id IS NOT NULL"),
+        ),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     # Provider-backed observations link to a provider config; data-source
     # observations (source="hermes") link to a data source instead and leave
@@ -94,6 +109,7 @@ class UsageObservation(Base):
     session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class DataSourceConfig(Base):
