@@ -323,6 +323,28 @@ async def test_explicit_event_id_dedupes(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_explicit_event_id_preserves_all_metrics(sqlite_db):
+    """One Hermes event expands into several metric rows; they must not collide.
+
+    A single event_id on a multi-metric record must persist every metric (the
+    source_event_id is metric-suffixed), and a re-sync must remain idempotent.
+    """
+    source_id = await _make_source(sqlite_db)
+    record = _record(event_id="evt-1", input_tokens=100, output_tokens=40, cost=0.01)
+
+    assert await _persist(sqlite_db, source_id, [record]) == 3  # input, output, cost
+    assert await _persist(sqlite_db, source_id, [record]) == 0
+
+    async with sqlite_db() as session:
+        ids = (
+            await session.execute(
+                select(UsageObservation.source_event_id).where(UsageObservation.data_source_id == source_id)
+            )
+        ).scalars().all()
+    assert sorted(ids) == ["evt-1:cost", "evt-1:input_tokens", "evt-1:output_tokens"]
+
+
+@pytest.mark.asyncio
 async def test_different_sources_can_share_event_id(sqlite_db):
     source_a = await _make_source(sqlite_db, name="a")
     source_b = await _make_source(sqlite_db, name="b")

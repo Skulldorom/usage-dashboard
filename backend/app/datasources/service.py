@@ -69,7 +69,19 @@ def _fallback_event_id(obs: dict) -> str:
 
 
 def _source_event_id(obs: dict) -> str:
-    return obs.get("event_id") or _fallback_event_id(obs)
+    """Stable per-observation identity.
+
+    An explicit source ``event_id`` identifies a whole Hermes event, but one
+    event expands into multiple metric rows (input_tokens, output_tokens, cost,
+    ...). Suffixing the metric keeps each row's identity unique while the DB
+    constraint stays a simple ``(data_source_id, source_event_id)``. Records
+    without an event ID fall back to a provenance hash that already includes the
+    metric.
+    """
+    event_id = obs.get("event_id")
+    if event_id:
+        return f"{event_id}:{obs['metric']}"
+    return _fallback_event_id(obs)
 
 
 async def _persist_observations(
