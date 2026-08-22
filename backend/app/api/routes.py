@@ -29,11 +29,6 @@ _codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
 _codex_browser_flows: dict[str, codex_oauth.CodexBrowserStart] = {}
 _codex_device_lock = asyncio.Lock()
 
-# How many recent snapshots to scan when deriving provider health (last success,
-# consecutive failures, last-known-good). More than enough to cover meaningful
-# failure runs at any sane polling cadence.
-HEALTH_SCAN_LIMIT = 200
-
 
 def _crypto() -> CryptoService:
     return CryptoService(settings.encryption_key)
@@ -633,24 +628,75 @@ async def poll_status():
     )
 
 
+async def _health_for_config(session: AsyncSession, config: ProviderConfig) -> tuple[UsageSnapshot | None, dict, UsageSnapshot | None]:
+    """Derive ``(latest, health, last_good)`` for a config using targeted queries.
+
+    No bounded scan window: the latest snapshot, last success, last failure, and
+    failure count are each located with their own query, so a long run of
+    failures can never hide an older successful snapshot.
+    """
+    latest = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id)
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_success = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status != "error")
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_failure = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status == "error")
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_success_at = last_success.checked_at if last_success is not None else None
+    if last_success_at is not None:
+        consecutive = (await session.execute(
+            select(func.count(UsageSnapshot.id)).where(
+                UsageSnapshot.provider_config_id == config.id,
+                UsageSnapshot.status == "error",
+                UsageSnapshot.checked_at > last_success_at,
+            )
+        )).scalar_one()
+    else:
+        consecutive = (await session.execute(
+            select(func.count(UsageSnapshot.id)).where(
+                UsageSnapshot.provider_config_id == config.id,
+                UsageSnapshot.status == "error",
+            )
+        )).scalar_one()
+
+    health = derive_health(
+        latest_status=latest.status if latest is not None else None,
+        last_attempt_at=latest.checked_at if latest is not None else None,
+        last_success_at=last_success_at,
+        last_failure_at=last_failure.checked_at if last_failure is not None else None,
+        consecutive_failures=int(consecutive or 0),
+        latest_error=last_failure.error if last_failure is not None else None,
+        now=datetime.now(UTC),
+        max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
+    )
+
+    # Preserve last-known-good only while it is still within policy (stale).
+    # When the last success is too old to be useful (error) we surface the
+    # failure instead of presenting stale values as current.
+    last_good = last_success if health["status"] == "stale" else None
+    return latest, health, last_good
+
+
 @router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_scope("usage:read"))])
 async def usage(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     payload = []
     for config in configs:
-        recent = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(HEALTH_SCAN_LIMIT))).scalars().all()
-        latest = recent[0] if recent else None
-        health = derive_health(
-            [{"checked_at": snap.checked_at, "status": snap.status, "error": snap.error} for snap in recent],
-            now=datetime.now(UTC),
-            max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
-        )
-        # Preserve last-known-good only while it is still within policy (stale).
-        # When the last success is too old to be useful (error) we surface the
-        # failure instead of presenting stale values as current.
-        last_good = None
-        if health["status"] == "stale":
-            last_good = next((snap for snap in recent if snap.status != "error"), None)
+        latest, health, last_good = await _health_for_config(session, config)
         alert_source = last_good if last_good is not None else latest
         alerts = build_alerts(alert_source.metrics if alert_source else [], config.alert_thresholds) if alert_source else []
         payload.append(

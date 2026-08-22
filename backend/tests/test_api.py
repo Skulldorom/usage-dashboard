@@ -1623,3 +1623,59 @@ async def test_usage_health_never_connected_and_error_states(sqlite_db):
     assert by_label["failing"]["health"]["consecutive_failures"] == 1
     assert by_label["failing"]["health"]["latest_error"] == "boom"
     assert by_label["failing"]["last_good"] is None
+
+
+@pytest.mark.asyncio
+async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
+    """A long failure run must not hide an older successful snapshot.
+
+    Health is derived from targeted queries (last success, last failure, failure
+    count), not a bounded scan, so >200 consecutive failures still correctly
+    report ``stale`` with the retained last-known-good snapshot.
+    """
+    now = datetime.now(UTC)
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
+        )
+        session.add(config)
+        await session.flush()
+        snapshots = [
+            UsageSnapshot(
+                provider_config_id=config.id,
+                provider="fake",
+                status="healthy",
+                summary="42 credits",
+                metrics=[{"label": "remaining", "value": 42, "unit": "credits"}],
+                raw={},
+                checked_at=now - timedelta(hours=1),
+            )
+        ]
+        for i in range(250):
+            snapshots.append(
+                UsageSnapshot(
+                    provider_config_id=config.id,
+                    provider="fake",
+                    status="error",
+                    summary="",
+                    metrics=[],
+                    raw={},
+                    error="timeout",
+                    checked_at=now - timedelta(minutes=59) + timedelta(seconds=i),
+                )
+            )
+        session.add_all(snapshots)
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/usage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    item = response.json()[0]
+    assert item["health"]["status"] == "stale"
+    assert item["health"]["consecutive_failures"] == 250
+    assert item["last_good"] is not None
+    assert item["last_good"]["metrics"][0]["value"] == 42
