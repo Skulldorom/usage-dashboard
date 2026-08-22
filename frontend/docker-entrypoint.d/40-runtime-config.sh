@@ -31,3 +31,4 @@ cat >> "$CONFIG_FILE" <<'EOF'
   }
 };
 EOF
+chmod 0644 "$CONFIG_FILE"
