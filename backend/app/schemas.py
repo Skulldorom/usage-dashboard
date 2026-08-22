@@ -237,9 +237,22 @@ class AlertStateRead(BaseModel):
     alert_state: str
     thresholds: dict[str, float | None]
 
+class ProviderHealth(BaseModel):
+    status: str
+    last_attempt_at: datetime | None = None
+    last_success_at: datetime | None = None
+    last_failure_at: datetime | None = None
+    consecutive_failures: int = 0
+    latest_error: str | None = None
+    age_seconds: float | None = None
+    is_stale: bool = False
+
+
 class DashboardConfigUsage(BaseModel):
     config: ProviderConfigRead
     latest: UsageSnapshotRead | None = None
+    last_good: UsageSnapshotRead | None = None
+    health: ProviderHealth | None = None
     alerts: list[AlertStateRead] = Field(default_factory=list)
     alert_state: str = "normal"
 

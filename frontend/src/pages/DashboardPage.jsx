@@ -29,6 +29,8 @@ import {
   formatDateTime,
   formatMetricLabel,
   formatMetricValue,
+  healthMeta,
+  healthText,
   metricPercent,
   numericMetric,
   selectHistoryMetric,
@@ -182,11 +184,13 @@ function UsageHistory({ config, latest }) {
 }
 
 function UsageCard({ item, icon }) {
-  const { config, latest, alerts, alert_state } = item
-  const color = latest?.status === 'healthy' ? 'success' : latest?.status === 'error' ? 'error' : 'warning'
+  const { config, latest, last_good, health, alerts, alert_state } = item
+  const healthState = healthMeta(health)
+  const display = last_good || latest
+  const isStale = health?.is_stale
   const alertClass = alert_state && alert_state !== 'normal' ? `provider-alert-${alert_state}` : ''
   const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
-  const metrics = latest?.metrics || []
+  const metrics = display?.metrics || []
   const firecrawlComposite = config.provider === 'firecrawl' ? firecrawlSummary(metrics) : null
 
   return (
@@ -199,10 +203,19 @@ function UsageCard({ item, icon }) {
           </Stack>
           <div className="provider-actions">
             {providerUsageUrl && <a className="provider-usage-link" href={providerUsageUrl} target="_blank" rel="noreferrer" aria-label={`Open ${config.provider} usage page`}>Usage <span aria-hidden="true">↗</span></a>}
-            <Chip className={`provider-status status-${color}`} color={color} label={latest?.status || 'not polled'} size="small" />
+            <Chip className={`provider-status health-${healthState.status}`} color={healthState.severity} label={healthState.label} size="small" />
           </div>
         </Stack>
-        <Typography className="provider-summary" variant="body2">{latest?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
+        <Stack className="health-line" direction="row" alignItems="center" spacing={1}>
+          <span className={`health-dot health-dot-${healthState.status}`} aria-hidden="true" />
+          <Typography variant="caption" color="text.secondary">{healthText(health)}</Typography>
+        </Stack>
+        <Typography className="provider-summary" variant="body2">{display?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
+        {isStale && (
+          <Alert severity="warning" sx={{ mt: 1.5 }}>
+            Using last-known data — the latest refresh failed.
+          </Alert>
+        )}
         {alertSeverity(alert_state) && (
           <Alert severity={alertSeverity(alert_state)} sx={{ mt: 1.5 }}>
             {alertMessage(alerts, alert_state)}
@@ -218,7 +231,7 @@ function UsageCard({ item, icon }) {
             {percent !== null && <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} />}
           </Box>
         })}</Stack>
-        {latest?.error && <Alert severity="error" sx={{ mt: 2 }}>{latest.error}</Alert>}
+        {latest?.error && !isStale && <Alert severity="error" sx={{ mt: 2 }}>{latest.error}</Alert>}
         <UsageHistory config={config} latest={latest} />
       </CardContent>
     </Card>

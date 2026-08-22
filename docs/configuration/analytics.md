@@ -45,6 +45,54 @@ Missing samples are reported as gaps, not zero usage.
 The chart defaults to a **30-day** window regardless of how much history is
 retained.
 
+## Provider health & stale data
+
+Each configured provider exposes a **health state** derived from its most recent
+collection attempts, so the dashboard can tell fresh data apart from stale
+last-known-good data and outright failures:
+
+| State | Meaning |
+| --- | --- |
+| `healthy` | The most recent refresh succeeded and displayed data is current. |
+| `stale` | The latest refresh failed, but a recent successful snapshot exists. The dashboard keeps showing the last-known-good values and marks them stale. |
+| `error` | The provider cannot currently be queried and there is no useful (or no recent enough) successful value. |
+| `never_connected` | The provider has not yet produced a successful collection. |
+
+A failed refresh **never** replaces useful values with zero or an empty state.
+The last successful snapshot is retained and returned as `last_good`, and a
+failed collection does not create a zero-usage observation for analytics (it is
+treated as missing data, not zero usage).
+
+Staleness is determined from the polling interval (a provider expected to
+refresh hourly becomes stale after missing roughly two expected refreshes)
+rather than a single hard-coded duration.
+
+### Health in the API
+
+`GET /api/v1/usage` now returns, per provider, a `health` object alongside the
+existing `latest` snapshot:
+
+```json
+{
+  "health": {
+    "status": "stale",
+    "last_attempt_at": "2026-08-22T11:55:00+00:00",
+    "last_success_at": "2026-08-22T09:40:00+00:00",
+    "last_failure_at": "2026-08-22T11:55:00+00:00",
+    "consecutive_failures": 3,
+    "latest_error": "connect timeout",
+    "age_seconds": 8100,
+    "is_stale": true
+  }
+}
+```
+
+`last_good` is populated only while the last-known-good value is still within
+policy (`status == "stale"`). The browser extension and other API consumers can
+read `health` to represent provider state consistently without independently
+guessing whether data is stale. Error text is sanitized and never includes
+credentials.
+
 ## Analytics API
 
 The `GET /api/v1/usage` endpoint remains focused on current/latest state.

@@ -4,10 +4,13 @@ import {
   alertSeverity,
   codexRemainingValue,
   firecrawlSummary,
+  formatAge,
   formatDateTime,
   formatMetricLabel,
   formatMetricValue,
   formatThresholdRule,
+  healthMeta,
+  healthText,
   metricPercent,
   numericMetric,
   selectHistoryMetric,
@@ -192,5 +195,60 @@ describe('formatThresholdRule', () => {
     expect(formatThresholdRule({ metric: 'cost_30d', direction: 'increasing', warning: 10 })).toBe('cost 30d ≥ 10')
     expect(formatThresholdRule(null)).toBe('')
     expect(formatThresholdRule(undefined)).toBe('')
+  })
+})
+
+describe('healthMeta', () => {
+  it('maps each health status to a severity and label', () => {
+    expect(healthMeta({ status: 'healthy' })).toEqual({ status: 'healthy', severity: 'success', label: 'Healthy' })
+    expect(healthMeta({ status: 'stale' })).toEqual({ status: 'stale', severity: 'warning', label: 'Stale' })
+    expect(healthMeta({ status: 'error' })).toEqual({ status: 'error', severity: 'error', label: 'Unavailable' })
+    expect(healthMeta({ status: 'never_connected' })).toEqual({ status: 'never_connected', severity: 'default', label: 'Not connected' })
+  })
+
+  it('defaults to never_connected for missing/unknown status', () => {
+    expect(healthMeta(null).status).toBe('never_connected')
+    expect(healthMeta({}).status).toBe('never_connected')
+    expect(healthMeta({ status: 'bogus' }).status).toBe('never_connected')
+  })
+})
+
+describe('formatAge', () => {
+  it('formats sub-minute and minute durations', () => {
+    expect(formatAge(30)).toBe('just now')
+    expect(formatAge(60)).toBe('1 minute ago')
+    expect(formatAge(90)).toBe('1 minute ago')
+    expect(formatAge(5 * 60)).toBe('5 minutes ago')
+  })
+
+  it('formats hours and days', () => {
+    expect(formatAge(3600)).toBe('1h ago')
+    expect(formatAge(2 * 3600 + 14 * 60)).toBe('2h 14m ago')
+    expect(formatAge(3 * 86400)).toBe('3 days ago')
+  })
+
+  it('handles null/undefined/NaN', () => {
+    expect(formatAge(null)).toBe(null)
+    expect(formatAge(undefined)).toBe(null)
+    expect(formatAge(Number.NaN)).toBe(null)
+  })
+})
+
+describe('healthText', () => {
+  it('describes healthy with age', () => {
+    expect(healthText({ status: 'healthy', age_seconds: 120 })).toBe('Updated 2 minutes ago')
+  })
+
+  it('describes stale with last-known-good age', () => {
+    expect(healthText({ status: 'stale', age_seconds: 8040 })).toBe('Last successful update 2h 14m ago · using last-known data')
+  })
+
+  it('describes error with and without a last success', () => {
+    expect(healthText({ status: 'error', age_seconds: null })).toBe('Provider unavailable')
+    expect(healthText({ status: 'error', last_success_at: 'x', age_seconds: 172800 })).toBe('Unavailable · last successful update 2 days ago')
+  })
+
+  it('describes never_connected', () => {
+    expect(healthText({ status: 'never_connected' })).toBe('No successful connection yet')
   })
 })

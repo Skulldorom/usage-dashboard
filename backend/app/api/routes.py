@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.core.thresholds import build_alerts, provider_alert_state
 from app.database import engine, get_session
+from app.health import default_max_stale_age, derive_health
 from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
@@ -112,13 +113,21 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
         if not cfg.is_enabled:
             continue
         latest = row["latest"]
+        last_good = row.get("last_good")
+        health = row.get("health") or {}
+        status = health.get("status") or (latest.status if latest else "unknown")
+        # Health collapses a provider-level "degraded" (successful but partial)
+        # into "healthy"; surface the provider's own signal when present.
+        if status == "healthy" and latest is not None and latest.status == "degraded":
+            status = "degraded"
+        display = last_good if last_good is not None else latest
         provider_rows.append(
             HomepageProviderRow(
                 provider=cfg.provider,
                 config_id=cfg.id,
                 label=f"{cfg.provider} ({cfg.label})",
-                value=_homepage_usage_text(latest.metrics, latest.summary) if latest else "No usage snapshot yet",
-                status=latest.status if latest else "unknown",
+                value=_homepage_usage_text(display.metrics, display.summary) if display else "No usage snapshot yet",
+                status=status,
             )
         )
     return provider_rows
@@ -619,17 +628,83 @@ async def poll_status():
     )
 
 
+async def _health_for_config(session: AsyncSession, config: ProviderConfig) -> tuple[UsageSnapshot | None, dict, UsageSnapshot | None]:
+    """Derive ``(latest, health, last_good)`` for a config using targeted queries.
+
+    No bounded scan window: the latest snapshot, last success, last failure, and
+    failure count are each located with their own query, so a long run of
+    failures can never hide an older successful snapshot.
+    """
+    latest = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id)
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_success = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status != "error")
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_failure = (await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status == "error")
+        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+        .limit(1)
+    )).scalar_one_or_none()
+
+    last_success_at = last_success.checked_at if last_success is not None else None
+    if last_success_at is not None:
+        consecutive = (await session.execute(
+            select(func.count(UsageSnapshot.id)).where(
+                UsageSnapshot.provider_config_id == config.id,
+                UsageSnapshot.status == "error",
+                UsageSnapshot.checked_at > last_success_at,
+            )
+        )).scalar_one()
+    else:
+        consecutive = (await session.execute(
+            select(func.count(UsageSnapshot.id)).where(
+                UsageSnapshot.provider_config_id == config.id,
+                UsageSnapshot.status == "error",
+            )
+        )).scalar_one()
+
+    health = derive_health(
+        latest_status=latest.status if latest is not None else None,
+        last_attempt_at=latest.checked_at if latest is not None else None,
+        last_success_at=last_success_at,
+        last_failure_at=last_failure.checked_at if last_failure is not None else None,
+        consecutive_failures=int(consecutive or 0),
+        latest_error=last_failure.error if last_failure is not None else None,
+        now=datetime.now(UTC),
+        max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
+    )
+
+    # Preserve last-known-good only while it is still within policy (stale).
+    # When the last success is too old to be useful (error) we surface the
+    # failure instead of presenting stale values as current.
+    last_good = last_success if health["status"] == "stale" else None
+    return latest, health, last_good
+
+
 @router.get("/usage", response_model=list[DashboardConfigUsage], dependencies=[Depends(require_scope("usage:read"))])
 async def usage(session: AsyncSession = Depends(get_session)):
     configs = (await session.execute(select(ProviderConfig).order_by(*_config_ordering()))).scalars().all()
     payload = []
     for config in configs:
-        latest = (await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config.id).order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)).limit(1))).scalar_one_or_none()
-        alerts = build_alerts(latest.metrics if latest else [], config.alert_thresholds) if latest else []
+        latest, health, last_good = await _health_for_config(session, config)
+        alert_source = last_good if last_good is not None else latest
+        alerts = build_alerts(alert_source.metrics if alert_source else [], config.alert_thresholds) if alert_source else []
         payload.append(
             {
                 "config": _config_read(config),
                 "latest": latest,
+                "last_good": last_good,
+                "health": health,
                 "alerts": [AlertStateRead(**alert) for alert in alerts],
                 "alert_state": provider_alert_state(alerts),
             }

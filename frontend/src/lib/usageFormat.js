@@ -109,3 +109,41 @@ export function formatThresholdRule(rule) {
   const operator = rule.direction === 'decreasing' ? '≤' : '≥'
   return `${rule.metric.replaceAll('_', ' ')} ${operator} ${levels.join(' / ')}`
 }
+
+export const HEALTH_STATES = {
+  healthy: { severity: 'success', label: 'Healthy' },
+  stale: { severity: 'warning', label: 'Stale' },
+  error: { severity: 'error', label: 'Unavailable' },
+  never_connected: { severity: 'default', label: 'Not connected' },
+}
+
+export function healthMeta(health) {
+  const raw = health?.status
+  const status = HEALTH_STATES[raw] ? raw : 'never_connected'
+  const meta = HEALTH_STATES[status]
+  return { status, severity: meta.severity, label: meta.label }
+}
+
+export function formatAge(seconds) {
+  if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return null
+  const total = Math.max(0, Math.floor(Number(seconds)))
+  if (total < 60) return 'just now'
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return minutes === 1 ? '1 minute ago' : `${minutes} minutes ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) {
+    const remainder = minutes % 60
+    return remainder ? `${hours}h ${remainder}m ago` : `${hours}h ago`
+  }
+  const days = Math.floor(hours / 24)
+  return days === 1 ? '1 day ago' : `${days} days ago`
+}
+
+export function healthText(health) {
+  const { status } = healthMeta(health)
+  const age = formatAge(health?.age_seconds)
+  if (status === 'healthy') return age ? `Updated ${age}` : 'Healthy'
+  if (status === 'stale') return `Last successful update ${age || 'unknown'} · using last-known data`
+  if (status === 'error') return health?.last_success_at ? `Unavailable · last successful update ${age || 'unknown'}` : 'Provider unavailable'
+  return 'No successful connection yet'
+}
