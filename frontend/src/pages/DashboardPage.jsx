@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -12,11 +12,11 @@ import {
   LinearProgress,
   Stack,
   Typography,
-} from '@mui/material'
-import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import { api } from '../api.js'
-import ProviderIcon from '../components/ProviderIcon.jsx'
+} from "@mui/material";
+import CloudSyncRoundedIcon from "@mui/icons-material/CloudSyncRounded";
+import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
+import { api } from "../api.js";
+import ProviderIcon from "../components/ProviderIcon.jsx";
 import {
   PROVIDER_USAGE_URLS,
   alertMessage,
@@ -31,9 +31,9 @@ import {
   numericMetric,
   overallUsageGroups,
   selectHistoryMetric,
-} from '../lib/usageFormat.js'
+} from "../lib/usageFormat.js";
 
-function GraphProgress({ value, title, className = '', sx = {} }) {
+function GraphProgress({ value, title, className = "", sx = {} }) {
   return (
     <LinearProgress
       className={`hoverable-graph ${className}`.trim()}
@@ -43,236 +43,458 @@ function GraphProgress({ value, title, className = '', sx = {} }) {
       aria-label={title}
       sx={sx}
     />
-  )
+  );
 }
 
-function Sparkline({ points, label = 'Usage history trend' }) {
-  const canvasRef = useRef(null)
-  const [hoverPoint, setHoverPoint] = useState(null)
+function Sparkline({ points, label = "Usage history trend" }) {
+  const canvasRef = useRef(null);
+  const [hoverPoint, setHoverPoint] = useState(null);
 
-  const getPlotPoint = useCallback((point, index, width, height, min, span) => ({
-    ...point,
-    x: points.length > 1 ? (index / (points.length - 1)) * width : width / 2,
-    y: height - 18 - ((point.value - min) / span) * (height - 36),
-  }), [points.length])
+  const getPlotPoint = useCallback(
+    (point, index, width, height, min, span) => ({
+      ...point,
+      x: points.length > 1 ? (index / (points.length - 1)) * width : width / 2,
+      y: height - 18 - ((point.value - min) / span) * (height - 36),
+    }),
+    [points.length],
+  );
 
-  const draw = useCallback((activePoint = null) => {
-    const canvas = canvasRef.current
-    if (!canvas) return
-    const width = canvas.clientWidth || 320
-    const height = 120
-    const ratio = window.devicePixelRatio || 1
-    canvas.width = width * ratio
-    canvas.height = height * ratio
-    const ctx = canvas.getContext('2d')
-    ctx.scale(ratio, ratio)
-    ctx.clearRect(0, 0, width, height)
-    ctx.strokeStyle = 'rgba(168, 85, 247, 0.16)'
-    ctx.lineWidth = 1
-    for (let index = 0; index < 4; index += 1) {
-      const y = 16 + index * 28
-      ctx.beginPath()
-      ctx.moveTo(0, y)
-      ctx.lineTo(width, y)
-      ctx.stroke()
-    }
-    if (points.length < 2) return
-    const values = points.map((point) => point.value)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
-    ctx.strokeStyle = '#06c8ff'
-    ctx.shadowColor = 'rgba(6, 200, 255, .45)'
-    ctx.shadowBlur = 8
-    ctx.lineWidth = 2.5
-    ctx.beginPath()
-    points.forEach((point, index) => {
-      const { x, y } = getPlotPoint(point, index, width, height, min, span)
-      if (index === 0) ctx.moveTo(x, y)
-      else ctx.lineTo(x, y)
-    })
-    ctx.stroke()
-    if (activePoint) {
-      ctx.shadowBlur = 0
-      ctx.strokeStyle = 'rgba(255,255,255,.3)'
-      ctx.lineWidth = 1
-      ctx.beginPath()
-      ctx.moveTo(activePoint.x, 10)
-      ctx.lineTo(activePoint.x, height - 10)
-      ctx.stroke()
-      ctx.fillStyle = '#06c8ff'
-      ctx.beginPath()
-      ctx.arc(activePoint.x, activePoint.y, 4, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,.88)'
-      ctx.lineWidth = 2
-      ctx.stroke()
-    }
-  }, [getPlotPoint, points])
+  const draw = useCallback(
+    (activePoint = null) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const width = canvas.clientWidth || 320;
+      const height = 120;
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = width * ratio;
+      canvas.height = height * ratio;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(ratio, ratio);
+      ctx.clearRect(0, 0, width, height);
+      ctx.strokeStyle = "rgba(168, 85, 247, 0.16)";
+      ctx.lineWidth = 1;
+      for (let index = 0; index < 4; index += 1) {
+        const y = 16 + index * 28;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(width, y);
+        ctx.stroke();
+      }
+      if (points.length < 2) return;
+      const values = points.map((point) => point.value);
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      const span = max - min || 1;
+      ctx.strokeStyle = "#06c8ff";
+      ctx.shadowColor = "rgba(6, 200, 255, .45)";
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((point, index) => {
+        const { x, y } = getPlotPoint(point, index, width, height, min, span);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+      if (activePoint) {
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = "rgba(255,255,255,.3)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(activePoint.x, 10);
+        ctx.lineTo(activePoint.x, height - 10);
+        ctx.stroke();
+        ctx.fillStyle = "#06c8ff";
+        ctx.beginPath();
+        ctx.arc(activePoint.x, activePoint.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,.88)";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    },
+    [getPlotPoint, points],
+  );
 
-  useEffect(() => { draw(hoverPoint) }, [draw, hoverPoint])
+  useEffect(() => {
+    draw(hoverPoint);
+  }, [draw, hoverPoint]);
 
   function showNearestPoint(pointerX) {
-    if (points.length < 2) return
-    const canvas = canvasRef.current
-    const width = canvas?.clientWidth || 320
-    const height = 120
-    const values = points.map((point) => point.value)
-    const min = Math.min(...values)
-    const max = Math.max(...values)
-    const span = max - min || 1
-    const plotted = points.map((point, index) => getPlotPoint(point, index, width, height, min, span))
-    setHoverPoint(plotted.reduce((closest, point) => Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX) ? point : closest))
+    if (points.length < 2) return;
+    const canvas = canvasRef.current;
+    const width = canvas?.clientWidth || 320;
+    const height = 120;
+    const values = points.map((point) => point.value);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const plotted = points.map((point, index) =>
+      getPlotPoint(point, index, width, height, min, span),
+    );
+    setHoverPoint(
+      plotted.reduce((closest, point) =>
+        Math.abs(point.x - pointerX) < Math.abs(closest.x - pointerX)
+          ? point
+          : closest,
+      ),
+    );
   }
 
   function handlePointerMove(event) {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (!rect) return
-    showNearestPoint(event.clientX - rect.left)
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    showNearestPoint(event.clientX - rect.left);
   }
 
-  const first = points[0]?.value
-  const last = points[points.length - 1]?.value
-  const graphTitle = `${label} with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}. Hover for snapshot values.`
-  return <Box className="sparkline-wrap" tabIndex={points.length > 1 ? 0 : -1} title={graphTitle} onFocus={() => showNearestPoint(canvasRef.current?.clientWidth || 320)} onBlur={() => setHoverPoint(null)} onPointerMove={handlePointerMove} onPointerLeave={() => setHoverPoint(null)}>
-    <canvas ref={canvasRef} className="sparkline-canvas" role="img" aria-label={graphTitle} />
-    {hoverPoint && <Box className="sparkline-tooltip" sx={{ left: `${Math.min(92, Math.max(8, (hoverPoint.x / (canvasRef.current?.clientWidth || 320)) * 100))}%` }}>
-      <strong>{String(hoverPoint.value)}</strong>
-      <span>{formatDateTime(hoverPoint.checked_at)}</span>
-    </Box>}
-  </Box>
+  const first = points[0]?.value;
+  const last = points[points.length - 1]?.value;
+  const graphTitle = `${label} with ${points.length} points${points.length ? `, from ${first} to ${last}` : ""}. Hover for snapshot values.`;
+  return (
+    <Box
+      className="sparkline-wrap"
+      tabIndex={points.length > 1 ? 0 : -1}
+      title={graphTitle}
+      onFocus={() => showNearestPoint(canvasRef.current?.clientWidth || 320)}
+      onBlur={() => setHoverPoint(null)}
+      onPointerMove={handlePointerMove}
+      onPointerLeave={() => setHoverPoint(null)}
+    >
+      <canvas
+        ref={canvasRef}
+        className="sparkline-canvas"
+        role="img"
+        aria-label={graphTitle}
+      />
+      {hoverPoint && (
+        <Box
+          className="sparkline-tooltip"
+          sx={{
+            left: `${Math.min(92, Math.max(8, (hoverPoint.x / (canvasRef.current?.clientWidth || 320)) * 100))}%`,
+          }}
+        >
+          <strong>{String(hoverPoint.value)}</strong>
+          <span>{formatDateTime(hoverPoint.checked_at)}</span>
+        </Box>
+      )}
+    </Box>
+  );
 }
 
 function UsageHistory({ config, latest }) {
-  const [expanded, setExpanded] = useState(false)
-  const [history, setHistory] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [expanded, setExpanded] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (!expanded) return
-    let cancelled = false
+    if (!expanded) return;
+    let cancelled = false;
     async function loadHistory() {
-      setLoading(true)
-      setError('')
+      setLoading(true);
+      setError("");
       try {
-        const rows = await api.history(config.id, { hours: 168, limit: 500 })
-        if (!cancelled) setHistory(rows)
+        const rows = await api.history(config.id, { hours: 168, limit: 500 });
+        if (!cancelled) setHistory(rows);
       } catch (err) {
-        if (!cancelled) setError(err.message)
+        if (!cancelled) setError(err.message);
       } finally {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) setLoading(false);
       }
     }
-    loadHistory()
-    return () => { cancelled = true }
-  }, [config.id, expanded, latest?.id])
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [config.id, expanded, latest?.id]);
 
-  const selected = useMemo(() => selectHistoryMetric(config.provider, history), [config.provider, history])
-  const points = useMemo(() => selected ? history
-    .map((snapshot) => ({ checked_at: snapshot.checked_at, value: numericMetric(snapshot.metrics || [], selected.label)?.value }))
-    .filter((point) => typeof point.value === 'number') : [], [history, selected])
-  const first = points[0]
-  const last = points[points.length - 1]
+  const selected = useMemo(
+    () => selectHistoryMetric(config.provider, history),
+    [config.provider, history],
+  );
+  const points = useMemo(
+    () =>
+      selected
+        ? history
+            .map((snapshot) => ({
+              checked_at: snapshot.checked_at,
+              value: numericMetric(snapshot.metrics || [], selected.label)
+                ?.value,
+            }))
+            .filter((point) => typeof point.value === "number")
+        : [],
+    [history, selected],
+  );
+  const first = points[0];
+  const last = points[points.length - 1];
 
   return (
     <Box sx={{ mt: 2 }}>
-      <Button size="small" variant="outlined" onClick={() => setExpanded((value) => !value)}>{expanded ? 'Hide history' : 'View 7-day history'}</Button>
+      <Button
+        size="small"
+        variant="outlined"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {expanded ? "Hide history" : "View 7-day history"}
+      </Button>
       <Collapse in={expanded}>
         <Box className="history-panel">
           {loading && <CircularProgress size={20} />}
           {error && <Alert severity="error">{error}</Alert>}
-          {!loading && !error && !selected && <Typography variant="body2" color="text.secondary">Two numeric snapshots are required before the graph develops opinions.</Typography>}
-          {selected && <Stack spacing={1}>
-            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label, config.provider)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
-            <Sparkline points={points} label={`${formatMetricLabel(selected.label, config.provider)} history`} />
-            {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} to {String(last.value)}</Typography>}
-          </Stack>}
+          {!loading && !error && !selected && (
+            <Typography variant="body2" color="text.secondary">
+              Two numeric snapshots are required before the graph develops
+              opinions.
+            </Typography>
+          )}
+          {selected && (
+            <Stack spacing={1}>
+              <Stack
+                className="metric-header"
+                direction="row"
+                justifyContent="space-between"
+                gap={1}
+              >
+                <Typography
+                  variant="body2"
+                  sx={{ textTransform: "capitalize" }}
+                >
+                  {formatMetricLabel(selected.label, config.provider)}
+                </Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ flex: "0 0 auto" }}
+                >
+                  {points.length} snapshots
+                </Typography>
+              </Stack>
+              <Sparkline
+                points={points}
+                label={`${formatMetricLabel(selected.label, config.provider)} history`}
+              />
+              {first && last && (
+                <Typography variant="caption" color="text.secondary">
+                  {String(first.value)} to {String(last.value)}
+                </Typography>
+              )}
+            </Stack>
+          )}
         </Box>
       </Collapse>
     </Box>
-  )
+  );
 }
 
-
 function OverallUsagePanel({ groups }) {
-  const hasPercentMetrics = groups.percent.metrics.length > 0
-  const hasUnitMetrics = groups.units.metrics.length > 0
-  if (!hasPercentMetrics && !hasUnitMetrics) return null
+  const hasPercentMetrics = groups.percent.metrics.length > 0;
+  const hasUnitMetrics = groups.units.metrics.length > 0;
+  if (!hasPercentMetrics && !hasUnitMetrics) return null;
 
   return (
     <Box className="overall-usage-panel glass-panel">
-      <Stack className="overall-usage-heading" direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={1.5}>
+      <Stack
+        className="overall-usage-heading"
+        direction={{ xs: "column", md: "row" }}
+        justifyContent="space-between"
+        gap={1.5}
+      >
         <Box>
-          <Typography variant="overline" color="primary.main">Overall usage</Typography>
+          <Typography variant="overline" color="primary.main">
+            Overall usage
+          </Typography>
           <Typography variant="h5">Across all visible providers</Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary">Percentage and unit metrics are shown separately.</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Percentage and unit metrics are shown separately.
+        </Typography>
       </Stack>
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, lg: 6 }}>
           <Box className="overall-metric-group">
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+            <Stack
+              direction="row"
+              spacing={2}
+              sx={{
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
+            >
               <Typography variant="subtitle1">% based</Typography>
-              <Typography variant="caption" color="text.secondary">{hasPercentMetrics ? `${groups.percent.metrics.length} metrics` : 'No percent metrics'}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {hasPercentMetrics
+                  ? `${groups.percent.metrics.length} metrics`
+                  : "No percent metrics"}
+              </Typography>
             </Stack>
             <Stack spacing={1.2} className="overall-metric-list">
-              {groups.percent.metrics.map((metric) => <Box className="overall-metric-row" key={metric.id} title={metric.tooltip}>
-                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{metric.providerLabel} · {metric.label}</Typography><Typography className="metric-value" variant="body2">{metric.value}</Typography></Stack>
-                <GraphProgress value={metric.percent} title={metric.tooltip} sx={{ mt: 0.75 }} />
-              </Box>)}
-              {!hasPercentMetrics && <Typography variant="body2" color="text.secondary">No percentage-based metrics in the visible provider snapshots.</Typography>}
+              {groups.percent.metrics.map((metric) => (
+                <Box
+                  className="overall-metric-row"
+                  key={metric.id}
+                  title={metric.tooltip}
+                >
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    gap={2}
+                    className="metric-header"
+                  >
+                    <Typography className="metric-label" variant="body2">
+                      {metric.providerLabel} · {metric.label}
+                    </Typography>
+                    <Typography className="metric-value" variant="body2">
+                      {metric.value}
+                    </Typography>
+                  </Stack>
+                  <GraphProgress
+                    value={metric.percent}
+                    title={metric.tooltip}
+                    sx={{ mt: 0.75 }}
+                  />
+                </Box>
+              ))}
+              {!hasPercentMetrics && (
+                <Typography variant="body2" color="text.secondary">
+                  No percentage-based metrics in the visible provider snapshots.
+                </Typography>
+              )}
             </Stack>
           </Box>
         </Grid>
         <Grid size={{ xs: 12, lg: 6 }}>
           <Box className="overall-metric-group">
-            <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+            <Stack
+              direction="row"
+              justifyContent="space-between"
+              alignItems="baseline"
+              gap={2}
+            >
               <Typography variant="subtitle1">Unit based</Typography>
-              <Typography variant="caption" color="text.secondary">{hasUnitMetrics ? `${groups.units.metrics.length} metrics` : 'No unit metrics'}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {hasUnitMetrics
+                  ? `${groups.units.metrics.length} metrics`
+                  : "No unit metrics"}
+              </Typography>
             </Stack>
             <Stack spacing={1.2} className="overall-metric-list">
-              {groups.units.metrics.map((metric) => <Box className="overall-metric-row" key={metric.id} title={metric.tooltip}>
-                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{metric.providerLabel} · {metric.label}</Typography><Typography className="metric-value" variant="body2">{metric.value}</Typography></Stack>
-                {metric.percent !== null && <GraphProgress value={metric.percent} title={metric.tooltip} sx={{ mt: 0.75 }} />}
-              </Box>)}
-              {!hasUnitMetrics && <Typography variant="body2" color="text.secondary">No unit-based metrics in the visible provider snapshots.</Typography>}
+              {groups.units.metrics.map((metric) => (
+                <Box
+                  className="overall-metric-row"
+                  key={metric.id}
+                  title={metric.tooltip}
+                >
+                  <Stack
+                    direction="row"
+                    justifyContent="space-between"
+                    gap={2}
+                    className="metric-header"
+                  >
+                    <Typography className="metric-label" variant="body2">
+                      {metric.providerLabel} · {metric.label}
+                    </Typography>
+                    <Typography className="metric-value" variant="body2">
+                      {metric.value}
+                    </Typography>
+                  </Stack>
+                  {metric.percent !== null && (
+                    <GraphProgress
+                      value={metric.percent}
+                      title={metric.tooltip}
+                      sx={{ mt: 0.75 }}
+                    />
+                  )}
+                </Box>
+              ))}
+              {!hasUnitMetrics && (
+                <Typography variant="body2" color="text.secondary">
+                  No unit-based metrics in the visible provider snapshots.
+                </Typography>
+              )}
             </Stack>
           </Box>
         </Grid>
       </Grid>
     </Box>
-  )
+  );
 }
 
 function UsageCard({ item, icon }) {
-  const { config, latest, last_good, health, alerts, alert_state } = item
-  const healthState = healthMeta(health)
-  const display = last_good || latest
-  const isStale = health?.is_stale
-  const alertClass = alert_state && alert_state !== 'normal' ? `provider-alert-${alert_state}` : ''
-  const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider]
-  const metrics = display?.metrics || []
-  const firecrawlComposite = config.provider === 'firecrawl' ? firecrawlSummary(metrics) : null
+  const { config, latest, last_good, health, alerts, alert_state } = item;
+  const healthState = healthMeta(health);
+  const display = last_good || latest;
+  const isStale = health?.is_stale;
+  const alertClass =
+    alert_state && alert_state !== "normal"
+      ? `provider-alert-${alert_state}`
+      : "";
+  const providerUsageUrl = PROVIDER_USAGE_URLS[config.provider];
+  const metrics = display?.metrics || [];
+  const firecrawlComposite =
+    config.provider === "firecrawl" ? firecrawlSummary(metrics) : null;
 
   return (
-    <Card className={`provider-card glass-panel ${alertClass}`} variant="outlined">
+    <Card
+      className={`provider-card glass-panel ${alertClass}`}
+      variant="outlined"
+    >
       <CardContent>
-        <Stack className="provider-header" direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+        <Stack
+          className="provider-header"
+          direction="row"
+          justifyContent="space-between"
+          alignItems="flex-start"
+          spacing={2}
+        >
           <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
-            <div className="provider-logo" aria-hidden="true"><ProviderIcon icon={icon} /></div>
-            <Box minWidth={0}><div className="provider-name">{config.provider}</div><Typography variant="h6" noWrap>{config.label}</Typography></Box>
+            <div className="provider-logo" aria-hidden="true">
+              <ProviderIcon icon={icon} />
+            </div>
+            <Box minWidth={0}>
+              <div className="provider-name">{config.provider}</div>
+              <Typography variant="h6" noWrap>
+                {config.label}
+              </Typography>
+            </Box>
           </Stack>
           <div className="provider-actions">
-            {providerUsageUrl && <a className="provider-usage-link" href={providerUsageUrl} target="_blank" rel="noreferrer" aria-label={`Open ${config.provider} usage page`}>Usage <span aria-hidden="true">↗</span></a>}
-            <Chip className={`provider-status health-${healthState.status}`} color={healthState.severity} label={healthState.label} size="small" />
+            {providerUsageUrl && (
+              <a
+                className="provider-usage-link"
+                href={providerUsageUrl}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${config.provider} usage page`}
+              >
+                Usage <span aria-hidden="true">↗</span>
+              </a>
+            )}
+            <Chip
+              className={`provider-status health-${healthState.status}`}
+              color={healthState.severity}
+              label={healthState.label}
+              size="small"
+            />
           </div>
         </Stack>
-        <Stack className="health-line" direction="row" alignItems="center" spacing={1}>
-          <span className={`health-dot health-dot-${healthState.status}`} aria-hidden="true" />
-          <Typography variant="caption" color="text.secondary">{healthText(health)}</Typography>
+        <Stack
+          className="health-line"
+          direction="row"
+          alignItems="center"
+          spacing={1}
+        >
+          <span
+            className={`health-dot health-dot-${healthState.status}`}
+            aria-hidden="true"
+          />
+          <Typography variant="caption" color="text.secondary">
+            {healthText(health)}
+          </Typography>
         </Stack>
-        <Typography className="provider-summary" variant="body2">{display?.summary || 'No usage snapshot yet. Poll the provider to invite some data in.'}</Typography>
+        <Typography className="provider-summary" variant="body2">
+          {display?.summary ||
+            "No usage snapshot yet. Poll the provider to invite some data in."}
+        </Typography>
         {isStale && (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
             Using last-known data — the latest refresh failed.
@@ -283,72 +505,220 @@ function UsageCard({ item, icon }) {
             {alertMessage(alerts, alert_state)}
           </Alert>
         )}
-        <Stack>{firecrawlComposite ? <Box className="metric-row">
-          <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{firecrawlComposite.label}</Typography><Typography className="metric-value" variant="body2">{firecrawlComposite.value}</Typography></Stack>
-          <GraphProgress value={firecrawlComposite.percent} title={`${config.label} · ${firecrawlComposite.label}: ${firecrawlComposite.value}`} sx={{ mt: 1 }} />
-        </Box> : metrics.map((metric) => {
-          const percent = metricPercent(metric, config.provider)
-          return <Box className="metric-row" key={metric.label}>
-            <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label, config.provider)}</Typography><Typography className="metric-value" variant="body2">{formatMetricValue(metric, config.provider, percent)}</Typography></Stack>
-            {percent !== null && <GraphProgress value={percent} title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`} sx={{ mt: 1 }} />}
-          </Box>
-        })}</Stack>
-        {latest?.error && !isStale && <Alert severity="error" sx={{ mt: 2 }}>{latest.error}</Alert>}
+        <Stack>
+          {firecrawlComposite ? (
+            <Box className="metric-row">
+              <Stack
+                className="metric-header"
+                direction="row"
+                justifyContent="space-between"
+                gap={2}
+              >
+                <Typography className="metric-label" variant="body2">
+                  {firecrawlComposite.label}
+                </Typography>
+                <Typography className="metric-value" variant="body2">
+                  {firecrawlComposite.value}
+                </Typography>
+              </Stack>
+              <GraphProgress
+                value={firecrawlComposite.percent}
+                title={`${config.label} · ${firecrawlComposite.label}: ${firecrawlComposite.value}`}
+                sx={{ mt: 1 }}
+              />
+            </Box>
+          ) : (
+            metrics.map((metric) => {
+              const percent = metricPercent(metric, config.provider);
+              return (
+                <Box className="metric-row" key={metric.label}>
+                  <Stack
+                    className="metric-header"
+                    direction="row"
+                    justifyContent="space-between"
+                    gap={2}
+                  >
+                    <Typography className="metric-label" variant="body2">
+                      {formatMetricLabel(metric.label, config.provider)}
+                    </Typography>
+                    <Typography className="metric-value" variant="body2">
+                      {formatMetricValue(metric, config.provider, percent)}
+                    </Typography>
+                  </Stack>
+                  {percent !== null && (
+                    <GraphProgress
+                      value={percent}
+                      title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`}
+                      sx={{ mt: 1 }}
+                    />
+                  )}
+                </Box>
+              );
+            })
+          )}
+        </Stack>
+        {latest?.error && !isStale && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {latest.error}
+          </Alert>
+        )}
         <UsageHistory config={config} latest={latest} />
       </CardContent>
     </Card>
-  )
+  );
 }
 
 export default function DashboardPage() {
-  const [items, setItems] = useState([])
-  const [homepage, setHomepage] = useState(null)
-  const [pollStatus, setPollStatus] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [providerIcons, setProviderIcons] = useState(() => new Map())
+  const [items, setItems] = useState([]);
+  const [homepage, setHomepage] = useState(null);
+  const [pollStatus, setPollStatus] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [providerIcons, setProviderIcons] = useState(() => new Map());
 
   async function load(poll = false) {
-    setLoading(true)
-    setError('')
+    setLoading(true);
+    setError("");
     try {
-      if (poll) await api.pollAll()
+      if (poll) await api.pollAll();
       const [usage, hp, status, providerRows] = await Promise.all([
         api.usage(),
         api.homepage(),
         api.pollStatus(),
         api.providers().catch(() => []),
-      ])
-      setItems(usage)
-      setHomepage(hp)
-      setPollStatus(status)
-      setProviderIcons(new Map(providerRows.map((provider) => [provider.id, provider.icon])))
+      ]);
+      setItems(usage);
+      setHomepage(hp);
+      setPollStatus(status);
+      setProviderIcons(
+        new Map(providerRows.map((provider) => [provider.id, provider.icon])),
+      );
     } catch (err) {
-      setError(err.message)
+      setError(err.message);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load();
+  }, []);
 
-  const visibleItems = items.filter((item) => item.config.is_visible)
-  const visibleHealthy = visibleItems.filter((item) => item.latest?.status === 'healthy').length
-  const visibleDegraded = visibleItems.length - visibleHealthy
-  const overallGroups = useMemo(() => overallUsageGroups(items), [items])
+  const visibleItems = items.filter((item) => item.config.is_visible);
+  const visibleHealthy = visibleItems.filter(
+    (item) => item.latest?.status === "healthy",
+  ).length;
+  const visibleDegraded = visibleItems.length - visibleHealthy;
+  const overallGroups = useMemo(() => overallUsageGroups(items), [items]);
 
-
-  return <>
-    <header className="page-heading">
-      <Box><div className="page-kicker">Provider telemetry</div><Typography component="h1" variant="h2">Command center</Typography><Typography component="p">Balances, usage left, and provider health -- one sharp view, no spreadsheet séance required.</Typography></Box>
-      <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
-    </header>
-    {pollStatus && <Box className="poll-status glass-panel"><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5}><Box><Typography variant="overline" color="primary.main">Automatic polling</Typography><Typography variant="body2" color="text.secondary">{pollStatus.auto_poll_enabled ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}` : 'Auto polling disabled'}</Typography></Box><Typography variant="body2" color="text.secondary">{pollStatus.is_polling ? 'Polling now…' : pollStatus.last_polled_at ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}` : 'No automatic poll has run yet'}</Typography></Stack></Box>}
-    {visibleDegraded > 0 && <Alert severity="warning" sx={{ mb: 3 }}>{visibleDegraded} of {visibleItems.length} visible provider{visibleItems.length === 1 ? '' : 's'} need attention.</Alert>}
-    <OverallUsagePanel groups={overallGroups} />
-    {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-    {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
-    {!loading && items.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">No providers connected</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Head to Settings and connect your first API provider.</Typography></Box>}
-    {!loading && items.length > 0 && visibleItems.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">All providers are hidden</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Use Settings to show a provider on the main dashboard.</Typography></Box>}
-    <Grid container spacing={2.5}>{visibleItems.map((item) => <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}><UsageCard item={item} icon={providerIcons.get(item.config.provider)} /></Grid>)}</Grid>
-  </>
+  return (
+    <>
+      <header className="page-heading">
+        <Box>
+          <div className="page-kicker">Provider telemetry</div>
+          <Typography component="h1" variant="h2">
+            Command center
+          </Typography>
+          <Typography component="p">
+            Balances, usage left, and provider health -- one sharp view, no
+            spreadsheet séance required.
+          </Typography>
+        </Box>
+        <Button
+          variant="contained"
+          startIcon={
+            loading ? (
+              <CircularProgress size={17} color="inherit" />
+            ) : (
+              <RefreshRoundedIcon />
+            )
+          }
+          onClick={() => load(true)}
+          disabled={loading}
+        >
+          {loading ? "Polling…" : "Poll providers"}
+        </Button>
+      </header>
+      {pollStatus && (
+        <Box className="poll-status glass-panel">
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            gap={1.5}
+          >
+            <Box>
+              <Typography variant="overline" color="primary.main">
+                Automatic polling
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {pollStatus.auto_poll_enabled
+                  ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}`
+                  : "Auto polling disabled"}
+              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary">
+              {pollStatus.is_polling
+                ? "Polling now…"
+                : pollStatus.last_polled_at
+                  ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}`
+                  : "No automatic poll has run yet"}
+            </Typography>
+          </Stack>
+        </Box>
+      )}
+      {visibleDegraded > 0 && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          {visibleDegraded} of {visibleItems.length} visible provider
+          {visibleItems.length === 1 ? "" : "s"} need attention.
+        </Alert>
+      )}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+      {loading && !homepage && (
+        <Box className="loading-state">
+          <Stack alignItems="center" spacing={2}>
+            <CircularProgress />
+            <Typography color="text.secondary">
+              Contacting the provider fleet…
+            </Typography>
+          </Stack>
+        </Box>
+      )}
+      {!loading && items.length === 0 && (
+        <Box className="empty-state">
+          <div className="empty-state-icon">
+            <CloudSyncRoundedIcon />
+          </div>
+          <Typography variant="h6">No providers connected</Typography>
+          <Typography color="text.secondary" sx={{ mt: 1 }}>
+            Head to Settings and connect your first API provider.
+          </Typography>
+        </Box>
+      )}
+      {!loading && items.length > 0 && visibleItems.length === 0 && (
+        <Box className="empty-state">
+          <div className="empty-state-icon">
+            <CloudSyncRoundedIcon />
+          </div>
+          <Typography variant="h6">All providers are hidden</Typography>
+          <Typography color="text.secondary" sx={{ mt: 1 }}>
+            Use Settings to show a provider on the main dashboard.
+          </Typography>
+        </Box>
+      )}
+      <Grid container spacing={2.5}>
+        {visibleItems.map((item) => (
+          <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}>
+            <UsageCard
+              item={item}
+              icon={providerIcons.get(item.config.provider)}
+            />
+          </Grid>
+        ))}
+      </Grid>
+      <OverallUsagePanel groups={overallGroups} />
+    </>
+  );
 }
