@@ -13,12 +13,8 @@ import {
   Stack,
   Typography,
 } from '@mui/material'
-import ApiRoundedIcon from '@mui/icons-material/ApiRounded'
-import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
-import DataUsageRoundedIcon from '@mui/icons-material/DataUsageRounded'
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded'
-import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { api } from '../api.js'
 import ProviderIcon from '../components/ProviderIcon.jsx'
 import {
@@ -33,10 +29,24 @@ import {
   healthText,
   metricPercent,
   numericMetric,
+  overallUsageGroups,
   selectHistoryMetric,
 } from '../lib/usageFormat.js'
 
-function Sparkline({ points }) {
+function GraphProgress({ value, title, className = '', sx = {} }) {
+  return (
+    <LinearProgress
+      className={`hoverable-graph ${className}`.trim()}
+      variant="determinate"
+      value={value}
+      title={title}
+      aria-label={title}
+      sx={sx}
+    />
+  )
+}
+
+function Sparkline({ points, label = 'Usage history trend' }) {
   const canvasRef = useRef(null)
   const [hoverPoint, setHoverPoint] = useState(null)
 
@@ -123,8 +133,9 @@ function Sparkline({ points }) {
 
   const first = points[0]?.value
   const last = points[points.length - 1]?.value
-  return <Box className="sparkline-wrap" tabIndex={points.length > 1 ? 0 : -1} onFocus={() => showNearestPoint(canvasRef.current?.clientWidth || 320)} onBlur={() => setHoverPoint(null)} onPointerMove={handlePointerMove} onPointerLeave={() => setHoverPoint(null)}>
-    <canvas ref={canvasRef} className="sparkline-canvas" role="img" aria-label={`Usage history trend with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}.`} />
+  const graphTitle = `${label} with ${points.length} points${points.length ? `, from ${first} to ${last}` : ''}. Hover for snapshot values.`
+  return <Box className="sparkline-wrap" tabIndex={points.length > 1 ? 0 : -1} title={graphTitle} onFocus={() => showNearestPoint(canvasRef.current?.clientWidth || 320)} onBlur={() => setHoverPoint(null)} onPointerMove={handlePointerMove} onPointerLeave={() => setHoverPoint(null)}>
+    <canvas ref={canvasRef} className="sparkline-canvas" role="img" aria-label={graphTitle} />
     {hoverPoint && <Box className="sparkline-tooltip" sx={{ left: `${Math.min(92, Math.max(8, (hoverPoint.x / (canvasRef.current?.clientWidth || 320)) * 100))}%` }}>
       <strong>{String(hoverPoint.value)}</strong>
       <span>{formatDateTime(hoverPoint.checked_at)}</span>
@@ -174,11 +185,67 @@ function UsageHistory({ config, latest }) {
           {!loading && !error && !selected && <Typography variant="body2" color="text.secondary">Two numeric snapshots are required before the graph develops opinions.</Typography>}
           {selected && <Stack spacing={1}>
             <Stack className="metric-header" direction="row" justifyContent="space-between" gap={1}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{formatMetricLabel(selected.label, config.provider)}</Typography><Typography variant="caption" color="text.secondary" sx={{ flex: '0 0 auto' }}>{points.length} snapshots</Typography></Stack>
-            <Sparkline points={points} />
+            <Sparkline points={points} label={`${formatMetricLabel(selected.label, config.provider)} history`} />
             {first && last && <Typography variant="caption" color="text.secondary">{String(first.value)} to {String(last.value)}</Typography>}
           </Stack>}
         </Box>
       </Collapse>
+    </Box>
+  )
+}
+
+
+function OverallUsagePanel({ groups }) {
+  const hasPercentMetrics = groups.percent.metrics.length > 0
+  const hasUnitMetrics = groups.units.length > 0
+  if (!hasPercentMetrics && !hasUnitMetrics) return null
+
+  return (
+    <Box className="overall-usage-panel glass-panel">
+      <Stack className="overall-usage-heading" direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={1.5}>
+        <Box>
+          <Typography variant="overline" color="primary.main">Overall usage</Typography>
+          <Typography variant="h5">Percentage and unit metrics</Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary">Separated because mixing percent and credits is how dashboards become soup.</Typography>
+      </Stack>
+      <Grid container spacing={2.5}>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Box className="overall-metric-group">
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+              <Typography variant="subtitle1">% based</Typography>
+              <Typography variant="caption" color="text.secondary">{hasPercentMetrics ? `${groups.percent.metrics.length} metrics` : 'No percent metrics'}</Typography>
+            </Stack>
+            {groups.percent.average !== null && <Box className="overall-average" title={`Average across ${groups.percent.metrics.length} percentage metrics: ${Math.round(groups.percent.average)}%`}>
+              <Stack direction="row" justifyContent="space-between" gap={2}><span>Average</span><strong>{Math.round(groups.percent.average)}%</strong></Stack>
+              <GraphProgress value={groups.percent.average} title={`Average across ${groups.percent.metrics.length} percentage metrics: ${Math.round(groups.percent.average)}%`} />
+            </Box>}
+            <Stack spacing={1.2} className="overall-metric-list">
+              {groups.percent.metrics.map((metric) => <Box className="overall-metric-row" key={metric.id} title={metric.tooltip}>
+                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{metric.providerLabel} · {metric.label}</Typography><Typography className="metric-value" variant="body2">{metric.value}</Typography></Stack>
+                <GraphProgress value={metric.percent} title={metric.tooltip} sx={{ mt: 0.75 }} />
+              </Box>)}
+              {!hasPercentMetrics && <Typography variant="body2" color="text.secondary">No percentage-based metrics in the visible provider snapshots.</Typography>}
+            </Stack>
+          </Box>
+        </Grid>
+        <Grid size={{ xs: 12, lg: 6 }}>
+          <Box className="overall-metric-group">
+            <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
+              <Typography variant="subtitle1">Unit based</Typography>
+              <Typography variant="caption" color="text.secondary">{hasUnitMetrics ? `${groups.units.length} unit groups` : 'No unit metrics'}</Typography>
+            </Stack>
+            <Stack spacing={1.2} className="overall-metric-list">
+              {groups.units.map((group) => <Box className="overall-metric-row" key={group.unit} title={group.tooltip}>
+                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{group.unit}</Typography><Typography className="metric-value" variant="body2">{group.total}{group.maximum ? ` / ${group.maximum}` : ''}</Typography></Stack>
+                {group.percent !== null && <GraphProgress value={group.percent} title={group.tooltip} sx={{ mt: 0.75 }} />}
+                <Typography variant="caption" color="text.secondary">{group.entries.map((entry) => `${entry.providerLabel}: ${entry.numericValue}`).join(' · ')}</Typography>
+              </Box>)}
+              {!hasUnitMetrics && <Typography variant="body2" color="text.secondary">No unit-based metrics in the visible provider snapshots.</Typography>}
+            </Stack>
+          </Box>
+        </Grid>
+      </Grid>
     </Box>
   )
 }
@@ -223,12 +290,12 @@ function UsageCard({ item, icon }) {
         )}
         <Stack>{firecrawlComposite ? <Box className="metric-row">
           <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{firecrawlComposite.label}</Typography><Typography className="metric-value" variant="body2">{firecrawlComposite.value}</Typography></Stack>
-          <LinearProgress variant="determinate" value={firecrawlComposite.percent} sx={{ mt: 1 }} />
+          <GraphProgress value={firecrawlComposite.percent} title={`${config.label} · ${firecrawlComposite.label}: ${firecrawlComposite.value}`} sx={{ mt: 1 }} />
         </Box> : metrics.map((metric) => {
           const percent = metricPercent(metric, config.provider)
           return <Box className="metric-row" key={metric.label}>
             <Stack className="metric-header" direction="row" justifyContent="space-between" gap={2}><Typography className="metric-label" variant="body2">{formatMetricLabel(metric.label, config.provider)}</Typography><Typography className="metric-value" variant="body2">{formatMetricValue(metric, config.provider, percent)}</Typography></Stack>
-            {percent !== null && <LinearProgress variant="determinate" value={percent} sx={{ mt: 1 }} />}
+            {percent !== null && <GraphProgress value={percent} title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`} sx={{ mt: 1 }} />}
           </Box>
         })}</Stack>
         {latest?.error && !isStale && <Alert severity="error" sx={{ mt: 2 }}>{latest.error}</Alert>}
@@ -272,13 +339,8 @@ export default function DashboardPage() {
   const visibleItems = items.filter((item) => item.config.is_visible)
   const visibleHealthy = visibleItems.filter((item) => item.latest?.status === 'healthy').length
   const visibleDegraded = visibleItems.length - visibleHealthy
+  const overallGroups = useMemo(() => overallUsageGroups(items), [items])
 
-  const summaries = homepage ? [
-    { label: 'Configured', value: visibleItems.length, icon: <ApiRoundedIcon /> },
-    { label: 'Healthy', value: visibleHealthy, className: 'highlight', icon: <CheckCircleRoundedIcon /> },
-    { label: 'Degraded', value: visibleDegraded, className: visibleDegraded ? 'warning' : '', icon: <WarningAmberRoundedIcon /> },
-    { label: 'Network summary', value: visibleItems.length ? `${visibleHealthy}/${visibleItems.length} visible providers healthy` : 'No visible providers', icon: <DataUsageRoundedIcon /> },
-  ] : []
 
   return <>
     <header className="page-heading">
@@ -286,7 +348,8 @@ export default function DashboardPage() {
       <Button variant="contained" startIcon={loading ? <CircularProgress size={17} color="inherit" /> : <RefreshRoundedIcon />} onClick={() => load(true)} disabled={loading}>{loading ? 'Polling…' : 'Poll providers'}</Button>
     </header>
     {pollStatus && <Box className="poll-status glass-panel"><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5}><Box><Typography variant="overline" color="primary.main">Automatic polling</Typography><Typography variant="body2" color="text.secondary">{pollStatus.auto_poll_enabled ? `Next auto poll: ${formatDateTime(pollStatus.next_poll_at)}` : 'Auto polling disabled'}</Typography></Box><Typography variant="body2" color="text.secondary">{pollStatus.is_polling ? 'Polling now…' : pollStatus.last_polled_at ? `Last auto poll: ${formatDateTime(pollStatus.last_polled_at)}` : 'No automatic poll has run yet'}</Typography></Stack></Box>}
-    {homepage && <Grid className="summary-grid" container spacing={2}>{summaries.map((summary) => <Grid size={{ xs: summary.label === 'Network summary' ? 12 : 6, sm: 6, md: 3 }} key={summary.label}><Box className={`summary-card glass-panel ${summary.className || ''}`}><div className="summary-label">{summary.label}</div><div className="summary-value">{summary.value}</div><div className="summary-icon" aria-hidden="true">{summary.icon}</div></Box></Grid>)}</Grid>}
+    {visibleDegraded > 0 && <Alert severity="warning" sx={{ mb: 3 }}>{visibleDegraded} of {visibleItems.length} visible provider{visibleItems.length === 1 ? '' : 's'} need attention.</Alert>}
+    <OverallUsagePanel groups={overallGroups} />
     {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
     {loading && !homepage && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Contacting the provider fleet…</Typography></Stack></Box>}
     {!loading && items.length === 0 && <Box className="empty-state"><div className="empty-state-icon"><CloudSyncRoundedIcon /></div><Typography variant="h6">No providers connected</Typography><Typography color="text.secondary" sx={{ mt: 1 }}>Head to Settings and connect your first API provider.</Typography></Box>}

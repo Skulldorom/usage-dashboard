@@ -337,54 +337,59 @@ input {
 .poll-status .MuiTypography-overline-root {
   line-height: 1.2;
 }
-.summary-grid {
+.overall-usage-panel {
   margin-bottom: 28px;
-}
-.summary-card {
-  height: 100%;
-  min-height: 126px;
   padding: 22px;
-  border-radius: 17px;
+  border-radius: 20px;
 }
-.summary-card::before {
-  content: "";
-  position: absolute;
-  width: 90px;
-  height: 90px;
-  right: -32px;
-  top: -35px;
-  border: 1px solid rgba(6, 200, 255, 0.18);
-  transform: rotate(45deg);
+.overall-usage-heading {
+  margin-bottom: 18px;
 }
-.summary-label {
-  color: #898092;
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
-}
-.summary-value {
-  margin-top: 10px;
+.overall-usage-heading .MuiTypography-h5-root {
   color: #fff;
-  font-size: 1.8rem;
-  line-height: 1.15;
+  font-weight: 820;
+  letter-spacing: -0.025em;
+}
+.overall-metric-group {
+  height: 100%;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.14);
+}
+.overall-metric-group .MuiTypography-subtitle1-root {
+  color: #fff;
   font-weight: 800;
-  letter-spacing: -0.035em;
-  overflow-wrap: anywhere;
 }
-.summary-card.highlight .summary-value {
-  color: #38e6a1;
-  text-shadow: 0 0 22px rgba(56, 230, 161, 0.2);
+.overall-average {
+  margin: 14px 0;
+  padding: 13px;
+  border: 1px solid rgba(6, 200, 255, 0.16);
+  border-radius: 13px;
+  color: #dff8ff;
+  background: rgba(6, 200, 255, 0.055);
+  cursor: help;
 }
-.summary-card.warning .summary-value {
-  color: #ffbf69;
+.overall-average strong {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
 }
-.summary-icon {
-  position: absolute;
-  right: 20px;
-  bottom: 18px;
-  color: rgba(6, 200, 255, 0.17);
-  font-size: 30px;
+.overall-metric-list {
+  margin-top: 14px;
+}
+.overall-metric-row {
+  padding: 11px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  cursor: help;
+}
+.overall-metric-row:first-child {
+  border-top: 0;
+}
+.hoverable-graph {
+  cursor: help;
+}
+.hoverable-graph:hover .MuiLinearProgress-bar {
+  filter: drop-shadow(0 0 8px rgba(6, 200, 255, 0.5));
 }
 
 .provider-card {
