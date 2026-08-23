@@ -152,6 +152,7 @@ class ProviderConfigOrderUpdate(BaseModel):
 
 class CodexDevicePollRequest(BaseModel):
     label: str | None = Field(default=None, max_length=120)
+    config_id: int | None = Field(default=None, ge=1)
 
     @field_validator("label", mode="before")
     @classmethod
@@ -188,6 +189,7 @@ class CodexBrowserStartRead(BaseModel):
 class CodexBrowserCompleteRequest(BaseModel):
     callback: str = Field(..., min_length=1)
     label: str | None = Field(default=None, max_length=120)
+    config_id: int | None = Field(default=None, ge=1)
 
     @field_validator("label", mode="before")
     @classmethod

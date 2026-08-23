@@ -145,6 +145,42 @@ async def _unique_label(session: AsyncSession, provider: str, requested: str | N
     return f"{provider_slug}-{index}"
 
 
+
+async def _save_codex_secret(
+    session: AsyncSession,
+    secret: str,
+    *,
+    auth_method: str,
+    label: str | None = None,
+    config_id: int | None = None,
+) -> ProviderConfig:
+    encrypted = _crypto().encrypt(secret)
+    if config_id is not None:
+        config = await session.get(ProviderConfig, config_id)
+        if not config or config.provider != "codex":
+            raise HTTPException(status_code=404, detail="Codex provider config not found")
+        config.encrypted_api_key = encrypted
+        config.extra = {**(config.extra or {}), "auth_method": auth_method}
+        await session.commit()
+        await session.refresh(config)
+        return config
+
+    unique_label = await _unique_label(session, "codex", label)
+    display_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
+    config = ProviderConfig(
+        provider="codex",
+        label=unique_label,
+        encrypted_api_key=encrypted,
+        extra={"auth_method": auth_method},
+        is_enabled=True,
+        is_visible=True,
+        display_order=int(display_order or 0) + 1 if display_order is not None else 0,
+    )
+    session.add(config)
+    await session.commit()
+    await session.refresh(config)
+    return config
+
 @router.get("/auth/status", response_model=AuthStatusRead)
 async def get_auth_status(session: AsyncSession = Depends(get_session)):
     return await auth_status(session)
@@ -279,20 +315,13 @@ async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest 
     if not isinstance(secret, str) or not secret.strip():
         return {"status": "failed", "error": "Codex device authorization completed without usable tokens", "interval_seconds": None, "config": None}
 
-    label = await _unique_label(session, "codex", payload.label if payload else None)
-    display_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
-    config = ProviderConfig(
-        provider="codex",
-        label=label,
-        encrypted_api_key=_crypto().encrypt(secret),
-        extra={"auth_method": "device_code"},
-        is_enabled=True,
-        is_visible=True,
-        display_order=int(display_order or 0) + 1 if display_order is not None else 0,
+    config = await _save_codex_secret(
+        session,
+        secret,
+        auth_method="device_code",
+        label=payload.label if payload else None,
+        config_id=payload.config_id if payload else None,
     )
-    session.add(config)
-    await session.commit()
-    await session.refresh(config)
     async with _codex_device_lock:
         _codex_device_flows.pop(flow_id, None)
     return {"status": "completed", "interval_seconds": None, "error": None, "config": _config_read(config)}
@@ -325,20 +354,13 @@ async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserComple
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    label = await _unique_label(session, "codex", payload.label)
-    display_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
-    config = ProviderConfig(
-        provider="codex",
-        label=label,
-        encrypted_api_key=_crypto().encrypt(secret),
-        extra={"auth_method": "browser_pkce"},
-        is_enabled=True,
-        is_visible=True,
-        display_order=int(display_order or 0) + 1 if display_order is not None else 0,
+    config = await _save_codex_secret(
+        session,
+        secret,
+        auth_method="browser_pkce",
+        label=payload.label,
+        config_id=payload.config_id,
     )
-    session.add(config)
-    await session.commit()
-    await session.refresh(config)
     async with _codex_device_lock:
         _codex_browser_flows.pop(flow_id, None)
     return {"status": "completed", "error": None, "config": _config_read(config)}
