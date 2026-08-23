@@ -205,6 +205,48 @@ async def test_patch_config_base_url_null_clears_override(sqlite_db):
     assert db_base_url is None
 
 
+@pytest.mark.asyncio
+async def test_patch_config_rotates_secret_without_exposing_token(sqlite_db):
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={"provider": "deepseek", "label": "main", "api_key": "old-secret-token"},
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        config_id = created.json()["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"api_key": "new-secret-token"},
+            headers=auth,
+        )
+        assert updated.status_code == 200, updated.text
+        payload = updated.json()
+        assert payload["api_key_masked"] == "••••••••"
+        assert "api_key" not in payload
+        assert "old-secret-token" not in updated.text
+        assert "new-secret-token" not in updated.text
+
+        listed = await client.get("/api/v1/configs", headers=auth)
+        assert listed.status_code == 200, listed.text
+        assert "old-secret-token" not in listed.text
+        assert "new-secret-token" not in listed.text
+
+    async with sqlite_db() as session:
+        encrypted = await session.scalar(
+            select(ProviderConfig.encrypted_api_key).where(ProviderConfig.id == config_id)
+        )
+    from app.api import routes
+
+    crypto = routes._crypto()
+    assert crypto.decrypt(encrypted) == "new-secret-token"
+
+
+
 def test_admin_token_env_is_ignored_by_settings():
     configured = Settings(
         ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="legacy-static-admin-token-123"
@@ -954,6 +996,87 @@ async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_enc
         )
         assert json.loads(stored_secret)["refresh_token"] == "browser-refresh-token"
         assert config.extra == {"auth_method": "browser_pkce"}
+
+
+@pytest.mark.asyncio
+async def test_codex_browser_oauth_can_replace_existing_provider_secret(
+    sqlite_db, monkeypatch
+):
+    from app.api import routes
+    from app.core.crypto import CryptoService
+    from app.providers.codex import CodexCredentials
+
+    old_secret = CodexCredentials(
+        access_token="old-browser-access-token",
+        refresh_token="old-browser-refresh-token",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        account_id="acct_old",
+    ).to_secret_json()
+    new_secret = CodexCredentials(
+        access_token="new-browser-access-token",
+        refresh_token="new-browser-refresh-token",
+        expires_at=datetime.now(UTC) + timedelta(hours=1),
+        account_id="acct_new",
+    ).to_secret_json()
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        assert code == "browser-code"
+        assert code_verifier
+        assert timeout == settings.request_timeout_seconds
+        return new_secret
+
+    monkeypatch.setattr(
+        routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange
+    )
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={"provider": "codex", "label": "codex", "api_key": old_secret},
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        config_id = created.json()["id"]
+
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert started.status_code == 200, started.text
+        start_payload = started.json()
+        flow = routes._codex_browser_flows[start_payload["flow_id"]]
+
+        completed = await client.post(
+            f"/api/v1/codex/oauth/browser/{start_payload['flow_id']}/complete",
+            json={
+                "label": "ignored-new-label",
+                "config_id": config_id,
+                "callback": f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+            },
+            headers=auth,
+        )
+        assert completed.status_code == 200, completed.text
+        completed_payload = completed.json()
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["config"]["id"] == config_id
+        assert completed_payload["config"]["label"] == "codex"
+        assert completed_payload["config"]["api_key_masked"] == "••••••••"
+        assert "api_key" not in completed_payload["config"]
+        assert "old-browser-refresh-token" not in completed.text
+        assert "new-browser-refresh-token" not in completed.text
+
+    async with sqlite_db() as session:
+        configs = (
+            await session.execute(
+                select(ProviderConfig).where(ProviderConfig.provider == "codex")
+            )
+        ).scalars().all()
+        assert len(configs) == 1
+        stored_secret = CryptoService(settings.encryption_key).decrypt(
+            configs[0].encrypted_api_key
+        )
+        assert json.loads(stored_secret)["refresh_token"] == "new-browser-refresh-token"
+        assert configs[0].extra == {"auth_method": "browser_pkce"}
 
 
 def test_codex_browser_oauth_rejects_state_mismatch():

@@ -413,6 +413,10 @@ export default function SettingsPage() {
   const [thresholdSaving, setThresholdSaving] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [credentialTarget, setCredentialTarget] = useState(null);
+  const [credentialValue, setCredentialValue] = useState("");
+  const [credentialSaving, setCredentialSaving] = useState(false);
+  const [credentialStatus, setCredentialStatus] = useState("");
   const homepagePreview = useMemo(
     () => homepageYaml(homepageForm),
     [homepageForm],
@@ -562,6 +566,48 @@ export default function SettingsPage() {
       setError(err.message);
     } finally {
       setDeleting(false);
+    }
+  }
+
+  function openCredentialDialog(config) {
+    setCredentialTarget(config);
+    setCredentialValue("");
+    setCredentialStatus("");
+    setTestError("");
+    setTestResult(null);
+    setCodexDeviceFlow(null);
+    setCodexBrowserFlow(null);
+    setCodexCallback("");
+    setCodexDeviceStatus("");
+  }
+
+  function closeCredentialDialog() {
+    if (credentialSaving || codexDeviceBusy) return;
+    setCredentialTarget(null);
+    setCredentialValue("");
+    setCredentialStatus("");
+    setCodexDeviceFlow(null);
+    setCodexBrowserFlow(null);
+    setCodexCallback("");
+    setCodexDeviceStatus("");
+  }
+
+  async function replaceCredential() {
+    if (!credentialTarget || !credentialValue.trim()) return;
+    setError("");
+    setCredentialStatus("");
+    setCredentialSaving(true);
+    try {
+      await api.updateConfig(credentialTarget.id, {
+        api_key: credentialValue.trim(),
+      });
+      setCredentialValue("");
+      setCredentialStatus("Credential replaced. The old token was overwritten and never displayed.");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCredentialSaving(false);
     }
   }
   function updateHomepageForm(patch) {
@@ -1027,6 +1073,7 @@ export default function SettingsPage() {
   }
   async function startCodexDeviceLogin() {
     setError("");
+    setCredentialStatus("");
     setTestError("");
     setTestResult(null);
     setCodexDeviceStatus("Requesting device code…");
@@ -1055,6 +1102,7 @@ export default function SettingsPage() {
 
   async function startCodexBrowserLogin() {
     setError("");
+    setCredentialStatus("");
     setTestError("");
     setTestResult(null);
     setCodexDeviceStatus("Creating browser login link…");
@@ -1084,16 +1132,30 @@ export default function SettingsPage() {
     try {
       const result = await api.completeCodexBrowserOAuth(
         codexBrowserFlow.flow_id,
-        { label: form.label.trim() || null, callback: codexCallback.trim() },
+        {
+          label: credentialTarget ? credentialTarget.label : form.label.trim() || null,
+          callback: codexCallback.trim(),
+          config_id: credentialTarget?.id || null,
+        },
       );
       if (result.status === "completed") {
+        const label = result.config?.label || "codex";
         setCodexDeviceStatus(
-          `Codex connected as ${result.config?.label || "codex"}.`,
+          credentialTarget
+            ? `Codex reauthenticated for ${label}.`
+            : `Codex connected as ${label}.`,
+        );
+        setCredentialStatus(
+          credentialTarget
+            ? "Codex credential replaced. The previous OAuth token was overwritten and never displayed."
+            : "",
         );
         setCodexBrowserFlow(null);
         setCodexCallback("");
-        setOpen(false);
-        setForm(initialForm);
+        if (!credentialTarget) {
+          setOpen(false);
+          setForm(initialForm);
+        }
         await load();
       } else {
         setCodexDeviceStatus("");
@@ -1115,15 +1177,26 @@ export default function SettingsPage() {
     setCodexDeviceBusy(true);
     try {
       const result = await api.pollCodexDeviceOAuth(codexDeviceFlow.flow_id, {
-        label: form.label.trim() || null,
+        label: credentialTarget ? credentialTarget.label : form.label.trim() || null,
+        config_id: credentialTarget?.id || null,
       });
       if (result.status === "completed") {
+        const label = result.config?.label || "codex";
         setCodexDeviceStatus(
-          `Codex connected as ${result.config?.label || "codex"}.`,
+          credentialTarget
+            ? `Codex reauthenticated for ${label}.`
+            : `Codex connected as ${label}.`,
+        );
+        setCredentialStatus(
+          credentialTarget
+            ? "Codex credential replaced. The previous OAuth token was overwritten and never displayed."
+            : "",
         );
         setCodexDeviceFlow(null);
-        setOpen(false);
-        setForm(initialForm);
+        if (!credentialTarget) {
+          setOpen(false);
+          setForm(initialForm);
+        }
         await load();
       } else if (result.status === "pending" || result.status === "slow_down") {
         setCodexDeviceStatus(
@@ -1351,6 +1424,15 @@ export default function SettingsPage() {
                         />
                       </Tooltip>
                     </label>
+                    <Tooltip title="Replace credential">
+                      <IconButton
+                        size="small"
+                        onClick={() => openCredentialDialog(config)}
+                        aria-label={`Replace credential for ${config.label}`}
+                      >
+                        <KeyRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="Alert thresholds">
                       <IconButton
                         size="small"
@@ -2443,6 +2525,167 @@ export default function SettingsPage() {
             disabled={genericApiTokenSaving}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog
+        open={Boolean(credentialTarget)}
+        onClose={closeCredentialDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          <Stack spacing={0.75}>
+            <Typography
+              component="span"
+              display="block"
+              variant="overline"
+              color="primary.main"
+            >
+              Credential replacement
+            </Typography>
+            <Typography component="span" display="block" variant="h5">
+              {credentialTarget?.label}
+            </Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="info">
+              The current credential is stored encrypted and only shown as {" "}
+              <code>{credentialTarget?.api_key_masked || "••••••••"}</code>.
+              Paste or complete a new credential below; the old token is never
+              revealed and is overwritten after save.
+            </Alert>
+            {credentialTarget?.provider === "codex" && (
+              <Box className="homepage-guide api-token-guide">
+                <Typography variant="body2" color="text.secondary">
+                  For expired Codex OAuth tokens, reauthenticate this exact
+                  provider row with device login or browser login. The backend
+                  stores the refreshed OAuth secret directly; browser JavaScript
+                  never receives the access or refresh token.
+                </Typography>
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  flexWrap="wrap"
+                  useFlexGap
+                  sx={{ mt: 1.5 }}
+                >
+                  <Button
+                    variant="outlined"
+                    onClick={startCodexDeviceLogin}
+                    disabled={codexDeviceBusy}
+                  >
+                    Start Codex device reauth
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={startCodexBrowserLogin}
+                    disabled={codexDeviceBusy}
+                  >
+                    Start browser reauth
+                  </Button>
+                </Stack>
+                {codexDeviceFlow && (
+                  <Stack spacing={1.25} sx={{ mt: 1.5 }}>
+                    <Alert severity="info">
+                      Visit {" "}
+                      <a
+                        href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {codexDeviceFlow.verification_uri}
+                      </a>{" "}
+                      and enter code <strong>{codexDeviceFlow.user_code}</strong>.
+                    </Alert>
+                    <Button
+                      variant="contained"
+                      onClick={pollCodexDeviceLogin}
+                      disabled={codexDeviceBusy}
+                    >
+                      {codexDeviceBusy ? "Checking…" : "I authorized Codex"}
+                    </Button>
+                  </Stack>
+                )}
+                {codexBrowserFlow && (
+                  <Stack spacing={1.25} sx={{ mt: 1.5 }}>
+                    <Button
+                      component="a"
+                      href={codexBrowserFlow.authorization_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      variant="outlined"
+                    >
+                      Open Codex browser login
+                    </Button>
+                    <TextField
+                      label="Callback URL after login"
+                      value={codexCallback}
+                      onChange={(event) => setCodexCallback(event.target.value)}
+                      placeholder="http://localhost:1455/auth/callback?code=…&state=…"
+                      multiline
+                      minRows={2}
+                    />
+                    <Button
+                      variant="contained"
+                      onClick={completeCodexBrowserLogin}
+                      disabled={codexDeviceBusy || !codexCallback.trim()}
+                    >
+                      {codexDeviceBusy ? "Completing…" : "Complete browser reauth"}
+                    </Button>
+                  </Stack>
+                )}
+                {codexDeviceStatus && (
+                  <Alert severity="info" sx={{ mt: 1.5 }}>
+                    {codexDeviceStatus}
+                  </Alert>
+                )}
+              </Box>
+            )}
+            <TextField
+              label={
+                credentialTarget?.provider === "codex"
+                  ? "New Codex OAuth token JSON (manual fallback)"
+                  : "New provider token"
+              }
+              type="password"
+              value={credentialValue}
+              onChange={(event) => setCredentialValue(event.target.value)}
+              placeholder={
+                PROVIDER_SETUP[credentialTarget?.provider]?.keyPlaceholder ||
+                "Paste the replacement token"
+              }
+              helperText="Leave blank unless you are manually replacing the provider secret. The existing value is intentionally unavailable."
+              multiline={credentialTarget?.provider === "codex"}
+              minRows={credentialTarget?.provider === "codex" ? 3 : undefined}
+            />
+            {testError && <Alert severity="error">{testError}</Alert>}
+            {credentialStatus && (
+              <Alert severity="success">{credentialStatus}</Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button
+            color="inherit"
+            onClick={closeCredentialDialog}
+            disabled={credentialSaving || codexDeviceBusy}
+          >
+            Close
+          </Button>
+          <Button
+            variant="contained"
+            onClick={replaceCredential}
+            disabled={credentialSaving || !credentialValue.trim()}
+            startIcon={
+              credentialSaving ? (
+                <CircularProgress size={16} color="inherit" />
+              ) : null
+            }
+          >
+            {credentialSaving ? "Replacing…" : "Replace credential"}
           </Button>
         </DialogActions>
       </Dialog>
