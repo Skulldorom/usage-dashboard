@@ -347,7 +347,41 @@ class DataSourceSyncResult(BaseModel):
     status: str
     inserted: int = 0
     observed: int = 0
+    duplicates_skipped: int = 0
+    records_fetched: int = 0
+    records_accepted: int = 0
+    observations_produced: int = 0
+    observations_accepted: int = 0
+    records_skipped_invalid_timestamp: int = 0
+    records_skipped_no_supported_metrics: int = 0
+    metrics_skipped_invalid: int = 0
+    observations_skipped_profile_filter: int = 0
+    earliest_observation_at: datetime | None = None
+    latest_observation_at: datetime | None = None
+    providers_discovered: list[str] = Field(default_factory=list)
+    profiles_discovered: list[str] = Field(default_factory=list)
+    unmapped_providers: list[str] = Field(default_factory=list)
     error: str | None = None
+
+
+class DataSourceObservationRead(BaseModel):
+    id: int
+    observed_at: datetime
+    provider: str
+    provider_mapping: str | None = None
+    model: str | None = None
+    profile: str | None = None
+    session_id: str | None = None
+    metric: str
+    value: float
+    unit: str | None = None
+    cost_type: str | None = None
+    source_event_id: str | None = None
+
+
+class DataSourceInspection(BaseModel):
+    source: DataSourceConfigRead
+    observations: list[DataSourceObservationRead]
 
 
 # ---------------------------------------------------------------------------

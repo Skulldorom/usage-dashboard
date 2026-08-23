@@ -12,6 +12,11 @@ import {
   IconButton,
   Paper,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
   TextField,
   Tooltip,
   Typography,
@@ -21,6 +26,7 @@ import BoltRoundedIcon from '@mui/icons-material/BoltRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { api } from '../api.js'
 import {
   HERMES_SIDECAR_DOCS_URL,
@@ -44,6 +50,36 @@ function parseProfiles(text) {
     .split(',')
     .map((value) => value.trim())
     .filter(Boolean)
+}
+
+function formatSyncResult(result) {
+  const fetched = result.records_fetched ?? 0
+  const produced = result.observations_produced ?? result.observed ?? 0
+  const inserted = result.inserted ?? 0
+  const duplicates = result.duplicates_skipped ?? 0
+  const skipped = (result.records_skipped_invalid_timestamp ?? 0)
+    + (result.records_skipped_no_supported_metrics ?? 0)
+  const parts = [
+    `${fetched} records fetched`,
+    `${produced} observations`,
+    `${inserted} new`,
+    `${duplicates} already imported`,
+  ]
+  if (result.observations_skipped_profile_filter) {
+    parts.push(`${result.observations_skipped_profile_filter} filtered by profile`)
+  }
+  if (skipped) parts.push(`${skipped} record(s) skipped`)
+  if (result.unmapped_providers?.length) {
+    parts.push(`unmapped: ${result.unmapped_providers.join(', ')}`)
+  }
+  return parts.join(' · ')
+}
+
+function formatObservationValue(row) {
+  const value = Number(row.value)
+  if (row.metric === 'cost') return `$${value.toFixed(4)}`
+  const text = Math.abs(value) >= 1000 ? value.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(Math.round(value * 100) / 100)
+  return row.unit ? `${text} ${row.unit}` : text
 }
 
 export function InstallWithHermesSection({ onCopyInstallPrompt }) {
@@ -105,6 +141,8 @@ export default function DataSourcesSection() {
   const [saving, setSaving] = useState(false)
   const [actionResult, setActionResult] = useState(null)
   const [actionBusyId, setActionBusyId] = useState(null)
+  const [inspection, setInspection] = useState(null)
+  const [inspectionOpen, setInspectionOpen] = useState(false)
   const [form, setForm] = useState({
     name: '',
     base_url: '',
@@ -162,8 +200,24 @@ export default function DataSourcesSection() {
     setActionResult(null)
     try {
       const result = action === 'test' ? await api.testDataSource(id) : await api.syncDataSource(id)
-      setActionResult({ type: 'success', text: action === 'test' ? `Connection OK — ${result.records} record(s) returned` : `Sync complete — ${result.inserted} new observation(s)` })
+      setActionResult({ type: 'success', text: action === 'test' ? `Connection OK — ${result.records} record(s) returned` : formatSyncResult(result) })
       await load()
+    } catch (err) {
+      setActionResult({ type: 'error', text: err.message })
+    } finally {
+      setActionBusyId(null)
+    }
+  }
+
+
+
+  async function inspect(id) {
+    setActionBusyId(id)
+    setActionResult(null)
+    try {
+      const result = await api.inspectDataSource(id, { limit: 50 })
+      setInspection(result)
+      setInspectionOpen(true)
     } catch (err) {
       setActionResult({ type: 'error', text: err.message })
     } finally {
@@ -276,6 +330,14 @@ export default function DataSourcesSection() {
                           </IconButton>
                         </span>
                       </Tooltip>
+
+                      <Tooltip title="View recent observations">
+                        <span>
+                          <IconButton size="small" disabled={actionBusyId === source.id} onClick={() => inspect(source.id)} aria-label={`Inspect ${source.name}`}>
+                            <VisibilityRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                       <Tooltip title="Remove data source">
                         <IconButton size="small" color="error" onClick={() => remove(source.id)} aria-label={`Remove ${source.name}`}>
                           <DeleteOutlineRoundedIcon fontSize="small" />
@@ -289,6 +351,56 @@ export default function DataSourcesSection() {
           </Stack>
         )}
       </Box>
+
+
+      <Dialog open={inspectionOpen} onClose={() => setInspectionOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle>Recent Hermes observations</DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Alert severity="info">
+              Showing normalized telemetry metadata only: timestamps, provider/model/profile/session, metrics, values, and source event IDs. Prompt/response content and secrets are not exposed.
+            </Alert>
+            {inspection?.observations?.length ? (
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Timestamp</TableCell>
+                    <TableCell>Provider</TableCell>
+                    <TableCell>Model</TableCell>
+                    <TableCell>Profile</TableCell>
+                    <TableCell>Session</TableCell>
+                    <TableCell>Metric</TableCell>
+                    <TableCell align="right">Value</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {inspection.observations.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>{row.observed_at}</TableCell>
+                      <TableCell>{row.provider_mapping && row.provider_mapping !== row.provider ? `${row.provider} → ${row.provider_mapping}` : row.provider}</TableCell>
+                      <TableCell>{row.model || '—'}</TableCell>
+                      <TableCell>{row.profile || '—'}</TableCell>
+                      <TableCell>{row.session_id || '—'}</TableCell>
+                      <TableCell>{row.metric.replaceAll('_', ' ')}</TableCell>
+                      <TableCell align="right">{formatObservationValue(row)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <Box className="empty-state">
+                <Typography variant="h6">No stored Hermes observations yet</Typography>
+                <Typography color="text.secondary" sx={{ mt: 1 }}>
+                  Run a sync to fetch telemetry, then inspect again. If sync fetched records but stored none, the sync diagnostics above will explain why.
+                </Typography>
+              </Box>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={() => setInspectionOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Connect Hermes Agent</DialogTitle>

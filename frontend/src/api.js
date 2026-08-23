@@ -120,5 +120,6 @@ export const api = {
   deleteDataSourceConfig: (id) => request(`/datasources/configs/${id}`, { method: 'DELETE' }),
   testDataSource: (id) => request(`/datasources/configs/${id}/test`, { method: 'POST' }),
   syncDataSource: (id) => request(`/datasources/configs/${id}/sync`, { method: 'POST' }),
+  inspectDataSource: (id, params = {}) => request(`/datasources/configs/${id}/observations?${new URLSearchParams(params)}`),
   dataSourceStatus: (id) => request(`/datasources/configs/${id}/status`),
 }
