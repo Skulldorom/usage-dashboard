@@ -169,7 +169,8 @@ function TimeSeriesChart({ points, metricType, unit }) {
   )
 }
 
-function UsageHeatmap({ buckets, metricType }) {
+function UsageHeatmap({ buckets, metricType, unit }) {
+  const [hover, setHover] = useState(null)
   // Aggregate hourly buckets into day-of-week x hour intensity.
   const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
   let max = 0
@@ -192,33 +193,43 @@ function UsageHeatmap({ buckets, metricType }) {
   const width = hourLabelW + 24 * (cellW + gap)
   const height = 7 * (cellH + gap) + 4
 
+  const hoverLabel = hover
+    ? `${dayLabels[hover.day]} ${String(hover.hour).padStart(2, '0')}:00 · ${formatMetricValue(grid[hover.day][hover.hour], unit)}`
+    : ''
+
   return (
-    <svg viewBox={`0 0 ${width} ${height + 16}`} className="usage-heatmap" role="img" aria-label="Time-of-day usage heatmap">
-      {dayLabels.map((label, day) => (
-        <text key={label} x={0} y={day * (cellH + gap) + cellH / 2 + 4} className="usage-axis-label">
-          {label}
-        </text>
-      ))}
-      {grid.map((row, day) =>
-        row.map((value, hour) => (
-          <rect
-            key={`${day}-${hour}`}
-            x={hourLabelW + hour * (cellW + gap)}
-            y={day * (cellH + gap)}
-            width={cellW}
-            height={cellH}
-            rx={2}
-            fill="#06c8ff"
-            fillOpacity={max ? 0.08 + 0.85 * (value / max) : 0.08}
-          />
-        ))
-      )}
-      {[0, 6, 12, 18, 23].map((hour) => (
-        <text key={hour} x={hourLabelW + hour * (cellW + gap)} y={height + 14} className="usage-axis-label" textAnchor={hour === 0 ? 'start' : hour === 23 ? 'end' : 'middle'}>
-          {String(hour).padStart(2, '0')}
-        </text>
-      ))}
-    </svg>
+    <Box className="usage-chart-wrap">
+      <svg viewBox={`0 0 ${width} ${height + 16}`} className="usage-heatmap" role="img" aria-label="Time-of-day usage heatmap" onMouseLeave={() => setHover(null)}>
+        {dayLabels.map((label, day) => (
+          <text key={label} x={0} y={day * (cellH + gap) + cellH / 2 + 4} className="usage-axis-label">
+            {label}
+          </text>
+        ))}
+        {grid.map((row, day) =>
+          row.map((value, hour) => (
+            <rect
+              key={`${day}-${hour}`}
+              x={hourLabelW + hour * (cellW + gap)}
+              y={day * (cellH + gap)}
+              width={cellW}
+              height={cellH}
+              rx={2}
+              fill="#06c8ff"
+              fillOpacity={max ? 0.08 + 0.85 * (value / max) : 0.08}
+              onMouseEnter={() => setHover({ day, hour })}
+              stroke={hover && hover.day === day && hover.hour === hour ? '#ffffff' : 'none'}
+              strokeOpacity={0.7}
+            />
+          ))
+        )}
+        {[0, 6, 12, 18, 23].map((hour) => (
+          <text key={hour} x={hourLabelW + hour * (cellW + gap)} y={height + 14} className="usage-axis-label" textAnchor={hour === 0 ? 'start' : hour === 23 ? 'end' : 'middle'}>
+            {String(hour).padStart(2, '0')}
+          </text>
+        ))}
+      </svg>
+      {hoverLabel && <div className="usage-chart-tooltip" aria-live="polite">{hoverLabel}</div>}
+    </Box>
   )
 }
 
@@ -460,6 +471,7 @@ function ProviderComparisonTable({ providers }) {
 const SERIES_COLORS = ['#06c8ff', '#8b5cf6', '#38e6a1', '#ffbf69', '#ff6685', '#a78bfa', '#63e3ff', '#f0abfc']
 
 function UtilizationChart({ comparison }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
   if (!comparison || comparison.length === 0) {
     return <Typography variant="body2" color="text.secondary">No quota-tracking providers to overlay.</Typography>
   }
@@ -472,9 +484,38 @@ function UtilizationChart({ comparison }) {
   const x = (index) => pad.left + (maxLen > 1 ? (index / (maxLen - 1)) * innerW : innerW / 2)
   const y = (value) => pad.top + (1 - Math.max(0, Math.min(100, Number(value))) / 100) * innerH
 
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relativeX = ((event.clientX - rect.left) / rect.width) * width
+    const clamped = Math.max(pad.left, Math.min(width - pad.right, relativeX))
+    const index = maxLen > 1 ? Math.round(((clamped - pad.left) / innerW) * (maxLen - 1)) : 0
+    setHoverIndex(Math.max(0, Math.min(maxLen - 1, index)))
+  }
+
+  const hoverX = hoverIndex === null ? null : x(hoverIndex)
+  const hoverRows = hoverIndex === null
+    ? []
+    : comparison
+      .map((series) => {
+        const value = (series.buckets || [])[hoverIndex]?.value
+        return { provider: series.provider, label: series.label, value: typeof value === 'number' ? value : null }
+      })
+      .filter((row) => row.value !== null)
+
   return (
-    <Box>
-      <svg viewBox={`0 0 ${width} ${height}`} className="usage-chart" role="img" aria-label="Provider utilization overlay" preserveAspectRatio="none">
+    <Box className="usage-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="usage-chart"
+        role="img"
+        aria-label="Provider utilization overlay"
+        preserveAspectRatio="none"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+        onFocus={() => setHoverIndex(maxLen - 1)}
+        onBlur={() => setHoverIndex(null)}
+        tabIndex={0}
+      >
         {[0, 25, 50, 75, 100].map((tick) => (
           <g key={tick}>
             <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
@@ -486,9 +527,30 @@ function UtilizationChart({ comparison }) {
           const points = (series.buckets || []).map((bucket, index) => ({ index, value: bucket.value })).filter((point) => typeof point.value === 'number')
           if (points.length < 2) return null
           const d = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${x(point.index)} ${y(point.value)}`).join(' ')
-          return <path key={series.config_id} d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          const hoveredValue = hoverIndex === null ? null : (series.buckets || [])[hoverIndex]?.value
+          const showHoverDot = hoveredValue !== undefined && typeof hoveredValue === 'number' && points.some((point) => point.index === hoverIndex)
+          return (
+            <g key={series.config_id}>
+              <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+              {showHoverDot && (
+                <circle cx={x(hoverIndex)} cy={y(hoveredValue)} r="4" fill={color} stroke="rgba(255,255,255,0.9)" strokeWidth="1.5" />
+              )}
+            </g>
+          )
         })}
+        {hoverX !== null && (
+          <g className="usage-chart-hover">
+            <line x1={hoverX} x2={hoverX} y1={pad.top} y2={height - pad.bottom} />
+          </g>
+        )}
       </svg>
+      {hoverRows.length > 0 && (
+        <div className="usage-chart-tooltip usage-chart-tooltip--multi" aria-live="polite">
+          {hoverRows.map((row) => (
+            <div key={row.provider}>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}: {formatPercent(row.value)}</div>
+          ))}
+        </div>
+      )}
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 1 }}>
         {comparison.map((series, seriesIndex) => (
           <Stack key={series.config_id} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
@@ -763,7 +825,7 @@ export default function UsagePage() {
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
                     <Typography variant="overline" color="primary.main">Time-of-day heatmap</Typography>
-                    <Box sx={{ mt: 1 }} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metricType={metricType} /></Box>
+                    <Box sx={{ mt: 1 }} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metricType={metricType} unit={unit} /></Box>
                   </CardContent>
                 </Card>
               </Grid>

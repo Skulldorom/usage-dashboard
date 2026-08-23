@@ -1369,6 +1369,15 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   pointer-events: none;
 }
 
+.usage-chart-tooltip--multi {
+  border-radius: 8px;
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.74rem;
+}
+
 .usage-chart-empty {
   text-align: center;
 }
