@@ -16,6 +16,7 @@ import {
 import CloudSyncRoundedIcon from "@mui/icons-material/CloudSyncRounded";
 import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import { api } from "../api.js";
+import { HermesDataSourcesCards } from "../components/HermesPanels.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
 import {
   PROVIDER_USAGE_URLS,
@@ -577,6 +578,7 @@ export default function DashboardPage() {
   const [items, setItems] = useState([]);
   const [homepage, setHomepage] = useState(null);
   const [pollStatus, setPollStatus] = useState(null);
+  const [hermesData, setHermesData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [providerIcons, setProviderIcons] = useState(() => new Map());
@@ -586,15 +588,17 @@ export default function DashboardPage() {
     setError("");
     try {
       if (poll) await api.pollAll();
-      const [usage, hp, status, providerRows] = await Promise.all([
+      const [usage, hp, status, providerRows, hermes] = await Promise.all([
         api.usage(),
         api.homepage(),
         api.pollStatus(),
         api.providers().catch(() => []),
+        api.hermesBreakdown().catch(() => null),
       ]);
       setItems(usage);
       setHomepage(hp);
       setPollStatus(status);
+      setHermesData(hermes);
       setProviderIcons(
         new Map(providerRows.map((provider) => [provider.id, provider.icon])),
       );
@@ -723,6 +727,11 @@ export default function DashboardPage() {
           </Grid>
         ))}
       </Grid>
+      {hermesData?.sources?.length > 0 && (
+        <Box sx={{ mb: 3 }}>
+          <HermesDataSourcesCards data={hermesData} compact />
+        </Box>
+      )}
       <OverallUsagePanel groups={overallGroups} />
     </>
   );

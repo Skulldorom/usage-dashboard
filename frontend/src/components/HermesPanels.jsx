@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import {
   Alert,
   Box,
+  Button,
   Card,
+  CardActionArea,
   CardContent,
+  Chip,
   CircularProgress,
   Grid,
   Stack,
@@ -17,15 +20,10 @@ import {
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import { api } from '../api.js'
 import { rangeToParams } from '../lib/analyticsFormat.js'
+import { fmt, hasHermesData, hermesHeadlineCards, money } from '../lib/hermesFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-
-function fmt(value, unit) {
-  if (value === null || value === undefined) return '—'
-  const n = Number(value)
-  const text = Math.abs(n) >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : String(Math.round(n * 100) / 100)
-  return unit ? `${text} ${unit}` : text
-}
+const SOURCE_STATUS_COLOR = { healthy: 'success', error: 'error', never_connected: 'default' }
 
 function GroupTable({ title, rows }) {
   if (!rows?.length) return null
@@ -46,7 +44,7 @@ function GroupTable({ title, rows }) {
             {rows.map((row) => (
               <TableRow key={row.key}>
                 <TableCell>{row.key.replaceAll('_', ' ')}</TableCell>
-                <TableCell align="right">{row.cost !== null && row.cost !== undefined ? `$${Number(row.cost).toFixed(2)}` : '—'}</TableCell>
+                <TableCell align="right">{money(row.cost)}</TableCell>
                 <TableCell align="right">{fmt(row.tokens)}</TableCell>
                 <TableCell align="right">{fmt(row.requests)}</TableCell>
               </TableRow>
@@ -55,6 +53,91 @@ function GroupTable({ title, rows }) {
         </Table>
       </CardContent>
     </Card>
+  )
+}
+
+function HermesDailyChart({ daily }) {
+  const rows = daily || []
+  const values = rows.map((row) => Number(row.tokens || row.requests || row.cost || 0))
+  const max = Math.max(...values, 0)
+  if (!rows.length || max <= 0) {
+    return <Typography variant="body2" color="text.secondary">No daily Hermes points in this range.</Typography>
+  }
+  return (
+    <Box className="hermes-daily-chart" role="img" aria-label="Hermes observed usage over time">
+      {rows.map((row, index) => {
+        const value = values[index]
+        const height = Math.max(6, Math.round((value / max) * 100))
+        const title = `${row.date}: ${fmt(row.tokens, 'tokens')} · ${fmt(row.requests, 'requests')} · ${money(row.cost)}`
+        return (
+          <Box key={row.date} className="hermes-daily-bar-wrap">
+            <Box className="hermes-daily-bar" title={title} sx={{ height: `${height}%` }} />
+            <Typography variant="caption" color="text.secondary">{row.date.slice(5)}</Typography>
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
+export function HermesSourceCard({ source, compact = false }) {
+  const latest = source.latest_observation_at ? new Date(source.latest_observation_at).toLocaleString() : 'No stored observations'
+  return (
+    <Card variant="outlined" className="glass-panel data-source-card">
+      <CardActionArea component="a" href="/usage" aria-label={`Open Hermes telemetry for ${source.name}`}>
+        <CardContent>
+          <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
+            <Box>
+              <Typography variant="overline" color="primary.main">Data source</Typography>
+              <Typography variant={compact ? 'subtitle1' : 'h6'}>{source.name}</Typography>
+            </Box>
+            <Chip size="small" color={SOURCE_STATUS_COLOR[source.status] || 'default'} label={(source.status || 'unknown').replaceAll('_', ' ')} />
+          </Stack>
+          <Stack spacing={0.75} sx={{ mt: 1.5 }}>
+            <Typography variant="body2">{source.observations_in_range || 0} observations in selected range</Typography>
+            <Typography variant="body2" color="text.secondary">{source.total_observations || 0} stored total · latest {latest}</Typography>
+            {source.providers_observed?.length > 0 && (
+              <Typography variant="caption" color="text.secondary">Providers: {source.providers_observed.slice(0, 4).join(', ')}{source.providers_observed.length > 4 ? '…' : ''}</Typography>
+            )}
+            {source.providers_unmapped?.length > 0 && (
+              <Alert severity="warning" sx={{ mt: 0.5 }}>Unmapped: {source.providers_unmapped.join(', ')}</Alert>
+            )}
+            {source.latest_error && <Alert severity="error" sx={{ mt: 0.5 }}>{source.latest_error}</Alert>}
+          </Stack>
+        </CardContent>
+      </CardActionArea>
+    </Card>
+  )
+}
+
+export function HermesDataSourcesCards({ data, compact = false }) {
+  const sources = data?.sources || []
+  if (!sources.length) return null
+  return (
+    <Box>
+      <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+        <HubRoundedIcon color="primary" fontSize="small" />
+        <Typography variant="overline" color="primary.main">Data Sources</Typography>
+      </Stack>
+      <Grid container spacing={2}>
+        {sources.map((source) => (
+          <Grid size={{ xs: 12, md: compact ? 6 : 4 }} key={source.id}>
+            <HermesSourceCard source={source} compact={compact} />
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
+  )
+}
+
+function HermesDiagnostics({ diagnostics }) {
+  if (!diagnostics?.length) return null
+  return (
+    <Stack spacing={1}>
+      {diagnostics.map((item, index) => (
+        <Alert key={`${item.message}-${index}`} severity={item.severity || 'info'}>{item.message}</Alert>
+      ))}
+    </Stack>
   )
 }
 
@@ -102,48 +185,49 @@ export function HermesBreakdownPanel({ range }) {
     )
   }
 
-  const totals = data.totals || []
-  const hasData = totals.some((t) => t.value !== null && t.value !== undefined)
-  if (!hasData) {
-    return (
-      <Card variant="outlined" className="glass-panel">
-        <CardContent>
-          <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            No Hermes usage observed in this range. Connect Hermes Agent in
-            Settings → Data sources.
-          </Typography>
-        </CardContent>
-      </Card>
-    )
-  }
-
-  const totalCards = [
-    ...totals.filter((t) => t.value !== null && t.value !== undefined),
-    { metric: 'sessions', unit: 'sessions', value: data.sessions },
-  ]
+  const hasData = hasHermesData(data)
+  const totalCards = hermesHeadlineCards(data)
 
   return (
     <Stack spacing={2.5}>
       <Card variant="outlined" className="glass-panel">
         <CardContent>
-          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
-            <HubRoundedIcon color="primary" fontSize="small" />
-            <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', mb: 1 }}>
+            <Box>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+                <HubRoundedIcon color="primary" fontSize="small" />
+                <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
+              </Stack>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                Observed usage flowing through Hermes Agent. Supplemental to provider-reported totals; never double-counted.
+              </Typography>
+            </Box>
+            <Button href="/settings#data-sources" size="small" variant="outlined">Manage sources</Button>
           </Stack>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-            Observed usage flowing through Hermes Agent. Supplemental to provider-reported totals.
-          </Typography>
           <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
-            {totalCards.map((t) => (
-              <Grid size={{ xs: 6, sm: 3 }} key={t.metric}>
+            {totalCards.map((card) => (
+              <Grid size={{ xs: 6, sm: 4, lg: 2 }} key={card.key}>
                 <Box className="summary-card glass-panel">
-                  <div className="summary-label">{t.metric.replaceAll('_', ' ')}</div>
-                  <div className="summary-value">{t.metric === 'cost' && t.value ? `$${Number(t.value).toFixed(2)}` : fmt(t.value)}</div>
+                  <div className="summary-label">{card.label}</div>
+                  <div className="summary-value">{card.value}</div>
                 </Box>
               </Grid>
             ))}
           </Grid>
+          {!hasData && (
+            <Box sx={{ mt: 2 }}>
+              <HermesDiagnostics diagnostics={data.diagnostics} />
+            </Box>
+          )}
+        </CardContent>
+      </Card>
+      {hasData && <HermesDiagnostics diagnostics={data.diagnostics} />}
+      <HermesDataSourcesCards data={data} />
+      <Card variant="outlined" className="glass-panel">
+        <CardContent>
+          <Typography variant="overline" color="primary.main">Observed usage over time</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Daily Hermes-observed tokens, requests, and cost for the selected Usage range.</Typography>
+          <HermesDailyChart daily={data.daily} />
         </CardContent>
       </Card>
       <GroupTable title="By provider" rows={data.by_provider} />
@@ -156,17 +240,17 @@ export function HermesBreakdownPanel({ range }) {
 function attributionLine(m) {
   switch (m.status) {
     case 'matched':
-      return `${fmt(m.attributed, m.unit)} via Hermes · fully matched`
+      return `${fmt(m.provider_total, m.unit)} provider-reported · ${fmt(m.hermes_observed, m.unit)} observed · fully attributed`
     case 'partial':
-      return `${m.attribution_pct}% via Hermes · ${fmt(m.unattributed, m.unit)} unattributed`
+      return `${fmt(m.provider_total, m.unit)} provider-reported · ${fmt(m.hermes_observed, m.unit)} observed · ${m.attribution_pct}% attributed · ${fmt(m.unattributed, m.unit)} unattributed`
     case 'over_observed':
-      return `Hermes observed ${fmt(m.hermes_observed, m.unit)} vs provider ${fmt(m.provider_total, m.unit)}`
+      return `${fmt(m.provider_total, m.unit)} provider-reported · ${fmt(m.hermes_observed, m.unit)} observed through Hermes`
     case 'hermes_only':
-      return `Hermes-observed ${fmt(m.hermes_observed, m.unit)} (provider total unavailable)`
+      return `Hermes-only ${fmt(m.hermes_observed, m.unit)} observed (provider total unavailable)`
     case 'provider_only':
-      return `Provider-reported ${fmt(m.provider_total, m.unit)} (no Hermes data)`
+      return `Provider-only ${fmt(m.provider_total, m.unit)} authoritative (no Hermes observation)`
     default:
-      return 'No data'
+      return 'No provider or Hermes data'
   }
 }
 
@@ -198,10 +282,13 @@ export function AttributionPanel({ configId }) {
           <HubRoundedIcon color="primary" fontSize="small" />
           <Typography variant="overline" color="primary.main">Hermes attribution</Typography>
         </Stack>
-        <Stack spacing={1}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+          Provider-reported values are authoritative. Hermes values are observed/supplemental and show how much provider usage passed through Hermes.
+        </Typography>
+        <Stack spacing={1.2}>
           {data.metrics.map((m) => (
-            <Box key={m.metric}>
-              <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between' }}>
+            <Box key={m.metric} className="attribution-row">
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between' }}>
                 <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{m.metric.replaceAll('_', ' ')}</Typography>
                 <Typography variant="body2" color="text.secondary">{attributionLine(m)}</Typography>
               </Stack>
@@ -210,13 +297,11 @@ export function AttributionPanel({ configId }) {
         </Stack>
         {hasOverage && (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Hermes observed more usage than the provider reported for this period.
-            This can occur because of reporting delays, different measurement
-            windows, or estimated telemetry.
+            Hermes observed more usage than the provider reported for this period. This can happen with reporting delays, different windows, or estimated telemetry.
           </Alert>
         )}
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-          Hermes usage is an observed subset and is never added to provider totals.
+          Hermes observations are never added to provider totals.
         </Typography>
       </CardContent>
     </Card>

@@ -32,6 +32,7 @@ import {
   overviewTotalCards,
   peakLabel,
   pressureSummaryCards,
+  primaryValue,
   qualityLabel,
   rangeToParams,
   riskRows,
@@ -49,6 +50,7 @@ function formatAxis(value) {
 }
 
 function TimeSeriesChart({ points, metricType, unit }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
   const width = 720
   const height = 220
   const pad = { top: 12, right: 12, bottom: 26, left: 8 }
@@ -93,9 +95,37 @@ function TimeSeriesChart({ points, metricType, unit }) {
   if (current.length) segments.push(current)
 
   const ticks = points.length > 1 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [0]
+  const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
+  const hoveredValue = hoveredPoint ? primaryValue(hoveredPoint.raw, metricType) : null
+  const hoverX = hoverIndex === null ? null : x(hoverIndex)
+  const hoverY = typeof hoveredValue === 'number' ? y(hoveredValue) : null
+
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relativeX = ((event.clientX - rect.left) / rect.width) * width
+    const clamped = Math.max(pad.left, Math.min(width - pad.right, relativeX))
+    const index = points.length > 1 ? Math.round(((clamped - pad.left) / innerW) * (points.length - 1)) : 0
+    setHoverIndex(Math.max(0, Math.min(points.length - 1, index)))
+  }
+
+  const hoverLabel = hoveredPoint && typeof hoveredValue === 'number'
+    ? `${formatAxis(hoveredPoint.x)} · ${formatMetricValue(hoveredValue, unit)}`
+    : ''
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="usage-chart" role="img" aria-label="Historical usage chart" preserveAspectRatio="none">
+    <Box className="usage-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="usage-chart"
+        role="img"
+        aria-label="Historical usage chart"
+        preserveAspectRatio="none"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+        onFocus={() => setHoverIndex(points.length - 1)}
+        onBlur={() => setHoverIndex(null)}
+        tabIndex={0}
+      >
       <defs>
         <linearGradient id="usage-area" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#06c8ff" stopOpacity="0.28" />
@@ -125,7 +155,17 @@ function TimeSeriesChart({ points, metricType, unit }) {
       <text x={pad.left} y={pad.top + 10} className="usage-axis-label">
         {metricType === 'counter' || metricType === 'rate_limit' ? `usage (${unit || ''})`.trim() : unit || ''}
       </text>
+      {hoverX !== null && hoverY !== null && (
+        <g className="usage-chart-hover">
+          <line x1={hoverX} x2={hoverX} y1={pad.top} y2={height - pad.bottom} />
+          <circle cx={hoverX} cy={hoverY} r="4" />
+          <rect x={Math.min(width - 174, Math.max(10, hoverX - 82))} y={Math.max(10, hoverY - 34)} width="164" height="24" rx="6" />
+          <text x={Math.min(width - 92, Math.max(92, hoverX))} y={Math.max(27, hoverY - 17)} textAnchor="middle">{hoverLabel}</text>
+        </g>
+      )}
     </svg>
+    {hoverLabel && <div className="usage-chart-tooltip" aria-live="polite">{hoverLabel}</div>}
+    </Box>
   )
 }
 
