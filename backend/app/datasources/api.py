@@ -8,7 +8,7 @@ scoped tokens.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import asc, delete, desc, select
+from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin_auth, require_scope
@@ -17,7 +17,7 @@ from app.core.crypto import CryptoService
 from app.database import get_session
 from app.datasources.registry import get_data_source, list_data_sources
 from app.datasources.service import sync_data_source
-from app.models import DataSourceConfig, UsageObservation
+from app.models import DataSourceConfig, ProviderConfig, UsageObservation
 from app.schemas import (
     DataSourceConfigCreate,
     DataSourceConfigRead,
@@ -27,6 +27,10 @@ from app.schemas import (
     DataSourceObservationRead,
     DataSourceStatus,
     DataSourceSyncResult,
+    HermesObservedProvider,
+    HermesProviderMappingOption,
+    HermesProviderMappingsRead,
+    HermesProviderMappingsUpdate,
 )
 
 router = APIRouter()
@@ -215,3 +219,161 @@ async def data_source_status(source_id: int, session: AsyncSession = Depends(get
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
     return _status(source)
+
+
+_TOKEN_METRICS = frozenset(
+    {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
+)
+
+
+async def _provider_mappings_read(session: AsyncSession, source: DataSourceConfig) -> HermesProviderMappingsRead:
+    """Observed raw Hermes providers with aggregate metrics + current mappings.
+
+    ``UsageObservation.provider`` holds the raw identifier observed from Hermes,
+    while ``provider_mapping`` holds the effective (mapped) value. This endpoint
+    derives the editable attribution layer: every distinct raw provider, its
+    aggregate cost/tokens/requests, its last observation, and whether it is
+    mapped, unmapped, or mapped to an invalid (deleted/disabled) target.
+    """
+    enabled = set(
+        (
+            await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True)))
+        ).scalars().all()
+    )
+    config_rows = (
+        await session.execute(
+            select(ProviderConfig.provider, ProviderConfig.label).order_by(asc(ProviderConfig.id))
+        )
+    ).all()
+    option_by_provider: dict[str, str] = {}
+    for provider, label in config_rows:
+        option_by_provider.setdefault(provider, label or "main")
+    all_provider_ids = set(option_by_provider)
+
+    agg_rows = (
+        await session.execute(
+            select(
+                UsageObservation.provider,
+                UsageObservation.metric,
+                func.sum(UsageObservation.value),
+                func.max(UsageObservation.observed_at),
+                func.count(UsageObservation.id),
+            )
+            .where(
+                UsageObservation.data_source_id == source.id,
+                UsageObservation.source == "hermes",
+            )
+            .group_by(UsageObservation.provider, UsageObservation.metric)
+        )
+    ).all()
+
+    by_provider: dict[str, dict] = {}
+    for provider, metric, total, latest, count in agg_rows:
+        raw = str(provider or "unknown").strip().lower() or "unknown"
+        entry = by_provider.setdefault(
+            raw,
+            {"cost": None, "tokens": None, "requests": None, "last_observed_at": None, "observations": 0},
+        )
+        entry["observations"] += count or 0
+        if latest is not None and (entry["last_observed_at"] is None or latest > entry["last_observed_at"]):
+            entry["last_observed_at"] = latest
+        if total is None:
+            continue
+        if metric == "cost":
+            entry["cost"] = round(float(total), 6)
+        elif metric in _TOKEN_METRICS:
+            entry["tokens"] = round((entry["tokens"] or 0.0) + float(total), 6)
+        elif metric == "requests":
+            entry["requests"] = round(float(total), 6)
+
+    mappings = dict((source.extra or {}).get("provider_mappings") or {})
+    observed: list[HermesObservedProvider] = []
+    mapped_count = 0
+    unmapped_count = 0
+    unmapped_observations = 0
+    for raw in sorted(by_provider):
+        entry = by_provider[raw]
+        mapped_to = mappings.get(raw)
+        status = "unmapped"
+        reason = None
+        if mapped_to:
+            target = str(mapped_to).strip().lower()
+            if target in enabled:
+                status = "mapped"
+            else:
+                status = "invalid"
+                reason = (
+                    f"target provider '{target}' is disabled"
+                    if target in all_provider_ids
+                    else f"target provider '{target}' no longer exists"
+                )
+            mapped_to = target
+        if status == "mapped":
+            mapped_count += 1
+        else:
+            unmapped_count += 1
+            unmapped_observations += entry["observations"]
+        observed.append(
+            HermesObservedProvider(
+                raw_provider=raw,
+                cost=entry["cost"],
+                tokens=entry["tokens"],
+                requests=entry["requests"],
+                observations=entry["observations"],
+                last_observed_at=entry["last_observed_at"],
+                mapped_to=mapped_to,
+                status=status,
+                reason=reason,
+            )
+        )
+
+    return HermesProviderMappingsRead(
+        source_id=source.id,
+        configured_providers=[HermesProviderMappingOption(provider=p, label=option_by_provider[p]) for p in sorted(option_by_provider)],
+        mappings=mappings,
+        observed=observed,
+        mapped_count=mapped_count,
+        unmapped_count=unmapped_count,
+        unmapped_observations=unmapped_observations,
+    )
+
+
+@router.get("/configs/{source_id}/provider-mappings", response_model=HermesProviderMappingsRead, dependencies=[Depends(require_admin_auth)])
+async def get_provider_mappings(source_id: int, session: AsyncSession = Depends(get_session)):
+    source = await session.get(DataSourceConfig, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Data source not found")
+    return await _provider_mappings_read(session, source)
+
+
+@router.put("/configs/{source_id}/provider-mappings", response_model=HermesProviderMappingsRead, dependencies=[Depends(require_admin_auth)])
+async def put_provider_mappings(source_id: int, payload: HermesProviderMappingsUpdate, session: AsyncSession = Depends(get_session)):
+    source = await session.get(DataSourceConfig, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Data source not found")
+
+    all_provider_ids = set(
+        (await session.execute(select(ProviderConfig.provider))).scalars().all()
+    )
+    mappings = dict((source.extra or {}).get("provider_mappings") or {})
+    for raw, target in (payload.mappings or {}).items():
+        raw_key = str(raw).strip().lower()
+        if not raw_key:
+            continue
+        if target is None or str(target).strip() == "":
+            mappings.pop(raw_key, None)  # explicitly left unmapped
+            continue
+        target_id = str(target).strip().lower()
+        if target_id not in all_provider_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown provider '{target_id}': must match a configured Usage Dashboard provider",
+            )
+        mappings[raw_key] = target_id
+
+    extra = dict(source.extra or {})
+    extra["provider_mappings"] = mappings
+    source.extra = extra
+    await session.commit()
+    await session.refresh(source)
+    return await _provider_mappings_read(session, source)

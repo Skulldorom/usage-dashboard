@@ -385,6 +385,42 @@ class DataSourceInspection(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Hermes provider mappings (editable attribution layer).
+# ---------------------------------------------------------------------------
+
+
+class HermesProviderMappingOption(BaseModel):
+    provider: str
+    label: str
+
+
+class HermesObservedProvider(BaseModel):
+    raw_provider: str
+    cost: float | None = None
+    tokens: float | None = None
+    requests: float | None = None
+    observations: int = 0
+    last_observed_at: datetime | None = None
+    mapped_to: str | None = None
+    status: Literal["mapped", "unmapped", "invalid"] = "unmapped"
+    reason: str | None = None
+
+
+class HermesProviderMappingsRead(BaseModel):
+    source_id: int
+    configured_providers: list[HermesProviderMappingOption] = Field(default_factory=list)
+    mappings: dict[str, str] = Field(default_factory=dict)
+    observed: list[HermesObservedProvider] = Field(default_factory=list)
+    mapped_count: int = 0
+    unmapped_count: int = 0
+    unmapped_observations: int = 0
+
+
+class HermesProviderMappingsUpdate(BaseModel):
+    mappings: dict[str, str | None] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # Hermes attribution / breakdown.
 # ---------------------------------------------------------------------------
 
