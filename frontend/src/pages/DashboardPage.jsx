@@ -197,7 +197,7 @@ function UsageHistory({ config, latest }) {
 
 function OverallUsagePanel({ groups }) {
   const hasPercentMetrics = groups.percent.metrics.length > 0
-  const hasUnitMetrics = groups.units.length > 0
+  const hasUnitMetrics = groups.units.metrics.length > 0
   if (!hasPercentMetrics && !hasUnitMetrics) return null
 
   return (
@@ -205,9 +205,9 @@ function OverallUsagePanel({ groups }) {
       <Stack className="overall-usage-heading" direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" gap={1.5}>
         <Box>
           <Typography variant="overline" color="primary.main">Overall usage</Typography>
-          <Typography variant="h5">Percentage and unit metrics</Typography>
+          <Typography variant="h5">Across all visible providers</Typography>
         </Box>
-        <Typography variant="body2" color="text.secondary">Separated because mixing percent and credits is how dashboards become soup.</Typography>
+        <Typography variant="body2" color="text.secondary">Percentage and unit metrics are shown separately.</Typography>
       </Stack>
       <Grid container spacing={2.5}>
         <Grid size={{ xs: 12, lg: 6 }}>
@@ -216,10 +216,6 @@ function OverallUsagePanel({ groups }) {
               <Typography variant="subtitle1">% based</Typography>
               <Typography variant="caption" color="text.secondary">{hasPercentMetrics ? `${groups.percent.metrics.length} metrics` : 'No percent metrics'}</Typography>
             </Stack>
-            {groups.percent.average !== null && <Box className="overall-average" title={`Average across ${groups.percent.metrics.length} percentage metrics: ${Math.round(groups.percent.average)}%`}>
-              <Stack direction="row" justifyContent="space-between" gap={2}><span>Average</span><strong>{Math.round(groups.percent.average)}%</strong></Stack>
-              <GraphProgress value={groups.percent.average} title={`Average across ${groups.percent.metrics.length} percentage metrics: ${Math.round(groups.percent.average)}%`} />
-            </Box>}
             <Stack spacing={1.2} className="overall-metric-list">
               {groups.percent.metrics.map((metric) => <Box className="overall-metric-row" key={metric.id} title={metric.tooltip}>
                 <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{metric.providerLabel} · {metric.label}</Typography><Typography className="metric-value" variant="body2">{metric.value}</Typography></Stack>
@@ -233,13 +229,12 @@ function OverallUsagePanel({ groups }) {
           <Box className="overall-metric-group">
             <Stack direction="row" justifyContent="space-between" alignItems="baseline" gap={2}>
               <Typography variant="subtitle1">Unit based</Typography>
-              <Typography variant="caption" color="text.secondary">{hasUnitMetrics ? `${groups.units.length} unit groups` : 'No unit metrics'}</Typography>
+              <Typography variant="caption" color="text.secondary">{hasUnitMetrics ? `${groups.units.metrics.length} metrics` : 'No unit metrics'}</Typography>
             </Stack>
             <Stack spacing={1.2} className="overall-metric-list">
-              {groups.units.map((group) => <Box className="overall-metric-row" key={group.unit} title={group.tooltip}>
-                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{group.unit}</Typography><Typography className="metric-value" variant="body2">{group.total}{group.maximum ? ` / ${group.maximum}` : ''}</Typography></Stack>
-                {group.percent !== null && <GraphProgress value={group.percent} title={group.tooltip} sx={{ mt: 0.75 }} />}
-                <Typography variant="caption" color="text.secondary">{group.entries.map((entry) => `${entry.providerLabel}: ${entry.numericValue}`).join(' · ')}</Typography>
+              {groups.units.metrics.map((metric) => <Box className="overall-metric-row" key={metric.id} title={metric.tooltip}>
+                <Stack direction="row" justifyContent="space-between" gap={2} className="metric-header"><Typography className="metric-label" variant="body2">{metric.providerLabel} · {metric.label}</Typography><Typography className="metric-value" variant="body2">{metric.value}</Typography></Stack>
+                {metric.percent !== null && <GraphProgress value={metric.percent} title={metric.tooltip} sx={{ mt: 0.75 }} />}
               </Box>)}
               {!hasUnitMetrics && <Typography variant="body2" color="text.secondary">No unit-based metrics in the visible provider snapshots.</Typography>}
             </Stack>
