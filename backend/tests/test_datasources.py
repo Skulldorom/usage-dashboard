@@ -400,6 +400,23 @@ async def test_explicit_event_id_dedupes(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_long_explicit_event_id_is_preserved_and_deduped(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    long_event_id = "dcff445dee81ac202a47ae878e64fa9a725f870d12f42a58" * 2
+
+    assert await _persist(sqlite_db, source_id, [_record(event_id=long_event_id)]) == 1
+    assert await _persist(sqlite_db, source_id, [_record(event_id=long_event_id)]) == 0
+
+    async with sqlite_db() as session:
+        stored_id = await session.scalar(
+            select(UsageObservation.source_event_id).where(UsageObservation.data_source_id == source_id)
+        )
+
+    assert stored_id == f"{long_event_id}:input_tokens"
+    assert len(stored_id) > 64
+
+
+@pytest.mark.asyncio
 async def test_explicit_event_id_preserves_all_metrics(sqlite_db):
     """One Hermes event expands into several metric rows; they must not collide.
 
@@ -454,3 +471,34 @@ async def test_db_unique_constraint_blocks_duplicate(sqlite_db):
         with pytest.raises(IntegrityError):
             await session.commit()
         await session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_sync_failure_rolls_back_before_updating_source_state(sqlite_db, monkeypatch):
+    class FakeHermes:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return [_record(event_id="evt-fail")]
+
+    async def failed_persist(session, source, observations):
+        session.add(UsageObservation(data_source_id=source.id))
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            raise RuntimeError("synthetic persistence failure") from exc
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeHermes)
+    monkeypatch.setattr("app.datasources.service._persist_observations", failed_persist)
+    source_id = await _make_source(sqlite_db)
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+
+    assert result["status"] == "error"
+    assert result["error"] == "synthetic persistence failure"
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        assert source.consecutive_failures == 1
+        assert source.latest_error == "synthetic persistence failure"
+        assert source.last_failure_at is not None

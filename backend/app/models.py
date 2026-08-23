@@ -109,7 +109,7 @@ class UsageObservation(Base):
     session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    source_event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class DataSourceConfig(Base):
