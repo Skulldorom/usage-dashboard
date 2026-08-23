@@ -59,14 +59,31 @@ running Hermes, then configure the dashboard to poll it.
    can run to retrieve/copy it.
 6. Return to Usage Dashboard and enter the sidecar **base URL** and **bearer
    token** (stored encrypted at rest).
-7. Optionally restrict ingestion to specific **profiles** and provide
-   **provider mappings** (`hermes-provider=dashboard-provider`) to align
-   Hermes's provider identifiers with your configured providers.
+7. Optionally restrict ingestion to specific **profiles**.
 8. Set the **poll interval** and click **Connect**, then **Test connection**.
 
 The copied prompt is deliberately scoped to sidecar installation only. It does
 not configure Usage Dashboard, providers, provider mappings, or the Hermes data
 source form for you.
+
+### Provider mapping
+
+Hermes reports a raw provider identifier per observation (for example `auto`,
+`openai-codex`, or `unknown`) that may not match a Usage Dashboard provider id.
+Map these raw identifiers to your configured providers so attribution and
+analytics use the right provider:
+
+1. In **Settings → Data sources**, click the **Edit provider mappings** (tune)
+   icon on a connected Hermes source.
+2. Each distinct observed raw provider shows its aggregate cost, tokens,
+   requests, and last-observed time.
+3. Choose the configured provider each raw identifier belongs to, or leave it
+   unmapped. Multiple raw identifiers may map to the same provider.
+4. Changes apply immediately and persist. A mapping whose target provider is
+   later deleted or disabled is shown as invalid so you can repair it.
+
+Mapping is an attribution layer — the raw Hermes identifier is never rewritten
+in stored observations.
 
 The dashboard will then poll `{base_url}/usage` and sync observed usage into the
 analytics history. See

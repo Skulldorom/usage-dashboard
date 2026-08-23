@@ -15,6 +15,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
@@ -68,12 +69,14 @@ function HermesDailyChart({ daily }) {
       {rows.map((row, index) => {
         const value = values[index]
         const height = Math.max(6, Math.round((value / max) * 100))
-        const title = `${row.date}: ${fmt(row.tokens, 'tokens')} · ${fmt(row.requests, 'requests')} · ${money(row.cost)}`
+        const tooltip = `${row.date}: ${fmt(row.tokens, 'tokens')} · ${fmt(row.requests, 'requests')} · ${money(row.cost)}`
         return (
-          <Box key={row.date} className="hermes-daily-bar-wrap">
-            <Box className="hermes-daily-bar" title={title} sx={{ height: `${height}%` }} />
-            <Typography variant="caption" color="text.secondary">{row.date.slice(5)}</Typography>
-          </Box>
+          <Tooltip key={row.date} title={tooltip} arrow placement="top" enterDelay={0}>
+            <Box className="hermes-daily-bar-wrap">
+              <Box className="hermes-daily-bar" sx={{ height: `${height}%` }} />
+              <Typography variant="caption" color="text.secondary">{row.date.slice(5)}</Typography>
+            </Box>
+          </Tooltip>
         )
       })}
     </Box>
@@ -100,7 +103,17 @@ export function HermesSourceCard({ source, compact = false }) {
               <Typography variant="caption" color="text.secondary">Providers: {source.providers_observed.slice(0, 4).join(', ')}{source.providers_observed.length > 4 ? '…' : ''}</Typography>
             )}
             {source.providers_unmapped?.length > 0 && (
-              <Alert severity="warning" sx={{ mt: 0.5 }}>Unmapped: {source.providers_unmapped.join(', ')}</Alert>
+              <Alert
+                severity="warning"
+                sx={{ mt: 0.5 }}
+                action={
+                  <Button component="a" href="/settings#data-sources" size="small" color="inherit">
+                    Manage mappings
+                  </Button>
+                }
+              >
+                Unmapped: {source.providers_unmapped.join(', ')}
+              </Alert>
             )}
             {source.latest_error && <Alert severity="error" sx={{ mt: 0.5 }}>{source.latest_error}</Alert>}
           </Stack>
