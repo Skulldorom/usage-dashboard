@@ -206,7 +206,7 @@ function ForecastPanel({ forecast, unit }) {
   return (
     <Card variant="outlined" className="glass-panel">
       <CardContent>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+        <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
           <Typography variant="overline" color="primary.main">Forecast</Typography>
           {confidence && <Chip size="small" color={confidenceColor(confidence.level)} label={`${confidence.level} confidence`} />}
         </Stack>
@@ -222,7 +222,7 @@ function ForecastPanel({ forecast, unit }) {
             ))}
           </Stack>
         )}
-        {confidence?.reason && <Typography variant="caption" color="text.secondary" display="block" mt={1}>{confidence.reason}</Typography>}
+        {confidence?.reason && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{confidence.reason}</Typography>}
       </CardContent>
     </Card>
   )
@@ -234,7 +234,7 @@ function ComparisonPanel({ comparison, unit }) {
     <Card variant="outlined" className="glass-panel">
       <CardContent>
         <Typography variant="overline" color="primary.main">Previous period</Typography>
-        <Stack spacing={1} mt={1}>
+        <Stack spacing={1} sx={{ mt: 1 }}>
           <Box className="usage-stat-row">
             <Typography variant="body2" color="text.secondary">Current</Typography>
             <Typography variant="body2">{formatMetricValue(comparison.current, unit)}</Typography>
@@ -367,9 +367,9 @@ function UtilizationChart({ comparison }) {
           return <path key={series.config_id} d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         })}
       </svg>
-      <Stack direction="row" spacing={2} flexWrap="wrap" mt={1}>
+      <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 1 }}>
         {comparison.map((series, seriesIndex) => (
-          <Stack key={series.config_id} direction="row" spacing={0.75} alignItems="center">
+          <Stack key={series.config_id} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
             <Typography variant="caption" color="text.secondary">{series.provider}{series.label && series.label !== 'main' ? ` · ${series.label}` : ''}</Typography>
           </Stack>
@@ -509,7 +509,7 @@ export default function UsagePage() {
       </header>
 
       {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-      {loading && <Box className="loading-state"><Stack alignItems="center" spacing={2}><CircularProgress /><Typography color="text.secondary">Loading usage analytics…</Typography></Stack></Box>}
+      {loading && <Box className="loading-state"><Stack spacing={2} sx={{ alignItems: 'center' }}><CircularProgress /><Typography color="text.secondary">Loading usage analytics…</Typography></Stack></Box>}
 
       {!loading && configs.length === 0 && (
         <Box className="empty-state">
@@ -523,7 +523,7 @@ export default function UsagePage() {
         <Stack spacing={3}>
           <Card variant="outlined" className="glass-panel">
             <CardContent>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} flexWrap="wrap">
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
                 <FormControl size="small" sx={{ minWidth: 200 }}>
                   <InputLabel>Provider</InputLabel>
                   <Select value={selectedId} label="Provider" onChange={(event) => setSelectedId(event.target.value)}>
@@ -569,14 +569,14 @@ export default function UsagePage() {
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
                   <Typography variant="overline" color="primary.main">Quota utilization</Typography>
-                  <Typography variant="caption" color="text.secondary" display="block" mb={1}>Percentage of each provider's own quota consumed.</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Percentage of each provider's own quota consumed.</Typography>
                   <UtilizationChart comparison={overview.comparison} />
                 </CardContent>
               </Card>
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
                   <Typography variant="overline" color="primary.main">By provider</Typography>
-                  <Box mt={1}><ProviderComparisonTable providers={overview.providers} /></Box>
+                  <Box sx={{ mt: 1 }}><ProviderComparisonTable providers={overview.providers} /></Box>
                 </CardContent>
               </Card>
               <HermesBreakdownPanel range={range} />
@@ -592,7 +592,7 @@ export default function UsagePage() {
               <Grid size={{ xs: 12, lg: 8 }}>
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
-                    <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                    <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                       <Typography variant="overline" color="primary.main">Historical usage</Typography>
                       {providerInfo.native_history && <Chip size="small" label="native history" color="primary" variant="outlined" />}
                     </Stack>
@@ -615,7 +615,7 @@ export default function UsagePage() {
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
                     <Typography variant="overline" color="primary.main">Daily breakdown</Typography>
-                    <Box mt={1}><DailyTable rows={daily} metricType={metricType} unit={unit} /></Box>
+                    <Box sx={{ mt: 1 }}><DailyTable rows={daily} metricType={metricType} unit={unit} /></Box>
                   </CardContent>
                 </Card>
               </Grid>
@@ -623,7 +623,7 @@ export default function UsagePage() {
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
                     <Typography variant="overline" color="primary.main">Time-of-day heatmap</Typography>
-                    <Box mt={1} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metricType={metricType} /></Box>
+                    <Box sx={{ mt: 1 }} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metricType={metricType} /></Box>
                   </CardContent>
                 </Card>
               </Grid>

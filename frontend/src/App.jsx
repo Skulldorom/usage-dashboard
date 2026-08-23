@@ -223,7 +223,7 @@ const settingsSubmenuItems = [
 
 function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
   return (
-    <Stack direction="row" spacing={1} alignItems="center">
+    <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
       {!isAuthenticated && (
         <Button
           className="token-button"
@@ -428,13 +428,13 @@ function AuthDialog({ open, authStatus, onAuthenticated, onClose }) {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               Secure access
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               {title}
             </Typography>
           </Stack>

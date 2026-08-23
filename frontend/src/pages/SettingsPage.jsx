@@ -262,7 +262,7 @@ function ApiTokenCreationForm({
         onChange={(event) =>
           onChange({ ...form, expires_at: event.target.value })
         }
-        InputLabelProps={{ shrink: true }}
+        slotProps={{ inputLabel: { shrink: true } }}
         helperText="Leave blank for no expiry. Revocation still works."
       />
       {showScopes ? (
@@ -295,7 +295,7 @@ function ApiTokenCreationForm({
           expects.
         </Alert>
       )}
-      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+      <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
         {onReset && (
           <Button variant="outlined" onClick={onReset} disabled={saving}>
             Reset preset
@@ -1511,15 +1511,14 @@ export default function SettingsPage() {
                     className="extension-url-inline-copy"
                     direction={{ xs: "column", sm: "row" }}
                     spacing={1}
-                    alignItems={{ xs: "stretch", sm: "center" }}
-                    sx={{ mt: 1.5 }}
+                    sx={{ mt: 1.5, alignItems: { xs: "stretch", sm: "center" } }}
                   >
                     <TextField
                       size="small"
                       fullWidth
                       label="Dashboard URL for extension options"
                       value={extensionUrl}
-                      InputProps={{ readOnly: true }}
+                      slotProps={{ input: { readOnly: true } }}
                       onFocus={(event) => event.target.select()}
                       helperText="Paste this in the extension Options page before one-click setup."
                     />
@@ -1541,9 +1540,8 @@ export default function SettingsPage() {
                   <Stack
                     direction="row"
                     spacing={1}
-                    flexWrap="wrap"
                     useFlexGap
-                    sx={{ mt: 1.5 }}
+                    sx={{ mt: 1.5, flexWrap: "wrap" }}
                   >
                     <Button
                       variant="contained"
@@ -1739,7 +1737,7 @@ export default function SettingsPage() {
                               expires_at: event.target.value,
                             })
                           }
-                          InputLabelProps={{ shrink: true }}
+                          slotProps={{ inputLabel: { shrink: true } }}
                         />
                         <Button
                           variant="contained"
@@ -1822,10 +1820,8 @@ export default function SettingsPage() {
               <Box className="homepage-yaml-preview">
                 <Stack
                   direction="row"
-                  justifyContent="space-between"
-                  alignItems="center"
                   spacing={2}
-                  sx={{ mb: 1.5 }}
+                  sx={{ mb: 1.5, justifyContent: "space-between", alignItems: "center" }}
                 >
                   <Box>
                     <Typography variant="overline" color="primary.main">
@@ -1834,7 +1830,7 @@ export default function SettingsPage() {
                     <Typography
                       variant="caption"
                       color="text.secondary"
-                      display="block"
+                      sx={{ display: "block" }}
                     >
                       Updates as you type; copy, paste, done.
                     </Typography>
@@ -1873,7 +1869,7 @@ export default function SettingsPage() {
                   Review, create, and revoke scoped tokens used by integrations.
                 </Typography>
               </Box>
-              <Stack direction="row" spacing={1} alignItems="center">
+              <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
                 <Button
                   variant="outlined"
                   size="small"
@@ -1920,9 +1916,11 @@ export default function SettingsPage() {
                       <Box className="api-token-row" key={token.id}>
                         <Stack
                           direction={{ xs: "column", sm: "row" }}
-                          justifyContent="space-between"
-                          alignItems={{ xs: "flex-start", sm: "center" }}
                           spacing={1.5}
+                          sx={{
+                            justifyContent: "space-between",
+                            alignItems: { xs: "flex-start", sm: "center" },
+                          }}
                         >
                           <Box>
                             <Typography variant="subtitle1">
@@ -1968,9 +1966,8 @@ export default function SettingsPage() {
                         <Stack
                           direction="row"
                           spacing={1}
-                          flexWrap="wrap"
                           useFlexGap
-                          sx={{ mt: 1.2 }}
+                          sx={{ mt: 1.2, flexWrap: "wrap" }}
                         >
                           {scopes.map((scope) => (
                             <Chip
@@ -1983,9 +1980,7 @@ export default function SettingsPage() {
                         </Stack>
                         <Stack
                           direction="row"
-                          justifyContent="space-between"
-                          alignItems="center"
-                          sx={{ mt: 1.5 }}
+                          sx={{ mt: 1.5, justifyContent: "space-between", alignItems: "center" }}
                         >
                           <Typography variant="caption" color="text.secondary">
                             Expires{" "}
@@ -2020,13 +2015,13 @@ export default function SettingsPage() {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               New connection
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               Add API provider
             </Typography>
           </Stack>
@@ -2095,7 +2090,7 @@ export default function SettingsPage() {
                 <Typography component="h3" variant="subtitle2">
                   Connect without Codex CLI
                 </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
                   <Button
                     variant="contained"
                     onClick={startCodexDeviceLogin}
@@ -2377,13 +2372,13 @@ export default function SettingsPage() {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               Browser extension
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               Manual extension setup
             </Typography>
           </Stack>
@@ -2413,13 +2408,13 @@ export default function SettingsPage() {
               <Stack
                 direction={{ xs: "column", sm: "row" }}
                 spacing={1}
-                alignItems="flex-start"
+                sx={{ alignItems: "flex-start" }}
               >
                 <TextField
                   fullWidth
                   label="Dashboard URL"
                   value={extensionUrl}
-                  InputProps={{ readOnly: true }}
+                  slotProps={{ input: { readOnly: true } }}
                   onFocus={(event) => event.target.select()}
                   helperText="The extension appends /api/v1 automatically."
                 />
@@ -2482,13 +2477,13 @@ export default function SettingsPage() {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               Integration tokens
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               Add scoped token
             </Typography>
           </Stack>
@@ -2538,13 +2533,13 @@ export default function SettingsPage() {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               Credential replacement
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               {credentialTarget?.label}
             </Typography>
           </Stack>
@@ -2568,9 +2563,8 @@ export default function SettingsPage() {
                 <Stack
                   direction="row"
                   spacing={1}
-                  flexWrap="wrap"
                   useFlexGap
-                  sx={{ mt: 1.5 }}
+                  sx={{ mt: 1.5, flexWrap: "wrap" }}
                 >
                   <Button
                     variant="outlined"
@@ -2699,13 +2693,13 @@ export default function SettingsPage() {
           <Stack spacing={0.75}>
             <Typography
               component="span"
-              display="block"
+              sx={{ display: "block" }}
               variant="overline"
               color="primary.main"
             >
               Alert thresholds
             </Typography>
-            <Typography component="span" display="block" variant="h5">
+            <Typography component="span" sx={{ display: "block" }} variant="h5">
               {thresholdDialog?.label}
             </Typography>
           </Stack>
@@ -2828,7 +2822,7 @@ export default function SettingsPage() {
                         }
                       />
                     </Stack>
-                    <Stack direction="row" justifyContent="flex-end">
+                    <Stack direction="row" sx={{ justifyContent: "flex-end" }}>
                       <Button
                         size="small"
                         color="error"
