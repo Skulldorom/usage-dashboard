@@ -253,22 +253,61 @@ def _find_review_limit(data: dict[str, Any]) -> dict[str, Any] | None:
     return None
 
 
+def _coerce_percent(value: Any) -> float | int | None:
+    if isinstance(value, str):
+        cleaned = value.strip().removesuffix("%").strip()
+        try:
+            value = float(cleaned)
+        except ValueError:
+            return None
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    value = max(0, min(100, value))
+    if isinstance(value, int) or float(value).is_integer():
+        return int(value)
+    return float(value)
+
+
+def _window_candidates(limit: dict[str, Any], key: str) -> list[Any]:
+    if key == "primary_window":
+        aliases = ("primary_window", "session_window", "current_window", "primary", "session")
+        tokens = ("primary", "session", "current")
+    else:
+        aliases = ("secondary_window", "weekly_window", "week_window", "weekly", "week", "secondary")
+        tokens = ("secondary", "weekly", "week")
+    candidates = [limit.get(alias) for alias in aliases]
+    for collection_key in ("windows", "rate_limit_windows", "rateLimitWindows"):
+        windows = limit.get(collection_key)
+        if not isinstance(windows, list):
+            continue
+        for item in windows:
+            if not isinstance(item, dict):
+                continue
+            haystack = " ".join(str(item.get(name, "")) for name in ("id", "key", "name", "label", "type", "window", "window_type", "windowType")).lower()
+            if any(token in haystack for token in tokens):
+                candidates.append(item)
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+
 def _window(limit: Any, key: str) -> dict[str, float | int | str | None]:
     if not isinstance(limit, dict):
         return {"used_percent": None, "reset_at": None}
-    window = limit.get(key)
-    if not isinstance(window, dict):
-        return {"used_percent": None, "reset_at": None}
-    used = window.get("used_percent", window.get("percent_used"))
-    if isinstance(used, str):
-        try:
-            used = float(used)
-        except ValueError:
-            used = None
-    if not isinstance(used, int | float):
+    for window in _window_candidates(limit, key):
         used = None
-    reset_at = window.get("reset_at") or window.get("resets_at") or window.get("resetAt")
-    return {"used_percent": used, "reset_at": reset_at if isinstance(reset_at, str) else None}
+        for used_key in ("used_percent", "percent_used", "usage_percent", "used_pct", "usedPct", "usagePct"):
+            used = _coerce_percent(window.get(used_key))
+            if used is not None:
+                break
+        if used is None:
+            for remaining_key in ("remaining_percent", "percent_remaining", "remaining_pct", "remainingPct"):
+                remaining = _coerce_percent(window.get(remaining_key))
+                if remaining is not None:
+                    used = 100 - remaining
+                    break
+        reset_at = window.get("reset_at") or window.get("resets_at") or window.get("resetAt") or window.get("reset_time")
+        if used is not None or isinstance(reset_at, str):
+            return {"used_percent": used, "reset_at": reset_at if isinstance(reset_at, str) else None}
+    return {"used_percent": None, "reset_at": None}
 
 
 def _reset_credits(data: dict[str, Any], codex_limit: Any) -> int | None:

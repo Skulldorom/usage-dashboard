@@ -26,10 +26,17 @@ import {
   chartPoints,
   confidenceColor,
   formatMetricValue,
+  formatPercent,
+  formatTrend,
   isDeltaMetric,
   overviewTotalCards,
   peakLabel,
+  pressureSummaryCards,
+  qualityLabel,
   rangeToParams,
+  riskRows,
+  sortedCapacityProviders,
+  unmeasurableProviders,
 } from '../lib/analyticsFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -305,6 +312,79 @@ function OverviewTotalsCards({ totals }) {
   )
 }
 
+function OverviewSummaryCards({ overview }) {
+  const cards = pressureSummaryCards(overview)
+  return (
+    <Grid container spacing={2}>
+      {cards.map((card) => (
+        <Grid size={{ xs: 12, sm: 6, lg: 3 }} key={card.key}>
+          <Box className="summary-card glass-panel">
+            <div className="summary-label">{card.label}</div>
+            <div className="summary-value">{card.value}</div>
+            <Typography variant="caption" color="text.secondary">{card.detail}</Typography>
+          </Box>
+        </Grid>
+      ))}
+    </Grid>
+  )
+}
+
+function CapacityBars({ providers }) {
+  const measurable = sortedCapacityProviders(providers)
+  const unavailable = unmeasurableProviders(providers)
+  return (
+    <Stack spacing={1.5}>
+      {measurable.length === 0 && <Typography variant="body2" color="text.secondary">No providers expose normalizable quota data yet.</Typography>}
+      {measurable.map((row) => (
+        <Box key={row.config_id}>
+          <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
+            <Typography variant="body2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+            <Typography variant="body2" color="text.secondary">{formatPercent(row.utilization_pct)} used</Typography>
+          </Stack>
+          <Box className={`capacity-bar capacity-bar-${row.utilization_pct >= 85 ? 'critical' : row.utilization_pct >= 70 ? 'warning' : 'normal'}`}>
+            <Box sx={{ width: `${Math.max(0, Math.min(100, row.utilization_pct))}%` }} />
+          </Box>
+          <Typography variant="caption" color="text.secondary">
+            {formatPercent(row.remaining_pct)} remaining{row.reset_at ? ` · resets ${new Date(row.reset_at).toLocaleString()}` : ''}
+          </Typography>
+        </Box>
+      ))}
+      {unavailable.length > 0 && (
+        <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', pt: 1 }}>
+          {unavailable.map((row) => (
+            <Chip key={row.config_id} size="small" variant="outlined" label={`${row.provider}: ${row.exclusion_reason || 'No quota available'}`} />
+          ))}
+        </Stack>
+      )}
+    </Stack>
+  )
+}
+
+function AttentionRisks({ overview }) {
+  const rows = riskRows(overview)
+  if (rows.length === 0) {
+    return <Typography variant="body2" color="text.secondary">No provider currently crosses the attention threshold.</Typography>
+  }
+  return (
+    <Grid container spacing={2}>
+      {rows.map((row) => (
+        <Grid size={{ xs: 12, md: 6 }} key={row.config_id}>
+          <Box className={`risk-card risk-card-${row.state || 'warning'}`}>
+            <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
+              <Typography variant="subtitle2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+              <Chip size="small" color={(row.state === 'critical' || row.state === 'exhausted') ? 'error' : 'warning'} label={row.state || 'warning'} />
+            </Stack>
+            <Typography variant="body2" sx={{ mt: 0.75 }}>{formatPercent(row.utilization_pct)} used</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {row.reason || `${formatPercent(row.remaining_pct)} remaining`}{row.forecast_pct ? ` · projected ${formatPercent(row.forecast_pct)}` : ''}
+            </Typography>
+          </Box>
+        </Grid>
+      ))}
+    </Grid>
+  )
+}
+
 function ProviderComparisonTable({ providers }) {
   if (!providers || providers.length === 0) {
     return <Typography variant="body2" color="text.secondary">No provider data to compare yet.</Typography>
@@ -314,20 +394,22 @@ function ProviderComparisonTable({ providers }) {
       <thead>
         <tr>
           <th>Provider</th>
-          <th>Usage</th>
-          <th>Share</th>
-          <th>Quota used</th>
-          <th>Trend</th>
+          <th>Current usage</th>
+          <th>Capacity</th>
+          <th>Burn/Trend</th>
+          <th>Forecast/Reset</th>
+          <th>Data</th>
         </tr>
       </thead>
       <tbody>
         {providers.map((row) => (
           <tr key={row.config_id}>
             <td>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</td>
-            <td>{formatMetricValue(row.value, row.unit)}</td>
-            <td>{row.share_pct === null || row.share_pct === undefined ? '—' : `${row.share_pct}%`}</td>
-            <td>{row.utilization_pct === null || row.utilization_pct === undefined ? '—' : `${row.utilization_pct}%`}</td>
-            <td>{row.trend_pct === null || row.trend_pct === undefined ? '—' : `${row.trend_pct > 0 ? '+' : ''}${row.trend_pct}%`}</td>
+            <td>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</td>
+            <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : `${formatPercent(row.utilization_pct)} used`}</td>
+            <td>{row.utilization_trend_pct !== null && row.utilization_trend_pct !== undefined ? formatTrend(row.utilization_trend_pct, ' pts') : formatTrend(row.trend_pct)}</td>
+            <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '—'}</td>
+            <td><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} /></td>
           </tr>
         ))}
       </tbody>
@@ -565,17 +647,35 @@ export default function UsagePage() {
 
           {selectedId === 'all' && overview && (
             <Stack spacing={2.5}>
-              <OverviewTotalsCards totals={overview.totals} />
+              <OverviewSummaryCards overview={overview} />
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
-                  <Typography variant="overline" color="primary.main">Quota utilization</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Percentage of each provider's own quota consumed.</Typography>
+                  <Typography variant="overline" color="primary.main">Current capacity across providers</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Sorted by normalized quota utilization. Providers without a known quota are excluded rather than treated as 0%.</Typography>
+                  <CapacityBars providers={overview.providers} />
+                </CardContent>
+              </Card>
+              <Card variant="outlined" className="glass-panel">
+                <CardContent>
+                  <Typography variant="overline" color="primary.main">Capacity over time</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Historical 0–100% utilization overlay. Gaps remain missing data, not zero.</Typography>
                   <UtilizationChart comparison={overview.comparison} />
                 </CardContent>
               </Card>
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
-                  <Typography variant="overline" color="primary.main">By provider</Typography>
+                  <Typography variant="overline" color="primary.main">Attention / Risks</Typography>
+                  <Box sx={{ mt: 1 }}><AttentionRisks overview={overview} /></Box>
+                </CardContent>
+              </Card>
+              <Box>
+                <Typography variant="overline" color="primary.main">Native totals</Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Measured usage grouped by compatible unit. Unlike units are never added together.</Typography>
+                <OverviewTotalsCards totals={overview.totals} />
+              </Box>
+              <Card variant="outlined" className="glass-panel">
+                <CardContent>
+                  <Typography variant="overline" color="primary.main">Provider comparison</Typography>
                   <Box sx={{ mt: 1 }}><ProviderComparisonTable providers={overview.providers} /></Box>
                 </CardContent>
               </Card>

@@ -32,7 +32,10 @@ from app.analytics.schemas import (
     AnalyticsTimeseries,
     CoverageInfo,
     OverviewComparisonSeries,
+    OverviewCoverage,
+    OverviewPressure,
     OverviewProvider,
+    OverviewRisk,
 )
 from app.analytics.types import Observation
 from app.analytics.capabilities import overview_metric
@@ -551,6 +554,53 @@ def _period_trend(observations: list[Observation], metric: str | None, start: da
     return None
 
 
+def _latest_point(observations: list[Observation], metric: str, *, end: datetime | None = None) -> Observation | None:
+    points = [obs for obs in observations if obs.metric == metric and obs.kind == "point" and (end is None or obs.observed_at <= end)]
+    return max(points, key=lambda obs: obs.observed_at) if points else None
+
+
+def _overview_value(observations: list[Observation], metric: str | None, spec: dict | None, start: datetime, end: datetime) -> float | None:
+    if metric is None:
+        return None
+    metric_type = (spec or {}).get("type", "gauge")
+    if metric_type in ("counter", "rate_limit"):
+        value = _metric_delta_sum(observations, metric, start, end)
+        has_delta = any(obs.kind == "delta" and obs.metric == metric and start <= obs.observed_at < end for obs in observations)
+        return value if has_delta else None
+    latest = _latest_point(observations, metric, end=end)
+    return latest.value if latest is not None else None
+
+
+def _utilization_trend(current: float | None, previous: float | None) -> float | None:
+    if current is None or previous is None:
+        return None
+    return round(current - previous, 1)
+
+
+def _quality_state(*, has_observations: bool, has_utilization: bool, native_history: bool, supported: bool, coverage: float) -> tuple[str, str, str | None]:
+    if not has_observations:
+        return "unavailable", "unavailable", "No current analytics observations"
+    if coverage and coverage < 0.5:
+        return "stale", "stale", "Analytics data coverage is low"
+    if has_utilization and native_history:
+        return "full", "measurable", None
+    if has_utilization:
+        return "partial", "measurable", None
+    if supported:
+        return "limited", "native-only", "No normalizable quota/capacity metric"
+    return "limited", "native-only", "Provider does not expose advanced analytics"
+
+
+def _risk_state(utilization_pct: float) -> str:
+    if utilization_pct >= 95:
+        return "exhausted"
+    if utilization_pct >= 85:
+        return "critical"
+    if utilization_pct >= 70:
+        return "warning"
+    return "normal"
+
+
 @router.get(
     "/overview",
     response_model=AnalyticsOverview,
@@ -577,27 +627,44 @@ async def overview(
     totals: dict[str, float] = {}
     providers: list[OverviewProvider] = []
     comparison: list[OverviewComparisonSeries] = []
+    risks: list[OverviewRisk] = []
+    current_utilizations: list[float] = []
+    previous_utilizations: list[float] = []
+    providers_with_history = 0
+    providers_with_forecasts = 0
+    stale_or_unavailable = 0
+    span = end - start
 
     for config in configs:
         capabilities = _capabilities_for(config.provider)
         observations = await _load_observations(session, config.id)
+        cov = series_coverage(observations)
+        conf = confidence_level(observations, coverage=cov["coverage"])["level"]
+        if bool(capabilities.get("native_history")):
+            providers_with_history += 1
 
         # Headline is the single explicitly declared overview metric — never a
         # sum of same-unit metrics, so overlapping windows (e.g. daily/weekly/
         # monthly counters) can't inflate the value or its share.
         headline = overview_metric(capabilities) if capabilities else None
         headline_metric_name: str | None = None
+        headline_spec: dict | None = None
         headline_unit: str | None = None
         headline_value: float | None = None
         if headline:
             headline_metric_name, headline_spec = headline
             headline_unit = headline_spec.get("unit")
-            headline_value = _metric_delta_sum(observations, headline_metric_name, start, end)
-            if headline_unit and headline_unit != "%":
+            headline_value = _overview_value(observations, headline_metric_name, headline_spec, start, end)
+            if headline_unit and headline_unit != "%" and headline_value is not None:
                 totals[headline_unit] = totals.get(headline_unit, 0.0) + headline_value
 
+        util_metric_name: str | None = None
         util_pct: float | None = None
+        previous_util_pct: float | None = None
+        remaining_pct: float | None = None
+        reset_at: datetime | None = None
         util_buckets = None
+        forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
         if util:
             util_metric_name, util_spec = util
@@ -611,29 +678,75 @@ async def overview(
                 point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
             )
             if util_obs:
+                providers_with_forecasts += 1
                 latest = max(util_obs, key=lambda obs: obs.observed_at)
                 util_pct = latest.value
+                remaining_pct = round(max(0.0, 100.0 - util_pct), 4)
+                reset_at = latest.reset_at or _latest_reset_at(point_obs)
+                current_utilizations.append(util_pct)
+                previous_points = [obs for obs in util_obs if start - span <= obs.observed_at < start]
+                if previous_points:
+                    previous_util_pct = max(previous_points, key=lambda obs: obs.observed_at).value
+                    previous_utilizations.append(previous_util_pct)
                 util_buckets = fill_buckets(
                     bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
                     interval=interval, start=start, end=end, tz=timezone,
                 )
 
-        cov = series_coverage(observations)
-        providers.append(
-            OverviewProvider(
-                config_id=config.id,
-                provider=config.provider,
-                label=config.label,
-                unit=headline_unit,
-                value=round(headline_value, 4) if headline_value is not None else None,
-                utilization_pct=round(util_pct, 4) if util_pct is not None else None,
-                trend_pct=_period_trend(observations, headline_metric_name, start, end),
-                coverage=cov["coverage"],
-                confidence=confidence_level(observations, coverage=cov["coverage"])["level"],
-            )
+        quality, data_state, exclusion_reason = _quality_state(
+            has_observations=bool(observations),
+            has_utilization=util_pct is not None,
+            native_history=bool(capabilities.get("native_history")),
+            supported=bool(capabilities.get("supported")),
+            coverage=cov["coverage"],
         )
+        if quality in {"stale", "unavailable"}:
+            stale_or_unavailable += 1
 
-        if util_buckets is not None:
+        provider = OverviewProvider(
+            config_id=config.id,
+            provider=config.provider,
+            label=config.label,
+            metric=headline_metric_name,
+            unit=headline_unit,
+            value=round(headline_value, 4) if headline_value is not None else None,
+            utilization_metric=util_metric_name,
+            utilization_pct=round(util_pct, 4) if util_pct is not None else None,
+            remaining_pct=remaining_pct,
+            reset_at=reset_at,
+            trend_pct=_period_trend(observations, headline_metric_name, start, end),
+            utilization_trend_pct=_utilization_trend(util_pct, previous_util_pct),
+            forecast_pct=forecast_pct,
+            quality=quality,
+            data_state=data_state,
+            exclusion_reason=exclusion_reason if util_pct is None else None,
+            coverage=cov["coverage"],
+            confidence=conf,
+        )
+        providers.append(provider)
+
+        if util_pct is not None:
+            state = _risk_state(util_pct)
+            if state != "normal":
+                reason = f"{round(util_pct, 1)}% used"
+                if reset_at is not None:
+                    reason += f" · resets {reset_at.isoformat()}"
+                risks.append(
+                    OverviewRisk(
+                        config_id=config.id,
+                        provider=config.provider,
+                        label=config.label,
+                        utilization_pct=round(util_pct, 4),
+                        remaining_pct=remaining_pct,
+                        reset_at=reset_at,
+                        forecast_pct=forecast_pct,
+                        confidence=conf,
+                        state=state,
+                        reason=reason,
+                    )
+                )
+
+        if util_buckets is not None and util_metric_name is not None:
             comparison.append(
                 OverviewComparisonSeries(
                     config_id=config.id,
@@ -651,9 +764,35 @@ async def overview(
             if total > 0:
                 provider.share_pct = round(provider.value / total * 100, 2)
 
+    highest = max((provider for provider in providers if provider.utilization_pct is not None), key=lambda row: row.utilization_pct, default=None)
+    provider_pressure_pct = round(sum(current_utilizations) / len(current_utilizations), 4) if current_utilizations else None
+    previous_pressure_pct = round(sum(previous_utilizations) / len(previous_utilizations), 4) if previous_utilizations else None
+    pressure_trend_pct = _utilization_trend(provider_pressure_pct, previous_pressure_pct)
+    coverage = OverviewCoverage(
+        measurable_provider_count=len(current_utilizations),
+        total_provider_count=len(configs),
+        providers_with_history=providers_with_history,
+        providers_with_forecasts=providers_with_forecasts,
+        stale_or_unavailable_provider_count=stale_or_unavailable,
+    )
+    pressure = OverviewPressure(
+        provider_pressure_pct=provider_pressure_pct,
+        measurable_provider_count=len(current_utilizations),
+        total_provider_count=len(configs),
+        trend_pct=pressure_trend_pct,
+        coverage=coverage,
+    )
+
     return AnalyticsOverview(
         period={"start": start.isoformat(), "end": end.isoformat()},
         totals={unit: round(value, 4) for unit, value in totals.items()},
+        provider_pressure_pct=provider_pressure_pct,
+        measurable_provider_count=len(current_utilizations),
+        total_provider_count=len(configs),
+        pressure=pressure,
+        highest_utilization=highest,
+        coverage=coverage,
+        risks=sorted(risks, key=lambda risk: risk.utilization_pct, reverse=True),
         providers=providers,
         comparison=comparison,
     )
