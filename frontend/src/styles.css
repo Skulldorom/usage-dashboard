@@ -361,19 +361,6 @@ input {
   color: #fff;
   font-weight: 800;
 }
-.overall-average {
-  margin: 14px 0;
-  padding: 13px;
-  border: 1px solid rgba(6, 200, 255, 0.16);
-  border-radius: 13px;
-  color: #dff8ff;
-  background: rgba(6, 200, 255, 0.055);
-  cursor: help;
-}
-.overall-average strong {
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
 .overall-metric-list {
   margin-top: 14px;
 }
@@ -390,6 +377,39 @@ input {
 }
 .hoverable-graph:hover .MuiLinearProgress-bar {
   filter: drop-shadow(0 0 8px rgba(6, 200, 255, 0.5));
+}
+
+.summary-card {
+  height: 100%;
+  min-height: 126px;
+  padding: 22px;
+  border-radius: 17px;
+}
+.summary-card::before {
+  content: "";
+  position: absolute;
+  width: 90px;
+  height: 90px;
+  right: -32px;
+  top: -35px;
+  border: 1px solid rgba(6, 200, 255, 0.18);
+  transform: rotate(45deg);
+}
+.summary-label {
+  color: #898092;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+.summary-value {
+  margin-top: 10px;
+  color: #fff;
+  font-size: 1.8rem;
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
 }
 
 .provider-card {

@@ -107,7 +107,7 @@ describe('firecrawlSummary', () => {
 describe('overallUsageGroups', () => {
   const items = [
     {
-      config: { id: 1, provider: 'codex', label: 'Codex', is_visible: true },
+      config: { id: 1, provider: 'codex', label: 'main', is_visible: true },
       latest: {
         metrics: [
           { label: 'session_used_percent', value: 25, unit: '%' },
@@ -116,7 +116,7 @@ describe('overallUsageGroups', () => {
       },
     },
     {
-      config: { id: 2, provider: 'firecrawl', label: 'Firecrawl', is_visible: true },
+      config: { id: 2, provider: 'firecrawl', label: 'Firecrawl Prod', is_visible: true },
       latest: {
         metrics: [
           { label: 'usage_percent', value: 80, unit: '%' },
@@ -134,17 +134,21 @@ describe('overallUsageGroups', () => {
   it('separates percentage metrics from unit metrics', () => {
     const groups = overallUsageGroups(items)
     expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['session remaining percent', 'usage percent'])
-    expect(groups.percent.average).toBe(77.5)
-    expect(groups.units.map((group) => group.unit)).toEqual(['credits', 'units'])
+    expect(groups.units.metrics.map((metric) => metric.label)).toEqual(['reset credits available', 'credits remaining', 'pages'])
   })
 
-  it('aggregates unit totals and optional maximum percentages', () => {
+  it('uses the provider type as label and drops the generic "main" label', () => {
     const groups = overallUsageGroups(items)
-    const credits = groups.units.find((group) => group.unit === 'credits')
-    expect(credits.total).toBe(60)
-    expect(credits.maximum).toBe(120)
-    expect(credits.percent).toBe(50)
-    expect(credits.tooltip).toContain('60 credits of 120')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'session remaining percent').providerLabel).toBe('codex')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('firecrawl · Firecrawl Prod')
+  })
+
+  it('does not aggregate unit metrics across providers', () => {
+    const groups = overallUsageGroups(items)
+    const credits = groups.units.metrics.filter((metric) => metric.unit === 'credits')
+    expect(credits).toHaveLength(2)
+    expect(credits.map((metric) => metric.numericValue)).toEqual([10, 50])
+    expect(credits.every((metric) => metric.percent !== null)).toBe(true)
   })
 })
 

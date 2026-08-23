@@ -56,7 +56,9 @@ function displaySnapshot(item) {
 }
 
 function displayProviderLabel(item) {
-  return item?.config?.label || item?.config?.provider || 'Provider'
+  const provider = item?.config?.provider || 'Provider'
+  const label = item?.config?.label
+  return label && label !== 'main' && label !== provider ? `${provider} · ${label}` : provider
 }
 
 function metricTooltip({ providerLabel, metricLabel, value }) {
@@ -65,7 +67,7 @@ function metricTooltip({ providerLabel, metricLabel, value }) {
 
 export function overallUsageGroups(items) {
   const percentMetrics = []
-  const unitGroups = new Map()
+  const unitMetrics = []
 
   items
     .filter((item) => item?.config?.is_visible)
@@ -85,7 +87,6 @@ export function overallUsageGroups(items) {
           provider,
           providerLabel,
           label,
-          rawLabel: metric.label,
           value,
           numericValue: metric.value,
           unit: metric.unit || 'units',
@@ -94,44 +95,25 @@ export function overallUsageGroups(items) {
         }
 
         if (isPercentBasedMetric(metric)) {
-          percentMetrics.push({
-            ...entry,
-            percent: percent ?? Math.min(100, Math.max(0, metric.value)),
-          })
-          return
-        }
-
-        const unit = metric.unit || 'units'
-        const group = unitGroups.get(unit) || { unit, total: 0, maximum: 0, entries: [], completeMaximum: true }
-        group.total += metric.value
-        if (typeof metric.maximum === 'number' && metric.maximum > 0) {
-          group.maximum += metric.maximum
+          percentMetrics.push({ ...entry, percent: percent ?? Math.min(100, Math.max(0, metric.value)) })
         } else {
-          group.completeMaximum = false
+          unitMetrics.push(entry)
         }
-        group.entries.push(entry)
-        unitGroups.set(unit, group)
       })
     })
 
-  const percentAverage = percentMetrics.length
-    ? percentMetrics.reduce((sum, metric) => sum + metric.percent, 0) / percentMetrics.length
-    : null
+  const byProviderThenLabel = (a, b) => a.providerLabel.localeCompare(b.providerLabel) || a.label.localeCompare(b.label)
+  const byUnitThenLabel = (a, b) => a.unit.localeCompare(b.unit) || a.providerLabel.localeCompare(b.providerLabel) || a.label.localeCompare(b.label)
 
   return {
     percent: {
       label: 'Percentage metrics',
-      average: percentAverage,
-      metrics: percentMetrics.sort((a, b) => a.providerLabel.localeCompare(b.providerLabel) || a.label.localeCompare(b.label)),
+      metrics: percentMetrics.sort(byProviderThenLabel),
     },
-    units: [...unitGroups.values()]
-      .map((group) => ({
-        ...group,
-        percent: group.completeMaximum && group.maximum > 0 ? Math.min(100, Math.max(0, (group.total / group.maximum) * 100)) : null,
-        tooltip: `${group.total} ${group.unit}${group.completeMaximum && group.maximum > 0 ? ` of ${group.maximum}` : ''} across ${group.entries.length} metric${group.entries.length === 1 ? '' : 's'}`,
-        entries: group.entries.sort((a, b) => b.numericValue - a.numericValue),
-      }))
-      .sort((a, b) => a.unit.localeCompare(b.unit)),
+    units: {
+      label: 'Unit metrics',
+      metrics: unitMetrics.sort(byUnitThenLabel),
+    },
   }
 }
 
