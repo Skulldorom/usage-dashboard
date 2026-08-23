@@ -252,8 +252,8 @@ function UsageHistory({ config, latest }) {
               <Stack
                 className="metric-header"
                 direction="row"
-                justifyContent="space-between"
-                gap={1}
+                spacing={1}
+                sx={{ justifyContent: "space-between" }}
               >
                 <Typography
                   variant="body2"
@@ -296,8 +296,8 @@ function OverallUsagePanel({ groups }) {
       <Stack
         className="overall-usage-heading"
         direction={{ xs: "column", md: "row" }}
-        justifyContent="space-between"
-        gap={1.5}
+        spacing={1.5}
+        sx={{ justifyContent: "space-between" }}
       >
         <Box>
           <Typography variant="overline" color="primary.main">
@@ -336,8 +336,8 @@ function OverallUsagePanel({ groups }) {
                 >
                   <Stack
                     direction="row"
-                    justifyContent="space-between"
-                    gap={2}
+                    spacing={2}
+                    sx={{ justifyContent: "space-between" }}
                     className="metric-header"
                   >
                     <Typography className="metric-label" variant="body2">
@@ -366,9 +366,11 @@ function OverallUsagePanel({ groups }) {
           <Box className="overall-metric-group">
             <Stack
               direction="row"
-              justifyContent="space-between"
-              alignItems="baseline"
-              gap={2}
+              spacing={2}
+              sx={{
+                justifyContent: "space-between",
+                alignItems: "baseline",
+              }}
             >
               <Typography variant="subtitle1">Unit based</Typography>
               <Typography variant="caption" color="text.secondary">
@@ -386,8 +388,8 @@ function OverallUsagePanel({ groups }) {
                 >
                   <Stack
                     direction="row"
-                    justifyContent="space-between"
-                    gap={2}
+                    spacing={2}
+                    sx={{ justifyContent: "space-between" }}
                     className="metric-header"
                   >
                     <Typography className="metric-label" variant="body2">
@@ -442,15 +444,18 @@ function UsageCard({ item, icon }) {
         <Stack
           className="provider-header"
           direction="row"
-          justifyContent="space-between"
-          alignItems="flex-start"
           spacing={2}
+          sx={{ justifyContent: "space-between", alignItems: "flex-start" }}
         >
-          <Stack direction="row" spacing={1.5} alignItems="center" minWidth={0}>
+          <Stack
+            direction="row"
+            spacing={1.5}
+            sx={{ alignItems: "center", minWidth: 0 }}
+          >
             <div className="provider-logo" aria-hidden="true">
               <ProviderIcon icon={icon} />
             </div>
-            <Box minWidth={0}>
+            <Box sx={{ minWidth: 0 }}>
               <div className="provider-name">{config.provider}</div>
               <Typography variant="h6" noWrap>
                 {config.label}
@@ -480,8 +485,8 @@ function UsageCard({ item, icon }) {
         <Stack
           className="health-line"
           direction="row"
-          alignItems="center"
           spacing={1}
+          sx={{ alignItems: "center" }}
         >
           <span
             className={`health-dot health-dot-${healthState.status}`}
@@ -511,8 +516,8 @@ function UsageCard({ item, icon }) {
               <Stack
                 className="metric-header"
                 direction="row"
-                justifyContent="space-between"
-                gap={2}
+                spacing={2}
+                sx={{ justifyContent: "space-between" }}
               >
                 <Typography className="metric-label" variant="body2">
                   {firecrawlComposite.label}
@@ -535,8 +540,8 @@ function UsageCard({ item, icon }) {
                   <Stack
                     className="metric-header"
                     direction="row"
-                    justifyContent="space-between"
-                    gap={2}
+                    spacing={2}
+                    sx={{ justifyContent: "space-between" }}
                   >
                     <Typography className="metric-label" variant="body2">
                       {formatMetricLabel(metric.label, config.provider)}
@@ -642,8 +647,8 @@ export default function DashboardPage() {
         <Box className="poll-status glass-panel">
           <Stack
             direction={{ xs: "column", sm: "row" }}
-            justifyContent="space-between"
-            gap={1.5}
+            spacing={1.5}
+            sx={{ justifyContent: "space-between" }}
           >
             <Box>
               <Typography variant="overline" color="primary.main">
@@ -678,7 +683,7 @@ export default function DashboardPage() {
       )}
       {loading && !homepage && (
         <Box className="loading-state">
-          <Stack alignItems="center" spacing={2}>
+          <Stack spacing={2} sx={{ alignItems: "center" }}>
             <CircularProgress />
             <Typography color="text.secondary">
               Contacting the provider fleet…

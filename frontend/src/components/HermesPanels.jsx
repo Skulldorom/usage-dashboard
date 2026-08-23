@@ -93,7 +93,7 @@ export function HermesBreakdownPanel({ range }) {
     return (
       <Card variant="outlined" className="glass-panel">
         <CardContent>
-          <Stack direction="row" spacing={1} alignItems="center">
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <CircularProgress size={16} />
             <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
           </Stack>
@@ -127,11 +127,11 @@ export function HermesBreakdownPanel({ range }) {
     <Stack spacing={2.5}>
       <Card variant="outlined" className="glass-panel">
         <CardContent>
-          <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
             <HubRoundedIcon color="primary" fontSize="small" />
             <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
           </Stack>
-          <Typography variant="caption" color="text.secondary" display="block">
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
             Observed usage flowing through Hermes Agent. Supplemental to provider-reported totals.
           </Typography>
           <Grid container spacing={1.5} sx={{ mt: 0.5 }}>
@@ -194,14 +194,14 @@ export function AttributionPanel({ configId }) {
   return (
     <Card variant="outlined" className="glass-panel">
       <CardContent>
-        <Stack direction="row" spacing={1} alignItems="center" mb={1}>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
           <HubRoundedIcon color="primary" fontSize="small" />
           <Typography variant="overline" color="primary.main">Hermes attribution</Typography>
         </Stack>
         <Stack spacing={1}>
           {data.metrics.map((m) => (
             <Box key={m.metric}>
-              <Stack direction="row" justifyContent="space-between" gap={2}>
+              <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between' }}>
                 <Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{m.metric.replaceAll('_', ' ')}</Typography>
                 <Typography variant="body2" color="text.secondary">{attributionLine(m)}</Typography>
               </Stack>
@@ -215,7 +215,7 @@ export function AttributionPanel({ configId }) {
             windows, or estimated telemetry.
           </Alert>
         )}
-        <Typography variant="caption" color="text.secondary" display="block" mt={1}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
           Hermes usage is an observed subset and is never added to provider totals.
         </Typography>
       </CardContent>

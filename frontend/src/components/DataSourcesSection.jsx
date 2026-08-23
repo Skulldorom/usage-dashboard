@@ -205,7 +205,7 @@ export default function DataSourcesSection() {
             separate usage.
           </Typography>
         </Box>
-        <Stack direction="row" spacing={1} alignItems="center">
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Button variant="outlined" size="small" startIcon={<AddRoundedIcon />} onClick={openAdd}>
             Add Hermes source
           </Button>
@@ -219,7 +219,7 @@ export default function DataSourcesSection() {
           <Alert severity={actionResult.type} sx={{ mb: 2 }}>{actionResult.text}</Alert>
         )}
         {loading ? (
-          <Box className="loading-state"><Stack alignItems="center" spacing={1}><CircularProgress size={22} /></Stack></Box>
+          <Box className="loading-state"><Stack spacing={1} sx={{ alignItems: 'center' }}><CircularProgress size={22} /></Stack></Box>
         ) : sources.length === 0 ? (
           <Box className="empty-state">
             <div className="empty-state-icon"><HubRoundedIcon /></div>
@@ -237,7 +237,7 @@ export default function DataSourcesSection() {
                 <Box key={source.id} className="integration-card">
                   <div className="integration-card-header">
                     <Box>
-                      <Stack direction="row" spacing={1} alignItems="center">
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                         <Typography component="h3" variant="subtitle1">{source.name}</Typography>
                         <Chip size="small" color={STATUS_COLOR[status]} label={status.replace('_', ' ')} />
                       </Stack>
@@ -251,17 +251,17 @@ export default function DataSourcesSection() {
                         </Typography>
                       )}
                       {source.status?.last_success_at && (
-                        <Typography variant="caption" color="text.secondary" display="block">
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                           Last sync: {source.status.last_success_at}
                         </Typography>
                       )}
                       {source.status?.latest_error && (
-                        <Typography variant="caption" color="error.main" display="block">
+                        <Typography variant="caption" color="error.main" sx={{ display: 'block' }}>
                           {source.status.latest_error}
                         </Typography>
                       )}
                     </Box>
-                    <Stack direction="row" spacing={1} alignItems="center">
+                    <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                       <Tooltip title="Test connection">
                         <span>
                           <IconButton size="small" disabled={actionBusyId === source.id} onClick={() => runAction(source.id, 'test')} aria-label={`Test ${source.name}`}>
