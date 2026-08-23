@@ -104,3 +104,73 @@ export function overviewTotalCards(totals) {
     .map(([unit, value]) => ({ unit, value, label: unitLabel(unit) }))
     .sort((a, b) => b.value - a.value)
 }
+
+export function formatPercent(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
+  return `${compactNumber(value)}%`
+}
+
+export function formatTrend(value, suffix = '%') {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'No comparable data'
+  const sign = Number(value) > 0 ? '+' : ''
+  return `${sign}${compactNumber(value)}${suffix}`
+}
+
+export function qualityLabel(quality) {
+  return {
+    full: 'Full',
+    partial: 'Partial',
+    limited: 'Limited',
+    estimated: 'Estimated',
+    stale: 'Stale',
+    unavailable: 'Unavailable',
+  }[quality] || 'Limited'
+}
+
+export function pressureSummaryCards(overview) {
+  const pressure = overview?.pressure || {}
+  const coverage = overview?.coverage || pressure.coverage || {}
+  const highest = overview?.highest_utilization
+  return [
+    {
+      key: 'pressure',
+      label: 'Provider Pressure',
+      value: formatPercent(overview?.provider_pressure_pct ?? pressure.provider_pressure_pct),
+      detail: `${coverage.measurable_provider_count ?? 0} of ${coverage.total_provider_count ?? 0} providers measurable`,
+    },
+    {
+      key: 'highest',
+      label: 'Highest Utilization',
+      value: highest ? `${highest.provider}${highest.label && highest.label !== 'main' ? ` · ${highest.label}` : ''}` : '—',
+      detail: highest ? `${formatPercent(highest.utilization_pct)} used${highest.reset_at ? ` · resets ${new Date(highest.reset_at).toLocaleString()}` : ''}` : 'No measurable providers',
+    },
+    {
+      key: 'burn',
+      label: 'Burn Rate / Pace',
+      value: formatTrend(pressure.trend_pct ?? null, ' pts'),
+      detail: 'Normalized movement vs. previous comparable period',
+    },
+    {
+      key: 'coverage',
+      label: 'Data Coverage',
+      value: `${coverage.providers_with_history ?? 0} history · ${coverage.providers_with_forecasts ?? 0} forecasts`,
+      detail: `${coverage.stale_or_unavailable_provider_count ?? 0} stale/unavailable`,
+    },
+  ]
+}
+
+export function sortedCapacityProviders(providers) {
+  return (providers || [])
+    .filter((provider) => typeof provider.utilization_pct === 'number')
+    .slice()
+    .sort((a, b) => b.utilization_pct - a.utilization_pct)
+}
+
+export function unmeasurableProviders(providers) {
+  return (providers || []).filter((provider) => typeof provider.utilization_pct !== 'number')
+}
+
+export function riskRows(overview) {
+  if (overview?.risks?.length) return overview.risks
+  return sortedCapacityProviders(overview?.providers).filter((provider) => provider.utilization_pct >= 70)
+}

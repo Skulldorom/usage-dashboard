@@ -6,12 +6,19 @@ import {
   compactNumber,
   confidenceColor,
   formatMetricValue,
+  formatPercent,
+  formatTrend,
   isDeltaMetric,
   overviewTotalCards,
   peakLabel,
+  pressureSummaryCards,
+  qualityLabel,
   primaryValue,
   rangeToParams,
+  riskRows,
+  sortedCapacityProviders,
   unitLabel,
+  unmeasurableProviders,
 } from './analyticsFormat.js'
 
 describe('compactNumber', () => {
@@ -142,5 +149,50 @@ describe('overviewTotalCards', () => {
   it('returns an empty list for empty totals', () => {
     expect(overviewTotalCards(null)).toEqual([])
     expect(overviewTotalCards({})).toEqual([])
+  })
+})
+
+describe('overview pressure helpers', () => {
+  const overview = {
+    provider_pressure_pct: 62.5,
+    pressure: { trend_pct: 7.5 },
+    coverage: {
+      measurable_provider_count: 2,
+      total_provider_count: 3,
+      providers_with_history: 1,
+      providers_with_forecasts: 2,
+      stale_or_unavailable_provider_count: 0,
+    },
+    highest_utilization: { provider: 'openrouter', label: 'main', utilization_pct: 75 },
+    providers: [
+      { config_id: 1, provider: 'codex', utilization_pct: 50, quality: 'partial' },
+      { config_id: 2, provider: 'openrouter', utilization_pct: 75, quality: 'partial' },
+      { config_id: 3, provider: 'deepseek', utilization_pct: null, exclusion_reason: 'No normalizable quota/capacity metric' },
+    ],
+    risks: [{ config_id: 2, provider: 'openrouter', utilization_pct: 75, state: 'warning' }],
+  }
+
+  it('formats percent/trend summaries', () => {
+    expect(formatPercent(62.5)).toBe('62.5%')
+    expect(formatTrend(7.5, ' pts')).toBe('+7.5 pts')
+    expect(formatTrend(null)).toBe('No comparable data')
+  })
+
+  it('builds top-level pressure cards with coverage', () => {
+    const cards = pressureSummaryCards(overview)
+    expect(cards[0]).toMatchObject({ label: 'Provider Pressure', value: '62.5%', detail: '2 of 3 providers measurable' })
+    expect(cards[1].detail).toContain('75% used')
+    expect(cards[3].value).toBe('1 history · 2 forecasts')
+  })
+
+  it('sorts measurable providers and separates unmeasurable providers', () => {
+    expect(sortedCapacityProviders(overview.providers).map((p) => p.provider)).toEqual(['openrouter', 'codex'])
+    expect(unmeasurableProviders(overview.providers).map((p) => p.provider)).toEqual(['deepseek'])
+  })
+
+  it('uses backend risks and labels quality states', () => {
+    expect(riskRows(overview)).toEqual(overview.risks)
+    expect(qualityLabel('partial')).toBe('Partial')
+    expect(qualityLabel('wat')).toBe('Limited')
   })
 })

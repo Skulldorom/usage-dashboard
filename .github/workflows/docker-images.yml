@@ -80,6 +80,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.component }} image
+    if: github.event_name != 'pull_request'
     needs: [test-backend, test-frontend]
     runs-on: ubuntu-latest
     strategy:

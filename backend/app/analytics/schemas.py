@@ -113,13 +113,51 @@ class OverviewProvider(BaseModel):
     config_id: int
     provider: str
     label: str
+    metric: str | None = None
     unit: str | None = None
     value: float | None = None
     share_pct: float | None = None
+    utilization_metric: str | None = None
     utilization_pct: float | None = None
+    remaining_pct: float | None = None
+    reset_at: datetime | None = None
     trend_pct: float | None = None
+    utilization_trend_pct: float | None = None
+    forecast_pct: float | None = None
+    quality: str = "limited"
+    data_state: str = "limited"
+    exclusion_reason: str | None = None
     coverage: float = 0.0
     confidence: str = "low"
+
+
+class OverviewCoverage(BaseModel):
+    measurable_provider_count: int = 0
+    total_provider_count: int = 0
+    providers_with_history: int = 0
+    providers_with_forecasts: int = 0
+    stale_or_unavailable_provider_count: int = 0
+
+
+class OverviewPressure(BaseModel):
+    provider_pressure_pct: float | None = None
+    measurable_provider_count: int = 0
+    total_provider_count: int = 0
+    trend_pct: float | None = None
+    coverage: OverviewCoverage
+
+
+class OverviewRisk(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    utilization_pct: float
+    remaining_pct: float | None = None
+    reset_at: datetime | None = None
+    forecast_pct: float | None = None
+    confidence: str = "low"
+    state: str = "normal"
+    reason: str
 
 
 class OverviewComparisonSeries(BaseModel):
@@ -133,5 +171,12 @@ class OverviewComparisonSeries(BaseModel):
 class AnalyticsOverview(BaseModel):
     period: dict
     totals: dict[str, float]
+    provider_pressure_pct: float | None = None
+    measurable_provider_count: int = 0
+    total_provider_count: int = 0
+    pressure: OverviewPressure | None = None
+    highest_utilization: OverviewProvider | None = None
+    coverage: OverviewCoverage | None = None
+    risks: list[OverviewRisk] = []
     providers: list[OverviewProvider]
     comparison: list[OverviewComparisonSeries]

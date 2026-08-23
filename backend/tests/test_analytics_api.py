@@ -397,3 +397,46 @@ async def test_overview_uses_declared_headline_not_sum(sqlite_db):
     row = next(p for p in payload["providers"] if p["provider"] == "openrouter")
     assert row["value"] == 30.0
     assert row["unit"] == "credits"
+
+
+@pytest.mark.asyncio
+async def test_overview_provider_pressure_excludes_unknown_utilization(sqlite_db):
+    Session = sqlite_db
+    codex = await _create_config(Session, provider="codex")
+    openrouter = await _create_config(Session, provider="openrouter")
+    deepseek = await _create_config(Session, provider="deepseek")
+    base = datetime.now(UTC) - timedelta(days=2)
+
+    await _seed_observations(Session, codex, [
+        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=5)},
+    ])
+    await _seed_observations(Session, openrouter, [
+        {"metric": "limit", "value": 100.0, "unit": "credits", "kind": "point", "observed_at": base},
+        {"metric": "limit_remaining", "value": 25.0, "unit": "credits", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=28)},
+        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+    await _seed_observations(Session, deepseek, [
+        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider_pressure_pct"] == 62.5
+    assert payload["measurable_provider_count"] == 2
+    assert payload["total_provider_count"] == 3
+    assert payload["coverage"]["measurable_provider_count"] == 2
+    assert payload["highest_utilization"]["provider"] == "openrouter"
+    assert payload["highest_utilization"]["utilization_pct"] == 75.0
+    assert payload["totals"]["credits"] == 10.0
+    assert payload["totals"]["USD"] == 42.0
+
+    by_provider = {p["provider"]: p for p in payload["providers"]}
+    assert by_provider["codex"]["utilization_pct"] == 50.0
+    assert by_provider["codex"]["remaining_pct"] == 50.0
+    assert by_provider["deepseek"]["utilization_pct"] is None
+    assert by_provider["deepseek"]["exclusion_reason"] == "No normalizable quota/capacity metric"
+    assert payload["risks"][0]["provider"] == "openrouter"
+    assert payload["risks"][0]["state"] == "warning"

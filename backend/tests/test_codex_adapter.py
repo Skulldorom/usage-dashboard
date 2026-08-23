@@ -51,6 +51,53 @@ def test_codex_parser_reports_weekly_left_without_session_usage():
     assert any(m.label == "weekly_remaining_percent" and m.value == 27 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
 
 
+def test_codex_parser_accepts_weekly_window_aliases_and_string_percentages():
+    usage = CodexAdapter.parse_usage({
+        "plan_type": "Team",
+        "rate_limits_by_limit_id": {
+            "codex": {
+                "weekly_window": {"usage_percent": "0%", "reset_time": "2026-08-27T00:00:00Z"},
+            },
+            "code_review": {
+                "weekly_window": {"usage_percent": "90%", "reset_at": "2026-08-27T00:00:00Z"},
+            },
+        },
+    })
+
+    assert usage.summary == "Team - 100% weekly left"
+    assert any(m.label == "weekly_remaining_percent" and m.value == 100 for m in usage.metrics)
+    assert any(m.label == "weekly_reset_at" and m.value == "2026-08-27T00:00:00Z" for m in usage.metrics)
+    assert any(m.label == "review_weekly_remaining_percent" and m.value == 10 for m in usage.metrics)
+
+
+def test_codex_parser_accepts_windows_collection_and_remaining_percent():
+    usage = CodexAdapter.parse_usage({
+        "plan_type": "Pro",
+        "rate_limit": {
+            "windows": [
+                {"type": "session", "remaining_percent": "88"},
+                {"type": "weekly", "remaining_pct": 62.5, "resetAt": "2026-08-28T00:00:00Z"},
+            ],
+        },
+    })
+
+    assert any(m.label == "session_remaining_percent" and m.value == 88 for m in usage.metrics)
+    assert any(m.label == "weekly_remaining_percent" and m.value == 62.5 for m in usage.metrics)
+    assert any(m.label == "weekly_reset_at" and m.value == "2026-08-28T00:00:00Z" for m in usage.metrics)
+
+
+def test_codex_parser_leaves_missing_weekly_window_unavailable():
+    usage = CodexAdapter.parse_usage({
+        "plan_type": "Free",
+        "rate_limit": {
+            "primary_window": {"used_percent": 12, "reset_at": "2026-08-21T00:00:00Z"},
+        },
+    })
+
+    assert any(m.label == "session_remaining_percent" for m in usage.metrics)
+    assert not any(m.label == "weekly_remaining_percent" for m in usage.metrics)
+
+
 def test_codex_credentials_require_refresh_token_inside_encrypted_secret():
     credentials = CodexCredentials.from_secret_json(
         '{"access_token":"access-token","refresh_token":"refresh-token","expires_at":"2026-08-14T12:00:00+00:00"}'
