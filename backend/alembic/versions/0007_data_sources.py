@@ -42,7 +42,7 @@ def upgrade() -> None:
         batch_op.add_column(sa.Column("session_id", sa.String(length=128), nullable=True))
         batch_op.add_column(sa.Column("cost_type", sa.String(length=16), nullable=True))
         batch_op.add_column(sa.Column("provider_mapping", sa.String(length=32), nullable=True))
-        batch_op.add_column(sa.Column("source_event_id", sa.String(length=64), nullable=True))
+        batch_op.add_column(sa.Column("source_event_id", sa.Text(), nullable=True))
         batch_op.create_foreign_key(
             "fk_usage_observations_data_source_id",
             "data_source_configs",

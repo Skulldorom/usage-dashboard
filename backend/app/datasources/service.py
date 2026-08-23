@@ -298,6 +298,9 @@ async def _sync_data_source(
             **diagnostics,
         }
     except Exception as exc:  # noqa: BLE001 - record any failure, never leak tokens
+        await session.rollback()
+        await session.refresh(source)
+        source.last_attempt_at = now
         source.last_failure_at = now
         source.consecutive_failures = (source.consecutive_failures or 0) + 1
         source.latest_error = str(exc)
