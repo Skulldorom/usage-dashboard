@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.core.crypto import CryptoService
 from app.database import get_session
 from app.main import app
-from app.models import AdminCredential, Base, ProviderConfig, UsageObservation
+from app.models import AdminCredential, Base, DataSourceConfig, ProviderConfig, UsageObservation
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 from app.providers.registry import ADAPTERS
 
@@ -440,3 +440,118 @@ async def test_overview_provider_pressure_excludes_unknown_utilization(sqlite_db
     assert by_provider["deepseek"]["exclusion_reason"] == "No normalizable quota/capacity metric"
     assert payload["risks"][0]["provider"] == "openrouter"
     assert payload["risks"][0]["state"] == "warning"
+
+
+@pytest.mark.asyncio
+async def test_hermes_breakdown_includes_source_diagnostics_and_keeps_totals_supplemental(sqlite_db):
+    Session = sqlite_db
+    provider = await _create_config(Session, provider="anthropic")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        source = DataSourceConfig(
+            kind="hermes",
+            name="Hermes main",
+            base_url="http://hermes.local",
+            is_enabled=True,
+            last_attempt_at=now - timedelta(minutes=3),
+            last_success_at=now - timedelta(minutes=3),
+            consecutive_failures=0,
+            extra={"profiles": ["coder"], "provider_mappings": {"claude": "anthropic"}},
+        )
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        session.add_all([
+            UsageObservation(
+                data_source_id=source.id,
+                provider="claude",
+                provider_mapping="anthropic",
+                metric="input_tokens",
+                value=900.0,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=now - timedelta(hours=2),
+                profile="coder",
+                model="claude-sonnet-4",
+                session_id="s1",
+            ),
+            UsageObservation(
+                provider_config_id=provider.id,
+                provider="anthropic",
+                metric="input_tokens",
+                value=2000.0,
+                unit="tokens",
+                kind="delta",
+                source="native",
+                observed_at=now - timedelta(hours=2),
+            ),
+        ])
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        breakdown = await client.get("/api/v1/analytics/hermes", headers=ADMIN_AUTH)
+        overview = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert breakdown.status_code == 200, breakdown.text
+    payload = breakdown.json()
+    assert payload["sources"][0]["name"] == "Hermes main"
+    assert payload["sources"][0]["status"] == "healthy"
+    assert payload["sources"][0]["observations_in_range"] == 1
+    assert payload["sources"][0]["latest_observation_at"] is not None
+    assert payload["sources"][0]["providers_observed"] == ["claude"]
+    assert payload["sources"][0]["providers_unmapped"] == []
+    assert any("filtered to profiles: coder" in item["message"] for item in payload["diagnostics"])
+    totals = {item["metric"]: item["value"] for item in payload["totals"]}
+    assert totals["tokens"] == 900.0
+
+    assert overview.status_code == 200, overview.text
+    # Hermes is supplemental; overview totals stay provider-authoritative only.
+    assert overview.json()["totals"]["tokens"] == 2000.0
+
+
+@pytest.mark.asyncio
+async def test_hermes_breakdown_explains_empty_range_and_unmapped_providers(sqlite_db):
+    Session = sqlite_db
+    await _create_config(Session, provider="anthropic")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        source = DataSourceConfig(
+            kind="hermes",
+            name="Hermes stale",
+            base_url="http://hermes.local",
+            is_enabled=True,
+            last_attempt_at=now - timedelta(days=10),
+            last_success_at=now - timedelta(days=10),
+            consecutive_failures=0,
+        )
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        session.add(
+            UsageObservation(
+                data_source_id=source.id,
+                provider="mystery",
+                provider_mapping="mystery",
+                metric="requests",
+                value=3.0,
+                unit="count",
+                kind="delta",
+                source="hermes",
+                observed_at=now - timedelta(days=40),
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/hermes", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["sources"][0]["observations_in_range"] == 0
+    assert payload["sources"][0]["total_observations"] == 1
+    assert payload["sources"][0]["providers_unmapped"] == ["mystery"]
+    messages = [item["message"] for item in payload["diagnostics"]]
+    assert any("outside the selected range" in message for message in messages)
+    assert any("unmapped providers: mystery" in message for message in messages)
+    assert any("No Hermes observations between" in message for message in messages)

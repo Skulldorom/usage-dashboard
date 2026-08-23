@@ -11,7 +11,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, select
+from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
@@ -42,14 +42,16 @@ from app.analytics.capabilities import overview_metric
 from app.analytics.utilization import utilization_metric, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
-from app.models import ProviderConfig, UsageObservation
+from app.models import DataSourceConfig, ProviderConfig, UsageObservation
 from app.providers.registry import get_adapter_class
 from app.schemas import (
     Attribution,
     AttributionMetric,
     HermesBreakdown,
     HermesBreakdownDaily,
+    HermesDiagnostic,
     HermesGroupRow,
+    HermesSourceSummary,
     HermesTotal,
     ProviderConfigRead,
 )
@@ -829,6 +831,112 @@ def _round_or_none(value: float) -> float | None:
     return round(value, 4) if value else None
 
 
+def _source_status(source: DataSourceConfig) -> str:
+    if source.last_attempt_at is None:
+        return "never_connected"
+    if source.consecutive_failures == 0 and source.last_success_at is not None:
+        return "healthy"
+    return "error"
+
+
+async def _hermes_source_summaries(
+    session: AsyncSession,
+    *,
+    start: datetime,
+    end: datetime,
+) -> list[HermesSourceSummary]:
+    sources = (
+        await session.execute(
+            select(DataSourceConfig)
+            .where(DataSourceConfig.kind == "hermes")
+            .order_by(asc(DataSourceConfig.id))
+        )
+    ).scalars().all()
+    configured_providers = set(
+        (
+            await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True)))
+        ).scalars().all()
+    )
+    summaries: list[HermesSourceSummary] = []
+    for source in sources:
+        base_query = select(UsageObservation).where(
+            UsageObservation.source == "hermes",
+            UsageObservation.data_source_id == source.id,
+        )
+        total_observations = await session.scalar(
+            select(func.count(UsageObservation.id)).where(
+                UsageObservation.source == "hermes",
+                UsageObservation.data_source_id == source.id,
+            )
+        ) or 0
+        observations_in_range = await session.scalar(
+            select(func.count(UsageObservation.id)).where(
+                UsageObservation.source == "hermes",
+                UsageObservation.data_source_id == source.id,
+                UsageObservation.observed_at >= start,
+                UsageObservation.observed_at < end,
+            )
+        ) or 0
+        latest_observation_at = await session.scalar(
+            select(UsageObservation.observed_at)
+            .where(UsageObservation.source == "hermes", UsageObservation.data_source_id == source.id)
+            .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
+            .limit(1)
+        )
+        provider_rows = (await session.execute(base_query.with_only_columns(UsageObservation.provider).distinct())).scalars().all()
+        observed = sorted({str(provider or "unknown") for provider in provider_rows})
+        mappings = dict((source.extra or {}).get("provider_mappings") or {})
+        unmapped = sorted(
+            provider
+            for provider in observed
+            if configured_providers and str(mappings.get(provider, provider)).strip().lower() not in configured_providers
+        )
+        summaries.append(
+            HermesSourceSummary(
+                id=source.id,
+                name=source.name,
+                status=_source_status(source),
+                is_enabled=source.is_enabled,
+                base_url=source.base_url,
+                last_success_at=source.last_success_at,
+                last_attempt_at=source.last_attempt_at,
+                latest_error=source.latest_error,
+                latest_observation_at=_aware(latest_observation_at) if latest_observation_at else None,
+                observations_in_range=observations_in_range,
+                total_observations=total_observations,
+                profiles=list((source.extra or {}).get("profiles") or []),
+                provider_mappings=mappings,
+                providers_observed=observed,
+                providers_unmapped=unmapped,
+            )
+        )
+    return summaries
+
+
+def _hermes_diagnostics(*, sources: list[HermesSourceSummary], rows: list[UsageObservation], start: datetime, end: datetime) -> list[HermesDiagnostic]:
+    diagnostics: list[HermesDiagnostic] = []
+    if not sources:
+        return [HermesDiagnostic(severity="info", message="No Hermes data source is configured. Connect Hermes Agent in Settings → Data sources.")]
+    enabled = [source for source in sources if source.is_enabled]
+    if not enabled:
+        diagnostics.append(HermesDiagnostic(severity="warning", message="All Hermes data sources are disabled."))
+    for source in sources:
+        if source.status == "error":
+            detail = f": {source.latest_error}" if source.latest_error else ""
+            diagnostics.append(HermesDiagnostic(severity="error", message=f"{source.name} sync is failing{detail}."))
+        elif source.status == "never_connected":
+            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has not synced successfully yet."))
+        if source.profiles:
+            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} is filtered to profiles: {', '.join(source.profiles)}."))
+        if source.providers_unmapped:
+            diagnostics.append(HermesDiagnostic(severity="warning", message=f"{source.name} observed unmapped providers: {', '.join(source.providers_unmapped)}."))
+        if source.total_observations and source.observations_in_range == 0 and source.latest_observation_at:
+            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has stored Hermes observations, but the latest ({source.latest_observation_at.isoformat()}) is outside the selected range."))
+    if not rows and any(source.last_success_at for source in sources):
+        diagnostics.append(HermesDiagnostic(severity="info", message=f"No Hermes observations between {start.date().isoformat()} and {end.date().isoformat()}. Try a wider range, inspect recent observations, or sync now."))
+    return diagnostics
+
+
 @router.get(
     "/providers/{config_id}/attribution",
     response_model=Attribution,
@@ -904,6 +1012,7 @@ async def hermes_breakdown(
     start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
 
     rows = await _load_hermes_rows(session, start, end)
+    sources = await _hermes_source_summaries(session, start=start, end=end)
 
     totals: list[HermesTotal] = []
     for metric in ("cost", "input_tokens", "output_tokens", "requests"):
@@ -963,4 +1072,6 @@ async def hermes_breakdown(
         by_model=_grouped("model"),
         by_profile=_grouped("profile"),
         daily=daily,
+        sources=sources,
+        diagnostics=_hermes_diagnostics(sources=sources, rows=rows, start=start, end=end),
     )

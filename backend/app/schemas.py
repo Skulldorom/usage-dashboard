@@ -429,6 +429,29 @@ class HermesTotal(BaseModel):
     value: float | None = None
 
 
+class HermesSourceSummary(BaseModel):
+    id: int
+    name: str
+    status: str
+    is_enabled: bool
+    base_url: str | None = None
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    latest_error: str | None = None
+    latest_observation_at: datetime | None = None
+    observations_in_range: int = 0
+    total_observations: int = 0
+    profiles: list[str] = Field(default_factory=list)
+    provider_mappings: dict[str, str] = Field(default_factory=dict)
+    providers_observed: list[str] = Field(default_factory=list)
+    providers_unmapped: list[str] = Field(default_factory=list)
+
+
+class HermesDiagnostic(BaseModel):
+    severity: Literal["info", "warning", "error"] = "info"
+    message: str
+
+
 class HermesBreakdown(BaseModel):
     period: dict
     totals: list[HermesTotal]
@@ -437,3 +460,5 @@ class HermesBreakdown(BaseModel):
     by_model: list[HermesGroupRow]
     by_profile: list[HermesGroupRow]
     daily: list[HermesBreakdownDaily]
+    sources: list[HermesSourceSummary] = Field(default_factory=list)
+    diagnostics: list[HermesDiagnostic] = Field(default_factory=list)

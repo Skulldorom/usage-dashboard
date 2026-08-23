@@ -1325,16 +1325,94 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 /* Usage analytics page */
 .usage-chart {
   width: 100%;
-  height: auto;
+  min-height: 220px;
   display: block;
+  overflow: visible;
 }
+
+.usage-chart-wrap {
+  position: relative;
+}
+
+.usage-chart-hover line {
+  stroke: rgba(255, 255, 255, 0.32);
+  stroke-width: 1;
+}
+
+.usage-chart-hover circle {
+  fill: #06c8ff;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 2;
+}
+
+.usage-chart-hover rect {
+  fill: rgba(6, 14, 28, 0.94);
+  stroke: rgba(6, 200, 255, 0.42);
+}
+
+.usage-chart-hover text {
+  fill: #eef7ff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.usage-chart-tooltip {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  border: 1px solid rgba(6, 200, 255, 0.28);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+  background: rgba(6, 14, 28, 0.86);
+  color: #eef7ff;
+  font-size: 0.78rem;
+  pointer-events: none;
+}
+
 .usage-chart-empty {
-  padding: 24px;
   text-align: center;
 }
 .usage-axis-label {
   font-size: 10px;
   fill: #aaa2b9;
+}
+
+.hermes-daily-chart {
+  display: flex;
+  align-items: end;
+  gap: 0.5rem;
+  min-height: 160px;
+  padding: 1rem 0 0.25rem;
+  overflow-x: auto;
+}
+
+.hermes-daily-bar-wrap {
+  min-width: 34px;
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.hermes-daily-bar {
+  width: 100%;
+  min-height: 6px;
+  border-radius: 999px 999px 4px 4px;
+  background: linear-gradient(180deg, #06c8ff, #8b5cf6);
+  box-shadow: 0 0 18px rgba(6, 200, 255, 0.22);
+}
+
+.data-source-card {
+  height: 100%;
+}
+
+.attribution-row {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  background: rgba(255, 255, 255, 0.025);
 }
 .usage-heatmap-wrap {
   overflow-x: auto;
