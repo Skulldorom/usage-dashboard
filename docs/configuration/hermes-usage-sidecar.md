@@ -142,11 +142,12 @@ current watermark.
 4. Paste the bearer token from `USAGE_SIDECAR_TOKEN`.
 5. Leave **Profiles** blank to ingest all discovered profiles, or enter a
    comma-separated allowlist such as `default,coder`.
-6. Add **Provider mappings** only when Hermes provider identifiers do not match
-   your Usage Dashboard provider ids. Use `hermes-provider=dashboard-provider`,
-   comma-separated; for example `openrouter=openrouter,anthropic=anthropic`.
-7. Choose a polling interval, then click **Connect**.
-8. Use **Test connection** to confirm the dashboard can call the sidecar.
+6. Choose a polling interval, then click **Connect**.
+7. Use **Test connection** to confirm the dashboard can call the sidecar.
+8. After your first sync, click the **Edit provider mappings** (tune) icon on
+   the saved source to map Hermes provider identifiers (for example `auto`,
+   `openai-codex`, `unknown`) to your configured providers. See
+   [Data sources → Provider mapping](./data-sources.md).
 
 Use one sidecar/data-source pair per Hermes installation.
 
