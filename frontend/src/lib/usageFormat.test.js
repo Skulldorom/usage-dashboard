@@ -13,6 +13,7 @@ import {
   healthText,
   metricPercent,
   numericMetric,
+  overallUsageGroups,
   selectHistoryMetric,
 } from './usageFormat.js'
 
@@ -99,6 +100,51 @@ describe('firecrawlSummary', () => {
     expect(firecrawlSummary([{ label: 'usage_percent', value: 82, unit: '%' }])).toBeNull()
     expect(firecrawlSummary([{ label: 'credits_remaining', value: 10 }])).toBeNull()
     expect(firecrawlSummary([])).toBeNull()
+  })
+})
+
+
+describe('overallUsageGroups', () => {
+  const items = [
+    {
+      config: { id: 1, provider: 'codex', label: 'Codex', is_visible: true },
+      latest: {
+        metrics: [
+          { label: 'session_used_percent', value: 25, unit: '%' },
+          { label: 'reset_credits_available', value: 10, unit: 'credits', maximum: 20 },
+        ],
+      },
+    },
+    {
+      config: { id: 2, provider: 'firecrawl', label: 'Firecrawl', is_visible: true },
+      latest: {
+        metrics: [
+          { label: 'usage_percent', value: 80, unit: '%' },
+          { label: 'credits_remaining', value: 50, unit: 'credits', maximum: 100 },
+          { label: 'pages', value: 4 },
+        ],
+      },
+    },
+    {
+      config: { id: 3, provider: 'hidden', label: 'Hidden', is_visible: false },
+      latest: { metrics: [{ label: 'usage_percent', value: 100, unit: '%' }] },
+    },
+  ]
+
+  it('separates percentage metrics from unit metrics', () => {
+    const groups = overallUsageGroups(items)
+    expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['session remaining percent', 'usage percent'])
+    expect(groups.percent.average).toBe(77.5)
+    expect(groups.units.map((group) => group.unit)).toEqual(['credits', 'units'])
+  })
+
+  it('aggregates unit totals and optional maximum percentages', () => {
+    const groups = overallUsageGroups(items)
+    const credits = groups.units.find((group) => group.unit === 'credits')
+    expect(credits.total).toBe(60)
+    expect(credits.maximum).toBe(120)
+    expect(credits.percent).toBe(50)
+    expect(credits.tooltip).toContain('60 credits of 120')
   })
 })
 
