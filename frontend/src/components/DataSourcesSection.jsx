@@ -26,8 +26,10 @@ import BoltRoundedIcon from '@mui/icons-material/BoltRounded'
 import CloudSyncRoundedIcon from '@mui/icons-material/CloudSyncRounded'
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded'
 import { api } from '../api.js'
+import ProviderMappingsDialog from './ProviderMappingsDialog.jsx'
 import {
   HERMES_SIDECAR_DOCS_URL,
   HERMES_SIDECAR_INSTALL_PROMPT,
@@ -143,6 +145,7 @@ export default function DataSourcesSection() {
   const [actionBusyId, setActionBusyId] = useState(null)
   const [inspection, setInspection] = useState(null)
   const [inspectionOpen, setInspectionOpen] = useState(false)
+  const [mappingSource, setMappingSource] = useState(null)
   const [form, setForm] = useState({
     name: '',
     base_url: '',
@@ -338,6 +341,13 @@ export default function DataSourcesSection() {
                           </IconButton>
                         </span>
                       </Tooltip>
+                      <Tooltip title="Edit provider mappings">
+                        <span>
+                          <IconButton size="small" color="primary" disabled={actionBusyId === source.id} onClick={() => setMappingSource(source)} aria-label={`Map providers for ${source.name}`}>
+                            <TuneRoundedIcon fontSize="small" />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
                       <Tooltip title="Remove data source">
                         <IconButton size="small" color="error" onClick={() => remove(source.id)} aria-label={`Remove ${source.name}`}>
                           <DeleteOutlineRoundedIcon fontSize="small" />
@@ -463,6 +473,8 @@ export default function DataSourcesSection() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ProviderMappingsDialog source={mappingSource} onClose={() => setMappingSource(null)} />
     </Paper>
   )
 }

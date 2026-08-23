@@ -122,4 +122,6 @@ export const api = {
   syncDataSource: (id) => request(`/datasources/configs/${id}/sync`, { method: 'POST' }),
   inspectDataSource: (id, params = {}) => request(`/datasources/configs/${id}/observations?${new URLSearchParams(params)}`),
   dataSourceStatus: (id) => request(`/datasources/configs/${id}/status`),
+  dataSourceProviderMappings: (id) => request(`/datasources/configs/${id}/provider-mappings`),
+  updateDataSourceProviderMappings: (id, payload) => request(`/datasources/configs/${id}/provider-mappings`, { method: 'PUT', body: JSON.stringify(payload) }),
 }
