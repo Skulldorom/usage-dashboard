@@ -713,7 +713,7 @@ export default function DashboardPage() {
           </Typography>
         </Box>
       )}
-      <Grid container spacing={2.5}>
+      <Grid container spacing={2.5} sx={{ mb: 3 }}>
         {visibleItems.map((item) => (
           <Grid size={{ xs: 12, md: 6, xl: 4 }} key={item.config.id}>
             <UsageCard
