@@ -8,7 +8,7 @@ scoped tokens.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import asc, delete, select
+from sqlalchemy import asc, delete, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import require_admin_auth, require_scope
@@ -17,12 +17,14 @@ from app.core.crypto import CryptoService
 from app.database import get_session
 from app.datasources.registry import get_data_source, list_data_sources
 from app.datasources.service import sync_data_source
-from app.models import DataSourceConfig
+from app.models import DataSourceConfig, UsageObservation
 from app.schemas import (
     DataSourceConfigCreate,
     DataSourceConfigRead,
     DataSourceConfigUpdate,
     DataSourceInfo,
+    DataSourceInspection,
+    DataSourceObservationRead,
     DataSourceStatus,
     DataSourceSyncResult,
 )
@@ -171,6 +173,40 @@ async def sync_data_source_config(source_id: int, session: AsyncSession = Depend
         raise HTTPException(status_code=409, detail="Data source is disabled")
     result = await sync_data_source(session, source, _crypto())
     return DataSourceSyncResult(**result)
+
+
+@router.get("/configs/{source_id}/observations", response_model=DataSourceInspection, dependencies=[Depends(require_scope("datasources:read"))])
+async def data_source_observations(source_id: int, limit: int = 50, session: AsyncSession = Depends(get_session)):
+    source = await session.get(DataSourceConfig, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Data source not found")
+    bounded_limit = max(1, min(int(limit or 50), 200))
+    rows = (
+        await session.execute(
+            select(UsageObservation)
+            .where(UsageObservation.data_source_id == source_id, UsageObservation.source == "hermes")
+            .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
+            .limit(bounded_limit)
+        )
+    ).scalars().all()
+    observations = [
+        DataSourceObservationRead(
+            id=row.id,
+            observed_at=row.observed_at,
+            provider=row.provider,
+            provider_mapping=row.provider_mapping,
+            model=row.model,
+            profile=row.profile,
+            session_id=row.session_id,
+            metric=row.metric,
+            value=row.value,
+            unit=row.unit,
+            cost_type=row.cost_type,
+            source_event_id=row.source_event_id,
+        )
+        for row in rows
+    ]
+    return DataSourceInspection(source=_read(source), observations=observations)
 
 
 @router.get("/configs/{source_id}/status", response_model=DataSourceStatus, dependencies=[Depends(require_scope("datasources:read"))])

@@ -16,7 +16,7 @@ from app.core.auth import _hash_secret
 from app.core.config import settings
 from app.database import get_session
 from app.datasources.base import expand_observation_records
-from app.datasources.service import _persist_observations
+from app.datasources.service import _persist_observations, sync_data_source
 from app.main import app
 from app.models import AdminCredential, Base, DataSourceConfig, ProviderConfig, UsageObservation
 
@@ -254,6 +254,83 @@ async def test_hermes_breakdown_and_attribution(sqlite_db):
         assert metrics["input_tokens"]["status"] == "partial"
 
 
+@pytest.mark.asyncio
+async def test_sync_result_reports_diagnostics(sqlite_db, monkeypatch):
+    class FakeHermes:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return [
+                _record(event_id="evt-1", input_tokens=100, output_tokens=50, requests=1),
+                _record(event_id="evt-2", provider="mystery", profile="blocked", input_tokens=9),
+                _record(timestamp="not-a-date", event_id="bad-time", input_tokens=1),
+                _record(event_id="bad-metric", input_tokens="nope"),
+                _record(event_id="empty", input_tokens=None),
+            ]
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeHermes)
+    source_id = await _make_source(sqlite_db)
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.extra = {"profiles": ["coder"], "provider_mappings": {"mystery": "missing-provider"}}
+        session.add(ProviderConfig(provider="anthropic", label="main", encrypted_api_key="encrypted", is_enabled=True))
+        await session.commit()
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+
+    assert result["status"] == "healthy"
+    assert result["records_fetched"] == 5
+    assert result["observations_produced"] == 4
+    assert result["observations_accepted"] == 3
+    assert result["inserted"] == 3
+    assert result["duplicates_skipped"] == 0
+    assert result["records_skipped_invalid_timestamp"] == 1
+    assert result["metrics_skipped_invalid"] == 1
+    assert result["observations_skipped_profile_filter"] == 1
+    assert result["providers_discovered"] == ["anthropic", "mystery"]
+    assert result["profiles_discovered"] == ["blocked", "coder"]
+    assert result["unmapped_providers"] == ["mystery"]
+    assert result["earliest_observation_at"] is not None
+    assert result["latest_observation_at"] is not None
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        duplicate = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+    assert duplicate["inserted"] == 0
+    assert duplicate["duplicates_skipped"] == 3
+
+
+@pytest.mark.asyncio
+async def test_data_source_observations_endpoint_returns_safe_recent_rows(sqlite_db):
+    source_id, provider_id = await _seed_source_and_provider(sqlite_db)
+    await _seed_observations(sqlite_db, source_id, provider_id)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/datasources/configs/{source_id}/observations?limit=2", headers=AUTH)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["source"]["id"] == source_id
+    assert len(body["observations"]) == 2
+    first = body["observations"][0]
+    assert set(first) == {
+        "id",
+        "observed_at",
+        "provider",
+        "provider_mapping",
+        "model",
+        "profile",
+        "session_id",
+        "metric",
+        "value",
+        "unit",
+        "cost_type",
+        "source_event_id",
+    }
+    assert "raw" not in first
+    assert "token" not in first
+
+
 # --- deduplication ---
 
 
@@ -283,7 +360,7 @@ async def _persist(Session, source_id, records):
     observations = expand_observation_records(records)
     async with Session() as session:
         source = await session.get(DataSourceConfig, source_id)
-        return await _persist_observations(session, source, observations)
+        return (await _persist_observations(session, source, observations))["inserted"]
 
 
 async def _count(Session, source_id):
