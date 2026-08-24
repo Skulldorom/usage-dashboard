@@ -58,14 +58,9 @@ input {
   inset: 0 0 0 var(--sidebar-width);
   z-index: -1;
   overflow: hidden;
-  opacity: 0.34;
+  opacity: 0.22;
   pointer-events: none;
-  mask-image: linear-gradient(
-    to bottom,
-    #000 0%,
-    rgba(0, 0, 0, 0.72) 45%,
-    transparent 92%
-  );
+  contain: paint;
 }
 .network-backdrop svg {
   width: 100%;
@@ -81,8 +76,7 @@ input {
   stroke: rgba(4, 193, 245, 0.17);
 }
 .network-nodes {
-  fill: rgba(12, 206, 255, 0.75);
-  filter: drop-shadow(0 0 7px #06c8ff);
+  fill: rgba(12, 206, 255, 0.62);
 }
 
 .sidebar {
@@ -124,7 +118,6 @@ input {
   height: 42px;
   object-fit: contain;
   flex: 0 0 auto;
-  filter: drop-shadow(0 9px 10px rgba(0, 0, 0, 0.35));
 }
 .nav-links {
   display: flex;
@@ -166,7 +159,6 @@ input {
 }
 .nav-link.active svg {
   color: #14cbfa;
-  filter: drop-shadow(0 0 7px rgba(6, 200, 255, 0.4));
 }
 .settings-submenu {
   display: grid;
@@ -210,9 +202,8 @@ input {
   justify-content: space-between;
   gap: 20px;
   padding: 0 clamp(24px, 4vw, 58px);
-  background: rgba(9, 7, 19, 0.76);
+  background: rgba(9, 7, 19, 0.92);
   border-bottom: 1px solid rgba(6, 200, 255, 0.12);
-  backdrop-filter: blur(22px);
 }
 .topbar-context {
   display: flex;
@@ -314,9 +305,8 @@ input {
   position: relative;
   overflow: hidden;
   border: 1px solid rgba(6, 200, 255, 0.14);
-  background: rgba(16, 12, 29, 0.92);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.24);
-  backdrop-filter: blur(14px);
+  background: rgba(16, 12, 29, 0.96);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.2);
 }
 .glass-panel::after {
   content: "";
@@ -376,7 +366,7 @@ input {
   cursor: help;
 }
 .hoverable-graph:hover .MuiLinearProgress-bar {
-  filter: drop-shadow(0 0 8px rgba(6, 200, 255, 0.5));
+  filter: none;
 }
 
 .summary-card {
@@ -422,10 +412,7 @@ input {
 }
 .provider-card:hover {
   border-color: rgba(92, 197, 235, 0.35);
-  box-shadow:
-    0 0 28px rgba(6, 200, 255, 0.18),
-    0 0 56px rgba(6, 200, 255, 0.08),
-    0 4px 24px rgba(0, 0, 0, 0.25);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.24);
 }
 .provider-card .MuiCardContent-root {
   padding: 24px;
@@ -611,7 +598,6 @@ input {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
   transform: translateX(-50%);
   pointer-events: none;
-  backdrop-filter: blur(12px);
 }
 .sparkline-tooltip strong {
   display: block;
@@ -1172,9 +1158,8 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     padding: 7px;
     border: 1px solid rgba(6, 200, 255, 0.16);
     border-radius: 18px;
-    background: rgba(17, 11, 29, 0.92);
-    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.55);
-    backdrop-filter: blur(22px);
+    background: rgba(17, 11, 29, 0.96);
+    box-shadow: 0 12px 34px rgba(0, 0, 0, 0.42);
   }
   .mobile-navigation .nav-links {
     width: 100%;
