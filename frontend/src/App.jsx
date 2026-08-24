@@ -24,6 +24,7 @@ import {
   createTheme,
 } from "@mui/material";
 import DashboardRoundedIcon from "@mui/icons-material/DashboardRounded";
+import ArticleRoundedIcon from "@mui/icons-material/ArticleRounded";
 import KeyRoundedIcon from "@mui/icons-material/KeyRounded";
 import LogoutRoundedIcon from "@mui/icons-material/LogoutRounded";
 import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
@@ -237,18 +238,6 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
       )}
       {isAuthenticated && (
         <>
-          <Tooltip title="Support on Ko-fi">
-            <IconButton
-              className="topbar-icon-button"
-              component="a"
-              href="https://ko-fi.com/skulldorom"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="Support Skulldorom on Ko-fi"
-            >
-              <KofiLogo />
-            </IconButton>
-          </Tooltip>
           <Tooltip title="Open GitHub project">
             <IconButton
               className="topbar-icon-button"
@@ -259,6 +248,30 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
               aria-label="Open Usage Dashboard GitHub project"
             >
               <GitHubLogo />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Open documentation">
+            <IconButton
+              className="topbar-icon-button"
+              component="a"
+              href="https://skulldorom.github.io/usage-dashboard/docs/"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open Usage Dashboard documentation"
+            >
+              <ArticleRoundedIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Support on Ko-fi">
+            <IconButton
+              className="topbar-icon-button"
+              component="a"
+              href="https://ko-fi.com/skulldorom"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Support Skulldorom on Ko-fi"
+            >
+              <KofiLogo />
             </IconButton>
           </Tooltip>
           <Tooltip title="Log out">
