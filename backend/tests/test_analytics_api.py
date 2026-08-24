@@ -112,7 +112,9 @@ async def test_provider_analytics_info(sqlite_db):
 async def test_timeseries_sums_counter_deltas(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="openrouter")
-    base = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    # Use a completed day so the endpoint's default `to=now` range does not
+    # make the later same-day observation look like future data in early-UTC CI.
+    base = (datetime.now(UTC) - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     await _seed_observations(
         Session,
         config,
