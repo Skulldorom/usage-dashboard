@@ -453,6 +453,7 @@ class HermesGroupRow(BaseModel):
     cost: float | None = None
     tokens: float | None = None
     requests: float | None = None
+    estimated_cost: float | None = None
 
 
 class HermesBreakdownDaily(BaseModel):
@@ -491,6 +492,39 @@ class HermesDiagnostic(BaseModel):
     message: str
 
 
+class CostEstimateTokenClass(BaseModel):
+    metric: str
+    tokens: float
+    cost: float
+    rate_per_1m: float
+
+
+class CostEstimateGroup(BaseModel):
+    provider: str
+    model: str | None = None
+    cost: float
+    tokens: float
+    matched: bool = True
+    source: str | None = None
+    effective_from: str | None = None
+    token_classes: list[CostEstimateTokenClass] = Field(default_factory=list)
+
+
+class CostEstimateUnpriced(BaseModel):
+    token_classes: dict[str, float] = Field(default_factory=dict)
+    models: dict[str, float] = Field(default_factory=dict)
+
+
+class CostEstimate(BaseModel):
+    currency: str = "USD"
+    pricing_version: str
+    total_cost: float = 0.0
+    total_tokens: float = 0.0
+    unpriced_tokens: float = 0.0
+    groups: list[CostEstimateGroup] = Field(default_factory=list)
+    unpriced: CostEstimateUnpriced = Field(default_factory=CostEstimateUnpriced)
+
+
 class HermesBreakdown(BaseModel):
     period: dict
     totals: list[HermesTotal]
@@ -501,3 +535,4 @@ class HermesBreakdown(BaseModel):
     daily: list[HermesBreakdownDaily]
     sources: list[HermesSourceSummary] = Field(default_factory=list)
     diagnostics: list[HermesDiagnostic] = Field(default_factory=list)
+    cost_estimate: CostEstimate | None = None

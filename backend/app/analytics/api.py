@@ -39,6 +39,7 @@ from app.analytics.schemas import (
 )
 from app.analytics.types import Observation
 from app.analytics.capabilities import overview_metric
+from app.analytics.pricing import estimate_cost, normalize_model
 from app.analytics.utilization import utilization_metric, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
@@ -94,6 +95,11 @@ def _orm_to_observation(row: UsageObservation) -> Observation:
         window_start=_aware(row.window_start),
         window_end=_aware(row.window_end),
         reset_at=_aware(row.reset_at),
+        model=row.model,
+        provider_mapping=row.provider_mapping,
+        profile=row.profile,
+        session_id=row.session_id,
+        cost_type=row.cost_type,
     )
 
 
@@ -704,6 +710,13 @@ async def overview(
         hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
         hermes_activity = _delta_sums_by_metric(hermes_observations, start, end)
         attribution_rows = _attribution_rows(observations, hermes_activity, start, end)
+        provider_cost_estimate = estimate_cost(hermes_observations)
+        estimated_cost = round(provider_cost_estimate["total_cost"], 4) if provider_cost_estimate["total_cost"] else None
+        estimated_cost_source = (
+            f"pricing {provider_cost_estimate['pricing_version']}"
+            if estimated_cost is not None
+            else None
+        )
         cov = series_coverage(observations)
         conf = confidence_level(observations + hermes_observations, coverage=cov["coverage"])["level"]
         if bool(capabilities.get("native_history")):
@@ -825,10 +838,14 @@ async def overview(
                     "authoritative_source": _authoritative_source(headline_obs),
                     "hermes_activity": hermes_activity,
                     "attribution": attribution_rows,
+                    "estimated_cost": estimated_cost,
+                    "estimated_cost_source": estimated_cost_source,
                     "note": "Hermes activity is corroborating telemetry and is not added to provider-authoritative totals.",
                 },
                 "corroborating_sources": corroborating_sources,
             },
+            estimated_cost=estimated_cost,
+            estimated_cost_source=estimated_cost_source,
         )
         providers.append(provider)
 
@@ -1133,6 +1150,16 @@ async def hermes_breakdown(
 
     sessions = len({r.session_id for r in rows if r.session_id})
 
+    cost_estimate = estimate_cost(rows)
+    est_by_provider: dict[str, float] = {}
+    est_by_model: dict[str, float] = {}
+    for group in cost_estimate["groups"]:
+        provider_key = group["provider"]
+        est_by_provider[provider_key] = est_by_provider.get(provider_key, 0.0) + group["cost"]
+        model_key = normalize_model(group["model"])
+        if model_key:
+            est_by_model[model_key] = est_by_model.get(model_key, 0.0) + group["cost"]
+
     def _grouped(attribute: str) -> list[HermesGroupRow]:
         groups: dict[str, dict[str, float]] = {}
         for row in rows:
@@ -1144,15 +1171,23 @@ async def hermes_breakdown(
                 bucket["tokens"] += row.value
             elif row.metric == "requests":
                 bucket["requests"] += row.value
-        return [
-            HermesGroupRow(
-                key=key,
-                cost=_round_or_none(bucket["cost"]),
-                tokens=_round_or_none(bucket["tokens"]),
-                requests=_round_or_none(bucket["requests"]),
+        rows_out: list[HermesGroupRow] = []
+        for key, bucket in sorted(groups.items()):
+            estimated = None
+            if attribute == "provider_mapping":
+                estimated = est_by_provider.get(str(key).strip().lower())
+            elif attribute == "model":
+                estimated = est_by_model.get(normalize_model(str(key)))
+            rows_out.append(
+                HermesGroupRow(
+                    key=key,
+                    cost=_round_or_none(bucket["cost"]),
+                    tokens=_round_or_none(bucket["tokens"]),
+                    requests=_round_or_none(bucket["requests"]),
+                    estimated_cost=_round_or_none(estimated),
+                )
             )
-            for key, bucket in sorted(groups.items())
-        ]
+        return rows_out
 
     daily_groups: dict[str, dict[str, float]] = {}
     for row in rows:
@@ -1184,4 +1219,5 @@ async def hermes_breakdown(
         daily=daily,
         sources=sources,
         diagnostics=_hermes_diagnostics(sources=sources, rows=rows, start=start, end=end),
+        cost_estimate=cost_estimate,
     )
