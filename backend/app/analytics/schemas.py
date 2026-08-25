@@ -133,6 +133,8 @@ class OverviewProvider(BaseModel):
     authoritative_source: str | None = None
     corroborating_sources: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
+    hermes_activity: dict[str, float] = Field(default_factory=dict)
+    attribution: list[dict] = Field(default_factory=list)
     audit: dict = Field(default_factory=dict)
 
 

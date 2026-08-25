@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
-from app.analytics.attribution import ATTRIBUTION_METRICS, attribute
+from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
 from app.analytics.forecast import forecast_for_metric, rates_from_deltas
 from app.analytics.schemas import (
@@ -545,6 +545,54 @@ def _metric_delta_sum(observations: list[Observation], metric: str, start: datet
     )
 
 
+def _delta_sums_by_metric(observations: list[Observation], start: datetime, end: datetime) -> dict[str, float]:
+    totals: dict[str, float] = {}
+    for obs in observations:
+        if obs.kind != "delta" or not (start <= obs.observed_at < end):
+            continue
+        totals[obs.metric] = totals.get(obs.metric, 0.0) + obs.value
+    return {metric: round(value, 4) for metric, value in sorted(totals.items()) if value}
+
+
+def _provider_total_for_hermes_metric(observations: list[Observation], metric: str, start: datetime, end: datetime) -> float | None:
+    labels = provider_metric_labels(metric)
+    total = sum(_metric_delta_sum(observations, label, start, end) for label in labels)
+    return round(total, 4) if total else None
+
+
+def _attribution_rows(provider_observations: list[Observation], hermes_activity: dict[str, float], start: datetime, end: datetime) -> list[dict]:
+    rows: list[dict] = []
+    for metric, hermes_value in hermes_activity.items():
+        if metric not in {name for name, _ in ATTRIBUTION_METRICS}:
+            continue
+        provider_total = _provider_total_for_hermes_metric(provider_observations, metric, start, end)
+        result = attribute(provider_total, hermes_value)
+        result["metric"] = metric
+        result["unit"] = _ATTRIBUTION_UNITS.get(metric)
+        rows.append(result)
+    return rows
+
+
+async def _load_mapped_hermes_observations(
+    session: AsyncSession,
+    provider: str,
+    *,
+    start: datetime,
+    end: datetime,
+) -> list[Observation]:
+    rows = (
+        await session.execute(
+            select(UsageObservation).where(
+                UsageObservation.source == "hermes",
+                UsageObservation.observed_at >= start,
+                UsageObservation.observed_at < end,
+                (UsageObservation.provider_mapping == provider) | (UsageObservation.provider == provider),
+            )
+        )
+    ).scalars().all()
+    return [_orm_to_observation(row) for row in rows]
+
+
 def _period_trend(observations: list[Observation], metric: str | None, start: datetime, end: datetime) -> float | None:
     if metric is None:
         return None
@@ -653,8 +701,11 @@ async def overview(
     for config in configs:
         capabilities = _capabilities_for(config.provider)
         observations = await _load_observations(session, config.id)
+        hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
+        hermes_activity = _delta_sums_by_metric(hermes_observations, start, end)
+        attribution_rows = _attribution_rows(observations, hermes_activity, start, end)
         cov = series_coverage(observations)
-        conf = confidence_level(observations, coverage=cov["coverage"])["level"]
+        conf = confidence_level(observations + hermes_observations, coverage=cov["coverage"])["level"]
         if bool(capabilities.get("native_history")):
             providers_with_history += 1
 
@@ -716,7 +767,7 @@ async def overview(
 
         headline_obs = [obs for obs in observations if headline_metric_name and obs.metric == headline_metric_name]
         util_source_obs = [obs for obs in observations if util_metric_name and obs.metric == util_metric_name]
-        source_pool = util_source_obs + headline_obs
+        source_pool = util_source_obs + headline_obs + hermes_observations
         sources = _observation_sources(source_pool or observations)
         authoritative_source = latest_util_source or _authoritative_source(headline_obs) or _authoritative_source(observations)
         corroborating_sources = [source for source in sources if source != authoritative_source]
@@ -754,6 +805,8 @@ async def overview(
             authoritative_source=authoritative_source,
             corroborating_sources=corroborating_sources,
             sources=sources,
+            hermes_activity=hermes_activity,
+            attribution=attribution_rows,
             audit={
                 "capacity": {
                     "metric": util_metric_name,
@@ -770,6 +823,9 @@ async def overview(
                     "value": round(headline_value, 4) if headline_value is not None else None,
                     "unit": headline_unit,
                     "authoritative_source": _authoritative_source(headline_obs),
+                    "hermes_activity": hermes_activity,
+                    "attribution": attribution_rows,
+                    "note": "Hermes activity is corroborating telemetry and is not added to provider-authoritative totals.",
                 },
                 "corroborating_sources": corroborating_sources,
             },

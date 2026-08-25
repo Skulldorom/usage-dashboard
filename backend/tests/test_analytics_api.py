@@ -477,6 +477,64 @@ async def test_overview_provider_pressure_excludes_unknown_utilization(sqlite_db
 
 
 @pytest.mark.asyncio
+async def test_overview_maps_hermes_activity_to_provider_without_double_counting(sqlite_db):
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 2000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+    async with Session() as session:
+        session.add_all([
+            UsageObservation(
+                provider="claude",
+                provider_mapping="anthropic",
+                metric="input_tokens",
+                value=900.0,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=base + timedelta(hours=1),
+                model="claude-sonnet-4",
+                session_id="s1",
+            ),
+            UsageObservation(
+                provider="claude",
+                provider_mapping="anthropic",
+                metric="requests",
+                value=7.0,
+                unit="count",
+                kind="delta",
+                source="hermes",
+                observed_at=base + timedelta(hours=1),
+                model="claude-sonnet-4",
+                session_id="s1",
+            ),
+        ])
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    # Provider-native totals remain authoritative; Hermes is corroborating telemetry, not added on top.
+    assert payload["totals"]["tokens"] == 2000.0
+    row = next(p for p in payload["providers"] if p["provider"] == "anthropic")
+    assert row["sources"] == ["hermes", "native"]
+    assert row["authoritative_source"] == "native"
+    assert row["corroborating_sources"] == ["hermes"]
+    assert row["hermes_activity"] == {"input_tokens": 900.0, "requests": 7.0}
+    input_attr = next(item for item in row["attribution"] if item["metric"] == "input_tokens")
+    assert input_attr["provider_total"] == 2000.0
+    assert input_attr["hermes_observed"] == 900.0
+    assert input_attr["attribution_pct"] == 45.0
+    assert input_attr["status"] == "partial"
+    assert row["audit"]["activity"]["hermes_activity"]["input_tokens"] == 900.0
+    assert "not added" in row["audit"]["activity"]["note"]
+
+
+@pytest.mark.asyncio
 async def test_hermes_breakdown_includes_source_diagnostics_and_keeps_totals_supplemental(sqlite_db):
     Session = sqlite_db
     provider = await _create_config(Session, provider="anthropic")
