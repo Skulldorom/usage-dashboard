@@ -220,6 +220,41 @@ export function utilizationChartScale(comparison) {
   return Math.ceil(max / 25) * 25
 }
 
+export function activityDimensions(overview) {
+  // Return [{ dimension, unit, label, total, providers }] in stable order.
+  return (overview?.activity || []).map((dimension) => ({
+    ...dimension,
+    label: unitLabel(dimension.unit),
+  }))
+}
+
+export function activityShareRows(dimension) {
+  // Providers sorted desc by value, each with a normalized share fraction.
+  const total = dimension?.total ?? 0
+  return (dimension?.providers || [])
+    .slice()
+    .sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+    .map((provider) => ({
+      ...provider,
+      shareFraction: total > 0 && provider.value !== null && provider.value !== undefined
+        ? provider.value / total
+        : 0,
+    }))
+}
+
+export function activityChartScale(dimension) {
+  const values = (dimension?.providers || [])
+    .flatMap((provider) => provider?.buckets || [])
+    .map((bucket) => bucket?.total)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value))
+  if (values.length === 0) return 100
+  const max = Math.max(...values)
+  if (max <= 0) return 100
+  // Round up to a "nice" number so the top of the axis isn't cramped.
+  const magnitude = Math.pow(10, Math.floor(Math.log10(max)))
+  return Math.ceil(max / magnitude) * magnitude
+}
+
 export function hermesActivityLabel(activity) {
   const entries = Object.entries(activity || {})
     .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value > 0)

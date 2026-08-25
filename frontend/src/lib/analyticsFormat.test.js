@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  activityChartScale,
+  activityDimensions,
+  activityShareRows,
   bucketWallClock,
   changeStatus,
   chartPoints,
@@ -245,5 +248,49 @@ describe('overview pressure helpers', () => {
   it('extends utilization chart scale above the quota line', () => {
     expect(utilizationChartScale([{ buckets: [{ value: 40 }, { value: 128 }] }])).toBe(150)
     expect(utilizationChartScale([{ buckets: [{ value: 40 }, { value: 80 }] }])).toBe(100)
+  })
+
+  it('maps activity dimensions and labels units', () => {
+    const overviewActivity = {
+      activity: [
+        { dimension: 'tokens', unit: 'tokens', total: 150, providers: [] },
+        { dimension: 'credits', unit: 'credits', total: 50, providers: [] },
+      ],
+    }
+    const dims = activityDimensions(overviewActivity)
+    expect(dims.map((d) => d.dimension)).toEqual(['tokens', 'credits'])
+    expect(dims[0].label).toBe('Tokens')
+    expect(dims[1].label).toBe('Credits')
+  })
+
+  it('computes activity share fractions within a dimension', () => {
+    const dimension = {
+      dimension: 'credits',
+      unit: 'credits',
+      total: 50,
+      providers: [
+        { config_id: 1, provider: 'firecrawl', value: 40, share_pct: 80 },
+        { config_id: 2, provider: 'openrouter', value: 10, share_pct: 20 },
+      ],
+    }
+    const rows = activityShareRows(dimension)
+    // Sorted desc by value.
+    expect(rows.map((r) => r.provider)).toEqual(['firecrawl', 'openrouter'])
+    expect(rows[0].shareFraction).toBe(0.8)
+    expect(rows[1].shareFraction).toBe(0.2)
+  })
+
+  it('returns no share rows for an empty dimension', () => {
+    expect(activityShareRows(null)).toEqual([])
+    expect(activityShareRows({ providers: [] })).toEqual([])
+  })
+
+  it('scales the activity chart to a nice maximum', () => {
+    const dimension = {
+      providers: [{ buckets: [{ total: 100 }, { total: 800 }] }],
+    }
+    expect(activityChartScale(dimension)).toBe(800)
+    expect(activityChartScale({ providers: [{ buckets: [{ total: 0 }] }] })).toBe(100)
+    expect(activityChartScale({ providers: [] })).toBe(100)
   })
 })
