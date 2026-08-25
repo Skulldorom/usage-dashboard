@@ -31,6 +31,8 @@ from app.analytics.schemas import (
     AnalyticsSummaryCard,
     AnalyticsTimeseries,
     CoverageInfo,
+    OverviewActivityDimension,
+    OverviewActivityProvider,
     OverviewComparisonSeries,
     OverviewCoverage,
     OverviewPressure,
@@ -38,7 +40,7 @@ from app.analytics.schemas import (
     OverviewRisk,
 )
 from app.analytics.types import Observation
-from app.analytics.capabilities import overview_metric
+from app.analytics.capabilities import activity_dimensions, activity_metric_labels, overview_metric
 from app.analytics.pricing import estimate_cost, normalize_model
 from app.analytics.reconciliation import (
     authoritative_source,
@@ -556,6 +558,40 @@ def _metric_delta_sum(observations: list[Observation], metric: str, start: datet
     )
 
 
+def _activity_series(
+    observations: list[Observation],
+    labels: list[str],
+    *,
+    interval: str,
+    tz: str | None,
+    start: datetime,
+    end: datetime,
+) -> list[AnalyticsBucket]:
+    """Bucketize combined delta observations across multiple metric labels.
+
+    Disjoint token classes (input/output/cache) are relabelled to a synthetic
+    metric and summed by the shared ``bucketize``/``fill_buckets`` path so gaps
+    remain explicit and missing data is not read as zero usage.
+    """
+    combined = [
+        Observation(
+            metric="_activity",
+            value=obs.value,
+            unit=obs.unit,
+            observed_at=obs.observed_at,
+            kind="delta",
+            source=obs.source,
+            window_start=obs.window_start,
+            window_end=obs.window_end,
+            reset_at=obs.reset_at,
+        )
+        for obs in observations
+        if obs.kind == "delta" and obs.metric in labels
+    ]
+    buckets = bucketize(combined, metric="_activity", interval=interval, tz=tz, start=start, end=end)
+    return fill_buckets(buckets, interval=interval, start=start, end=end, tz=tz)
+
+
 def _delta_sums_by_metric(observations: list[Observation], start: datetime, end: datetime) -> dict[str, float]:
     totals: dict[str, float] = {}
     for obs in observations:
@@ -699,10 +735,14 @@ async def overview(
     providers_with_forecasts = 0
     stale_or_unavailable = 0
     span = end - start
+    activity_rows: list[tuple[ProviderConfig, list[Observation], dict[str, list[str]]]] = []
 
     for config in configs:
         capabilities = _capabilities_for(config.provider)
         observations = await _load_observations(session, config.id)
+        activity_labels = activity_metric_labels(activity_dimensions(capabilities))
+        if activity_labels:
+            activity_rows.append((config, observations, activity_labels))
         hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
         hermes_activity = _delta_sums_by_metric(hermes_observations, start, end)
         attribution_rows = _attribution_rows(observations, hermes_activity, start, end)
@@ -938,6 +978,61 @@ async def overview(
         coverage=coverage,
     )
 
+    # --- Activity dimensions (§7/§8) ---------------------------------------
+    # Group providers into compatible activity dimensions (tokens/requests/cost/
+    # credits), sum disjoint deltas per provider, compute share within each
+    # dimension, and build a combined multi-provider series.
+    _DIMENSION_UNITS = {"tokens": "tokens", "requests": "requests", "cost": "USD", "credits": "credits"}
+    activity: list[OverviewActivityDimension] = []
+    for dimension in ("tokens", "requests", "cost", "credits"):
+        dimension_unit = _DIMENSION_UNITS[dimension]
+        entries: list[OverviewActivityProvider] = []
+        for config, observations, labels in activity_rows:
+            labels_in_dimension = labels.get(dimension)
+            if not labels_in_dimension:
+                continue
+            value = sum(
+                _metric_delta_sum(observations, label, start, end)
+                for label in labels_in_dimension
+            )
+            value = round(value, 4)
+            if not value:
+                continue
+            sources = _observation_sources(
+                [obs for obs in observations if obs.metric in labels_in_dimension]
+            )
+            metric_obs = [obs for obs in observations if obs.metric in labels_in_dimension]
+            entries.append(
+                OverviewActivityProvider(
+                    config_id=config.id,
+                    provider=config.provider,
+                    label=config.label,
+                    metric=",".join(labels_in_dimension),
+                    unit=dimension_unit,
+                    value=value,
+                    source=authoritative_source(sources) if sources else None,
+                    confidence=confidence_level(metric_obs)["level"],
+                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in _activity_series(
+                        observations, labels_in_dimension, interval=interval, tz=timezone, start=start, end=end,
+                    )],
+                )
+            )
+        if not entries:
+            continue
+        dimension_total = sum(entry.value for entry in entries if entry.value is not None)
+        for entry in entries:
+            if entry.value is not None and dimension_total > 0:
+                entry.share_pct = round(entry.value / dimension_total * 100, 2)
+        entries.sort(key=lambda entry: (entry.value or 0), reverse=True)
+        activity.append(
+            OverviewActivityDimension(
+                dimension=dimension,
+                unit=dimension_unit,
+                total=round(dimension_total, 4),
+                providers=entries,
+            )
+        )
+
     return AnalyticsOverview(
         period={"start": start.isoformat(), "end": end.isoformat()},
         totals={unit: round(value, 4) for unit, value in totals.items()},
@@ -950,6 +1045,7 @@ async def overview(
         risks=sorted(risks, key=lambda risk: risk.utilization_pct, reverse=True),
         providers=providers,
         comparison=comparison,
+        activity=activity,
     )
 
 

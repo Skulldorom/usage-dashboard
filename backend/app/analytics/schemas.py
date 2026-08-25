@@ -180,6 +180,26 @@ class OverviewComparisonSeries(BaseModel):
     buckets: list[AnalyticsBucket]
 
 
+class OverviewActivityProvider(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    metric: str
+    unit: str
+    value: float | None = None
+    share_pct: float | None = None
+    source: str | None = None
+    confidence: str = "low"
+    buckets: list[AnalyticsBucket] = Field(default_factory=list)
+
+
+class OverviewActivityDimension(BaseModel):
+    dimension: str
+    unit: str
+    total: float = 0.0
+    providers: list[OverviewActivityProvider] = Field(default_factory=list)
+
+
 class AnalyticsOverview(BaseModel):
     period: dict
     totals: dict[str, float]
@@ -192,3 +212,4 @@ class AnalyticsOverview(BaseModel):
     risks: list[OverviewRisk] = []
     providers: list[OverviewProvider]
     comparison: list[OverviewComparisonSeries]
+    activity: list[OverviewActivityDimension] = Field(default_factory=list)
