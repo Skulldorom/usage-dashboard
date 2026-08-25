@@ -74,6 +74,7 @@ def _sync_diagnostics(
     profiles: list[str] | None,
     provider_mappings: dict[str, str],
     configured_providers: set[str],
+    mute_unmapped_provider_alerts: bool = False,
 ) -> dict[str, Any]:
     invalid_timestamps = 0
     records_accepted = 0
@@ -121,7 +122,7 @@ def _sync_diagnostics(
         "latest_observation_at": max(observed_times).isoformat() if observed_times else None,
         "providers_discovered": sorted(raw_providers),
         "profiles_discovered": sorted(raw_profiles),
-        "unmapped_providers": sorted(unmapped),
+        "unmapped_providers": [] if mute_unmapped_provider_alerts else sorted(unmapped),
     }
 
 def _fallback_event_id(obs: dict) -> str:
@@ -282,6 +283,7 @@ async def _sync_data_source(
             profiles,
             dict(extra.get("provider_mappings") or {}),
             {p.strip().lower() for p in configured_providers},
+            bool(extra.get("mute_unmapped_provider_alerts", False)),
         )
         persist_result = await _persist_observations(session, source, observations)
         inserted = persist_result["inserted"]

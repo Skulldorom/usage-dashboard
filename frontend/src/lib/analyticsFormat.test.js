@@ -5,6 +5,7 @@ import {
   chartPoints,
   compactNumber,
   confidenceColor,
+  displayUsageValue,
   formatMetricValue,
   formatPercent,
   formatTrend,
@@ -17,8 +18,11 @@ import {
   rangeToParams,
   riskRows,
   sortedCapacityProviders,
+  shouldDisplayPercentUsed,
   unitLabel,
   unmeasurableProviders,
+  usageAxisLabel,
+  usageMetricLabel,
 } from './analyticsFormat.js'
 
 describe('compactNumber', () => {
@@ -74,6 +78,29 @@ describe('chartPoints', () => {
     const points = chartPoints(buckets, 'counter')
     expect(points.map((p) => p.value)).toEqual([10, 20])
     expect(points.map((p) => p.x)).toEqual(['2026-08-20', '2026-08-21'])
+  })
+
+  it('converts percent-remaining metrics into percent-used chart values', () => {
+    const buckets = [
+      { start: '2026-08-20', value: 90 },
+      { start: '2026-08-21', value: 80 },
+    ]
+    const points = chartPoints(buckets, 'remaining', { metric: 'session_remaining_percent', unit: '%' })
+    expect(points.map((p) => p.value)).toEqual([10, 20])
+  })
+})
+
+describe('percent-used display helpers', () => {
+  it('detects remaining percent metrics and clamps converted values', () => {
+    expect(shouldDisplayPercentUsed('session_remaining_percent', 'remaining', '%')).toBe(true)
+    expect(shouldDisplayPercentUsed('usage_percent', 'gauge', '%')).toBe(false)
+    expect(displayUsageValue(120, { metric: 'session_remaining_percent', metricType: 'remaining', unit: '%' })).toBe(0)
+    expect(displayUsageValue(-5, { metric: 'session_remaining_percent', metricType: 'remaining', unit: '%' })).toBe(100)
+  })
+
+  it('labels converted metrics as used', () => {
+    expect(usageAxisLabel({ metric: 'weekly_remaining_percent', metricType: 'remaining', unit: '%' })).toBe('used (%)')
+    expect(usageMetricLabel('session_remaining_percent', 'remaining', '%')).toBe('session used percent')
   })
 })
 

@@ -25,6 +25,7 @@ import {
   changeStatus,
   chartPoints,
   confidenceColor,
+  displayUsageValue,
   formatMetricValue,
   formatPercent,
   formatTrend,
@@ -38,6 +39,8 @@ import {
   riskRows,
   sortedCapacityProviders,
   unmeasurableProviders,
+  usageAxisLabel,
+  usageMetricLabel,
 } from '../lib/analyticsFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -49,7 +52,7 @@ function formatAxis(value) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date)
 }
 
-function TimeSeriesChart({ points, metricType, unit }) {
+function TimeSeriesChart({ points, metric, metricType, unit }) {
   const [hoverIndex, setHoverIndex] = useState(null)
   const width = 720
   const height = 220
@@ -96,7 +99,7 @@ function TimeSeriesChart({ points, metricType, unit }) {
 
   const ticks = points.length > 1 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [0]
   const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
-  const hoveredValue = hoveredPoint ? primaryValue(hoveredPoint.raw, metricType) : null
+  const hoveredValue = hoveredPoint ? displayUsageValue(primaryValue(hoveredPoint.raw, metricType), { metric, metricType, unit }) : null
   const hoverX = hoverIndex === null ? null : x(hoverIndex)
   const hoverY = typeof hoveredValue === 'number' ? y(hoveredValue) : null
 
@@ -153,7 +156,7 @@ function TimeSeriesChart({ points, metricType, unit }) {
         </text>
       ))}
       <text x={pad.left} y={pad.top + 10} className="usage-axis-label">
-        {metricType === 'counter' || metricType === 'rate_limit' ? `usage (${unit || ''})`.trim() : unit || ''}
+        {usageAxisLabel({ metric, metricType, unit })}
       </text>
       {hoverX !== null && hoverY !== null && (
         <g className="usage-chart-hover">
@@ -169,13 +172,13 @@ function TimeSeriesChart({ points, metricType, unit }) {
   )
 }
 
-function UsageHeatmap({ buckets, metricType, unit }) {
+function UsageHeatmap({ buckets, metric, metricType, unit }) {
   const [hover, setHover] = useState(null)
   // Aggregate hourly buckets into day-of-week x hour intensity.
   const grid = Array.from({ length: 7 }, () => Array(24).fill(0))
   let max = 0
   for (const bucket of buckets || []) {
-    const value = isDeltaMetric(metricType) ? bucket.total : bucket.value
+    const value = displayUsageValue(isDeltaMetric(metricType) ? bucket.total : bucket.value, { metric, metricType, unit })
     if (typeof value !== 'number') continue
     const { hour, weekday } = bucketWallClock(bucket.start)
     grid[weekday][hour] += value
@@ -680,7 +683,7 @@ export default function UsagePage() {
     return selected?.unit || null
   }, [providerInfo, metric])
 
-  const points = useMemo(() => chartPoints(timeseries?.buckets, metricType), [timeseries, metricType])
+  const points = useMemo(() => chartPoints(timeseries?.buckets, metricType, { metric, unit }), [timeseries, metricType, metric, unit])
 
   return (
     <>
@@ -722,7 +725,7 @@ export default function UsagePage() {
                     <InputLabel>Metric</InputLabel>
                     <Select value={metric} label="Metric" onChange={(event) => setMetric(event.target.value)}>
                       {providerInfo.metrics.map((m) => (
-                        <MenuItem key={m.label} value={m.label}>{m.label.replaceAll('_', ' ')}</MenuItem>
+                        <MenuItem key={m.label} value={m.label}>{usageMetricLabel(m.label, m.type, m.unit)}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -798,7 +801,7 @@ export default function UsagePage() {
                       <Typography variant="overline" color="primary.main">Historical usage</Typography>
                       {providerInfo.native_history && <Chip size="small" label="native history" color="primary" variant="outlined" />}
                     </Stack>
-                    <TimeSeriesChart points={points} metricType={metricType} unit={unit} />
+                    <TimeSeriesChart points={points} metric={metric} metricType={metricType} unit={unit} />
                   </CardContent>
                 </Card>
               </Grid>
@@ -825,7 +828,7 @@ export default function UsagePage() {
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
                     <Typography variant="overline" color="primary.main">Time-of-day heatmap</Typography>
-                    <Box sx={{ mt: 1 }} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metricType={metricType} unit={unit} /></Box>
+                    <Box sx={{ mt: 1 }} className="usage-heatmap-wrap"><UsageHeatmap buckets={hourly?.buckets} metric={metric} metricType={metricType} unit={unit} /></Box>
                   </CardContent>
                 </Card>
               </Grid>

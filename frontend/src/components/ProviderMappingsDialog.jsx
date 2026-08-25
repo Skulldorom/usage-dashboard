@@ -3,12 +3,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   FormControl,
   InputLabel,
   MenuItem,
@@ -101,10 +103,13 @@ export default function ProviderMappingsDialog({ source, onClose }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [savingKey, setSavingKey] = useState(null)
+  const [savingMute, setSavingMute] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const [muteAlerts, setMuteAlerts] = useState(false)
 
   useEffect(() => {
     if (!source) return
+    setMuteAlerts(Boolean(source.mute_unmapped_provider_alerts))
     let cancelled = false
     async function load() {
       setLoading(true)
@@ -138,6 +143,21 @@ export default function ProviderMappingsDialog({ source, onClose }) {
     }
   }
 
+  async function handleMuteChange(event) {
+    const checked = event.target.checked
+    setMuteAlerts(checked)
+    setSavingMute(true)
+    setSaveError('')
+    try {
+      await api.updateDataSourceConfig(source.id, { mute_unmapped_provider_alerts: checked })
+    } catch (err) {
+      setMuteAlerts(!checked)
+      setSaveError(err.message)
+    } finally {
+      setSavingMute(false)
+    }
+  }
+
   return (
     <Dialog open={Boolean(source)} onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>Provider mapping — {source?.name || ''}</DialogTitle>
@@ -155,9 +175,14 @@ export default function ProviderMappingsDialog({ source, onClose }) {
           {error && <Alert severity="error">{error}</Alert>}
           {data && !error && (
             <>
-              <Alert severity={data.unmapped_count ? 'warning' : 'success'}>
+              <Alert severity={data.unmapped_count && !muteAlerts ? 'warning' : 'success'}>
                 Provider mapping: {mappingSummary(data)}
+                {data.unmapped_count && muteAlerts ? ' Unmapped provider alerts are muted.' : ''}
               </Alert>
+              <FormControlLabel
+                control={<Checkbox checked={muteAlerts} disabled={savingMute} onChange={handleMuteChange} />}
+                label="Mute unmapped provider alerts for this source"
+              />
               {saveError && <Alert severity="error">{saveError}</Alert>}
               <ProviderMappingsTable data={data} savingKey={savingKey} onChange={handleChange} />
             </>

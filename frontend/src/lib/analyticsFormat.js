@@ -38,10 +38,38 @@ export function primaryValue(bucket, metricType) {
   return bucket.value ?? null
 }
 
-export function chartPoints(buckets, metricType) {
+export function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value)))
+}
+
+export function shouldDisplayPercentUsed(metric, metricType, unit) {
+  const normalized = String(metric || '').toLowerCase().replaceAll('-', '_').replaceAll(' ', '_')
+  if (unit !== '%') return false
+  if (normalized.includes('remaining_percent') || normalized.includes('_remaining_') || normalized.endsWith('_remaining')) return true
+  return metricType === 'remaining'
+}
+
+export function displayUsageValue(value, { metric, metricType, unit } = {}) {
+  if (typeof value !== 'number') return value ?? null
+  if (shouldDisplayPercentUsed(metric, metricType, unit)) return clampPercent(100 - value)
+  return value
+}
+
+export function usageAxisLabel({ metric, metricType, unit } = {}) {
+  if (shouldDisplayPercentUsed(metric, metricType, unit)) return 'used (%)'
+  if (metricType === 'counter' || metricType === 'rate_limit') return `usage (${unit || ''})`.trim()
+  return unit || ''
+}
+
+export function usageMetricLabel(label, metricType, unit) {
+  if (shouldDisplayPercentUsed(label, metricType, unit)) return String(label || '').replace(/remaining/gi, 'used').replaceAll('_', ' ')
+  return String(label || '').replaceAll('_', ' ')
+}
+
+export function chartPoints(buckets, metricType, options = {}) {
   return (buckets || []).map((bucket) => ({
     x: bucket.start,
-    value: primaryValue(bucket, metricType),
+    value: displayUsageValue(primaryValue(bucket, metricType), { ...options, metricType }),
     raw: bucket,
   }))
 }
