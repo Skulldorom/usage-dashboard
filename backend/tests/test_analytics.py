@@ -209,6 +209,42 @@ def test_forecast_remaining_projects_at_reset():
     assert result["remaining"] == pytest.approx(92.0)
 
 
+def test_forecast_pace_ratio_under_pace():
+    base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
+    reset = base + timedelta(days=7)
+    now = base + timedelta(days=3, hours=12)
+    # 8% used so far -> 92% remaining over 3.5 days -> sustainable ~26.29%/day.
+    # Actual burn 20%/day -> pace_ratio ~0.76 (under pace).
+    observations = []
+    for day in range(4):
+        observations.append(_obs("pct", 2.0, base + timedelta(days=day)))
+    result = forecast_for_metric(
+        observations, metric_type="remaining", now=now, reset_at=reset,
+        window_start=base, capacity=100,
+    )
+    assert "pace_ratio" in result
+    assert result["pacing"]["status"] in {"under", "on_pace", "over"}
+    # 2%/day actual vs ~26.29%/day sustainable -> well under 1.0
+    assert result["pace_ratio"] < 1.0
+
+
+def test_forecast_pace_ratio_burning_hot_is_over():
+    base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
+    reset = base + timedelta(days=7)
+    now = base + timedelta(days=3, hours=12)
+    # 60% used so far -> 40% remaining over 3.5 days -> sustainable ~11.43%/day.
+    # Actual burn 15%/day -> pace_ratio ~1.31 (over pace).
+    observations = []
+    for day in range(4):
+        observations.append(_obs("pct", 15.0, base + timedelta(days=day)))
+    result = forecast_for_metric(
+        observations, metric_type="remaining", now=now, reset_at=reset,
+        window_start=base, capacity=100,
+    )
+    assert result["pace_ratio"] > 1.0
+    assert result["pacing"]["status"] == "over"
+
+
 def test_forecast_balance_estimates_remaining_days():
     base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
     observations = [

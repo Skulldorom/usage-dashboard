@@ -200,6 +200,25 @@ class OverviewActivityDimension(BaseModel):
     providers: list[OverviewActivityProvider] = Field(default_factory=list)
 
 
+class ProviderCapacity(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    metric: str | None = None
+    capacity_used_pct: float | None = None
+    capacity_remaining_pct: float | None = None
+    overage_pct: float | None = None
+    reset_at: datetime | None = None
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    source: str | None = None
+    confidence: str = "low"
+    pace_ratio: float | None = None
+    sustainable_rate: float | None = None
+    burn_rate: float | None = None
+    buckets: list[AnalyticsBucket] = Field(default_factory=list)
+
+
 class AnalyticsOverview(BaseModel):
     period: dict
     totals: dict[str, float]

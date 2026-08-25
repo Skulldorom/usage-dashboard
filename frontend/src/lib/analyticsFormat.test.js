@@ -15,6 +15,8 @@ import {
   hermesActivityLabel,
   isDeltaMetric,
   overviewTotalCards,
+  paceRatioLabel,
+  paceStatus,
   peakLabel,
   pressureSummaryCards,
   qualityLabel,
@@ -292,5 +294,21 @@ describe('overview pressure helpers', () => {
     expect(activityChartScale(dimension)).toBe(800)
     expect(activityChartScale({ providers: [{ buckets: [{ total: 0 }] }] })).toBe(100)
     expect(activityChartScale({ providers: [] })).toBe(100)
+  })
+
+  it('labels pace ratio as over, under, or on-pace', () => {
+    expect(paceRatioLabel(1.46)).toBe('1.46× sustainable pace')
+    expect(paceRatioLabel(0.5)).toBe('0.50× sustainable pace')
+    expect(paceRatioLabel(1.0)).toBe('on sustainable pace')
+    expect(paceRatioLabel(null)).toBe(null)
+    expect(paceRatioLabel(undefined)).toBe(null)
+    expect(paceRatioLabel('nope')).toBe(null)
+  })
+
+  it('flags over-pace for warning coloring', () => {
+    expect(paceStatus(1.46)).toBe('warning')
+    expect(paceStatus(0.8)).toBe('normal')
+    expect(paceStatus(1.0)).toBe('normal')
+    expect(paceStatus(null)).toBe('normal')
   })
 })

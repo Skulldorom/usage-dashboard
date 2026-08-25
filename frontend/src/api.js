@@ -111,6 +111,7 @@ export const api = {
   analyticsHourly: (id, params = {}) => request(`/analytics/providers/${id}/hourly?${new URLSearchParams(params)}`),
   analyticsForecast: (id, params = {}) => request(`/analytics/providers/${id}/forecast?${new URLSearchParams(params)}`),
   analyticsComparison: (id, params = {}) => request(`/analytics/providers/${id}/comparison?${new URLSearchParams(params)}`),
+  analyticsCapacity: (id, params = {}) => request(`/analytics/providers/${id}/capacity?${new URLSearchParams(params)}`),
   analyticsAttribution: (id, params = {}) => request(`/analytics/providers/${id}/attribution?${new URLSearchParams(params)}`),
   hermesBreakdown: (params = {}) => request(`/analytics/hermes?${new URLSearchParams(params)}`),
   dataSourceCatalog: () => request('/datasources'),

@@ -255,6 +255,21 @@ export function activityChartScale(dimension) {
   return Math.ceil(max / magnitude) * magnitude
 }
 
+export function paceRatioLabel(paceRatio) {
+  if (paceRatio === null || paceRatio === undefined || Number.isNaN(Number(paceRatio))) return null
+  const ratio = Number(paceRatio)
+  if (ratio > 1.05) return `${ratio.toFixed(2)}× sustainable pace`
+  if (ratio < 0.95) return `${ratio.toFixed(2)}× sustainable pace`
+  return 'on sustainable pace'
+}
+
+export function paceStatus(paceRatio) {
+  if (paceRatio === null || paceRatio === undefined || Number.isNaN(Number(paceRatio))) return 'normal'
+  const ratio = Number(paceRatio)
+  if (ratio > 1.05) return 'warning'
+  return 'normal'
+}
+
 export function hermesActivityLabel(activity) {
   const entries = Object.entries(activity || {})
     .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value > 0)

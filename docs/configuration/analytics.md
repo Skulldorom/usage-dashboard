@@ -208,6 +208,25 @@ The same data is available under `activity` in the `/analytics/overview`
 response: one entry per dimension with `total`, per-provider `value`/`share_pct`,
 and a bucketed time series.
 
+## Provider capacity & pace
+
+Each provider's detail view exposes a **Capacity** panel built from the same
+canonical utilization model:
+
+- **Current capacity** — quota consumed, remaining, and any over-allowance
+  (shown explicitly, e.g. `128% used · 28% over allowance`).
+- **Reset / window** — when the quota window resets.
+- **Pace ratio** — the canonical `pace_ratio` dimension: actual burn rate ÷
+  sustainable burn rate. `1.0` is on pace; above `1.0` is burning faster than the
+  remaining quota can sustain; below `1.0` is under pace. Available both here and
+  in the forecast panel.
+- **Capacity history** — the utilization percentage over time, with a fixed 100%
+  reference line (values may extend above it).
+
+This is served by `GET /analytics/providers/{id}/capacity`. Providers without a
+normalizable quota metric return a capacity object with null utilization — never
+a fabricated 0%.
+
 ## Retention
 
 | Data | Retention |
