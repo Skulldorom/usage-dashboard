@@ -120,16 +120,16 @@ usage, the dashboard never blindly sums them. Each provider's analytics value is
 built from an **authoritative** source with other compatible observations used as
 **corroboration**:
 
-- **Authoritative priority** — `native` provider data &gt; `snapshot`-derived &gt;
+- **Authoritative priority** - `native` provider data &gt; `snapshot`-derived &gt;
   `hermes`-observed &gt; `estimated`.
-- **Material disagreement** — when a corroborating source differs from the
+- **Material disagreement** - when a corroborating source differs from the
   authoritative value by more than a tolerance (15 percentage points for
   capacity, 50% relative for activity), it is flagged as a disagreement rather
   than silently blended in.
-- **Staleness guard** — a corroborating source fresher than the authoritative
+- **Staleness guard** - a corroborating source fresher than the authoritative
   reading (by more than 6 hours) marks the authoritative data as potentially
   stale, so lagging primary data cannot silently win on priority alone.
-- **Confidence degradation** — disagreements and staleness each reduce the
+- **Confidence degradation** - disagreements and staleness each reduce the
   provider's confidence by one step (`high → medium → low`).
 
 ### "Why this number?" audit
@@ -155,14 +155,14 @@ those token classes against a maintained catalogue of provider/model list prices
 
 The estimate is intentionally distinct from provider-reported cost:
 
-- Token classes — `input`, `output`, `cache read`, `cache write`, and
-  `reasoning` — are priced **separately** where the catalogue lists them.
+- Token classes - `input`, `output`, `cache read`, `cache write`, and
+  `reasoning` - are priced **separately** where the catalogue lists them.
 - Rates are selected **by effective date**, so historical usage is priced with
   the rate in effect on each observation's date rather than today's price.
 - The result is always labelled **Estimated cost** and carries the catalogue
   version (`pricing_version`) used, so a number can be traced to its rate set.
 - Unknown models, and token classes with no listed rate, are surfaced as
-  **unpriced** — never silently priced at zero.
+  **unpriced** - never silently priced at zero.
 - `requests` and provider-reported `cost` are never token-priced; the estimate
   is never added to provider-authoritative totals.
 
@@ -199,7 +199,7 @@ activity dimensions. Rules that keep the numbers honest:
   disjoint and are summed into its token total.
 - **Overlapping windows do not sum.** When a provider reports the same unit over
   multiple overlapping windows (e.g. OpenRouter daily/weekly/monthly credits),
-  only the declared overview metric is used — never a naive sum that
+  only the declared overview metric is used - never a naive sum that
   double-counts.
 - **Shares are dimension-scoped.** A provider's share is its fraction of the
   total *within one compatible dimension*, never a ranking across units.
@@ -213,19 +213,41 @@ and a bucketed time series.
 Each provider's detail view exposes a **Capacity** panel built from the same
 canonical utilization model:
 
-- **Current capacity** — quota consumed, remaining, and any over-allowance
+- **Current capacity** - quota consumed, remaining, and any over-allowance
   (shown explicitly, e.g. `128% used · 28% over allowance`).
-- **Reset / window** — when the quota window resets.
-- **Pace ratio** — the canonical `pace_ratio` dimension: actual burn rate ÷
+- **Reset / window** - when the quota window resets.
+- **Pace ratio** - the canonical `pace_ratio` dimension: actual burn rate ÷
   sustainable burn rate. `1.0` is on pace; above `1.0` is burning faster than the
   remaining quota can sustain; below `1.0` is under pace. Available both here and
   in the forecast panel.
-- **Capacity history** — the utilization percentage over time, with a fixed 100%
+- **Capacity history** - the utilization percentage over time, with a fixed 100%
   reference line (values may extend above it).
 
 This is served by `GET /analytics/providers/{id}/capacity`. Providers without a
-normalizable quota metric return a capacity object with null utilization — never
+normalizable quota metric return a capacity object with null utilization - never
 a fabricated 0%.
+
+## Quota-impact correlation
+
+When a provider has enough history, the dashboard estimates how **Hermes-observed
+activity correlates with quota movement** across complete reset windows. This is
+deliberately a statistical estimate, never a fixed tokens-to-quota conversion:
+
+- Each complete reset window contributes a pair: peak quota consumed and the
+  Hermes token volume observed in that same window.
+- A least-squares slope (`estimated_impact_per_token`) plus Pearson correlation
+  and r² describe how well Hermes explains quota movement.
+- An estimate is produced only with at least **3 complete windows** of history;
+  below that there is not enough correlated data to be meaningful.
+- The result is labelled an **estimate** and carries sample size and confidence.
+- Confidence degrades (and the result is marked unexplained) when r² falls below
+  a floor, i.e. when quota movement is not explained by Hermes activity.
+- Unattributed quota consumption stays visible as `unattributed_pct` (1 - r²);
+  the system never forces 100% attribution.
+
+The estimate is available on `GET /analytics/providers/{id}/capacity` under
+`quota_impact`, and in the "Why this number?" audit view under
+`audit.quota_impact`.
 
 ## Retention
 
