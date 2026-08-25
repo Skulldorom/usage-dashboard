@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas import ProviderConfigRead
 
@@ -120,6 +120,7 @@ class OverviewProvider(BaseModel):
     utilization_metric: str | None = None
     utilization_pct: float | None = None
     remaining_pct: float | None = None
+    overage_pct: float | None = None
     reset_at: datetime | None = None
     trend_pct: float | None = None
     utilization_trend_pct: float | None = None
@@ -129,6 +130,10 @@ class OverviewProvider(BaseModel):
     exclusion_reason: str | None = None
     coverage: float = 0.0
     confidence: str = "low"
+    authoritative_source: str | None = None
+    corroborating_sources: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    audit: dict = Field(default_factory=dict)
 
 
 class OverviewCoverage(BaseModel):
@@ -153,6 +158,7 @@ class OverviewRisk(BaseModel):
     label: str
     utilization_pct: float
     remaining_pct: float | None = None
+    overage_pct: float | None = None
     reset_at: datetime | None = None
     forecast_pct: float | None = None
     confidence: str = "low"
@@ -165,6 +171,8 @@ class OverviewComparisonSeries(BaseModel):
     provider: str
     label: str
     metric: str
+    source: str | None = None
+    confidence: str = "low"
     buckets: list[AnalyticsBucket]
 
 

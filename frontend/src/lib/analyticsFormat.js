@@ -51,7 +51,7 @@ export function shouldDisplayPercentUsed(metric, metricType, unit) {
 
 export function displayUsageValue(value, { metric, metricType, unit } = {}) {
   if (typeof value !== 'number') return value ?? null
-  if (shouldDisplayPercentUsed(metric, metricType, unit)) return clampPercent(100 - value)
+  if (shouldDisplayPercentUsed(metric, metricType, unit)) return Math.max(0, 100 - value)
   return value
 }
 
@@ -201,4 +201,21 @@ export function unmeasurableProviders(providers) {
 export function riskRows(overview) {
   if (overview?.risks?.length) return overview.risks
   return sortedCapacityProviders(overview?.providers).filter((provider) => provider.utilization_pct >= 70)
+}
+
+export function utilizationOverflowLabel(provider) {
+  const utilization = provider?.utilization_pct
+  if (typeof utilization !== 'number') return ''
+  const overage = typeof provider?.overage_pct === 'number' ? provider.overage_pct : Math.max(0, utilization - 100)
+  if (overage > 0) return `${formatPercent(utilization)} used · ${formatPercent(overage)} over allowance`
+  return `${formatPercent(utilization)} used`
+}
+
+export function utilizationChartScale(comparison) {
+  const values = (comparison || [])
+    .flatMap((series) => series?.buckets || [])
+    .map((bucket) => bucket?.value)
+    .filter((value) => typeof value === 'number' && Number.isFinite(value))
+  const max = Math.max(100, ...values)
+  return Math.ceil(max / 25) * 25
 }
