@@ -160,14 +160,14 @@ input {
 .nav-link.active svg {
   color: #14cbfa;
 }
-.settings-submenu {
+.nav-submenu {
   display: grid;
   gap: 5px;
   margin: -2px 0 4px 34px;
   padding-left: 15px;
   border-left: 1px solid rgba(6, 200, 255, 0.18);
 }
-.settings-submenu-link {
+.nav-submenu-link {
   display: block;
   padding: 7px 10px;
   border-radius: 10px;
@@ -178,7 +178,7 @@ input {
     color 0.18s ease,
     background 0.18s ease;
 }
-.settings-submenu-link:hover {
+.nav-submenu-link:hover {
   color: #eaf9ff;
   background: rgba(6, 200, 255, 0.07);
 }

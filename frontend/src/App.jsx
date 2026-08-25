@@ -222,6 +222,14 @@ const settingsSubmenuItems = [
   { href: "#integration-tokens", label: "Integration tokens" },
 ];
 
+const usageSubmenuItems = [
+  { href: "#usage-filters", label: "Filters" },
+  { href: "#usage-overview", label: "Overview" },
+  { href: "#usage-provider-trends", label: "Provider trends" },
+  { href: "#usage-breakdowns", label: "Daily / hourly" },
+  { href: "#usage-attribution", label: "Attribution" },
+];
+
 function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -291,6 +299,7 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
 
 function Navigation({ mobile = false, isAuthenticated = true }) {
   const location = useLocation();
+  const showUsageSubmenu = !mobile && location.pathname.startsWith("/usage");
   const showSettingsSubmenu =
     !mobile && location.pathname.startsWith("/settings");
 
@@ -322,15 +331,25 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
                 {item.icon}
                 <span>{item.label}</span>
               </NavLink>
+              {item.to === "/usage" && showUsageSubmenu && (
+                <div className="nav-submenu" aria-label="Usage sections">
+                  {usageSubmenuItems.map((subitem) => (
+                    <a
+                      key={subitem.href}
+                      className="nav-submenu-link"
+                      href={subitem.href}
+                    >
+                      {subitem.label}
+                    </a>
+                  ))}
+                </div>
+              )}
               {item.to === "/settings" && showSettingsSubmenu && (
-                <div
-                  className="settings-submenu"
-                  aria-label="Settings sections"
-                >
+                <div className="nav-submenu" aria-label="Settings sections">
                   {settingsSubmenuItems.map((subitem) => (
                     <a
                       key={subitem.href}
-                      className="settings-submenu-link"
+                      className="nav-submenu-link"
                       href={subitem.href}
                     >
                       {subitem.label}
