@@ -41,6 +41,8 @@ import {
   unmeasurableProviders,
   usageAxisLabel,
   usageMetricLabel,
+  utilizationChartScale,
+  utilizationOverflowLabel,
 } from '../lib/analyticsFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -393,13 +395,13 @@ function CapacityBars({ providers }) {
         <Box key={row.config_id}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
             <Typography variant="body2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
-            <Typography variant="body2" color="text.secondary">{formatPercent(row.utilization_pct)} used</Typography>
+            <Typography variant="body2" color="text.secondary">{utilizationOverflowLabel(row)}</Typography>
           </Stack>
           <Box className={`capacity-bar capacity-bar-${row.utilization_pct >= 85 ? 'critical' : row.utilization_pct >= 70 ? 'warning' : 'normal'}`}>
             <Box sx={{ width: `${Math.max(0, Math.min(100, row.utilization_pct))}%` }} />
           </Box>
           <Typography variant="caption" color="text.secondary">
-            {formatPercent(row.remaining_pct)} remaining{row.reset_at ? ` · resets ${new Date(row.reset_at).toLocaleString()}` : ''}
+            {formatPercent(row.remaining_pct)} remaining{row.overage_pct ? ` · ${formatPercent(row.overage_pct)} over allowance` : ''}{row.reset_at ? ` · resets ${new Date(row.reset_at).toLocaleString()}` : ''}
           </Typography>
         </Box>
       ))}
@@ -428,7 +430,7 @@ function AttentionRisks({ overview }) {
               <Typography variant="subtitle2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
               <Chip size="small" color={(row.state === 'critical' || row.state === 'exhausted') ? 'error' : 'warning'} label={row.state || 'warning'} />
             </Stack>
-            <Typography variant="body2" sx={{ mt: 0.75 }}>{formatPercent(row.utilization_pct)} used</Typography>
+            <Typography variant="body2" sx={{ mt: 0.75 }}>{utilizationOverflowLabel(row)}</Typography>
             <Typography variant="caption" color="text.secondary">
               {row.reason || `${formatPercent(row.remaining_pct)} remaining`}{row.forecast_pct ? ` · projected ${formatPercent(row.forecast_pct)}` : ''}
             </Typography>
@@ -460,10 +462,10 @@ function ProviderComparisonTable({ providers }) {
           <tr key={row.config_id}>
             <td>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</td>
             <td>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</td>
-            <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : `${formatPercent(row.utilization_pct)} used`}</td>
+            <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : utilizationOverflowLabel(row)}</td>
             <td>{row.utilization_trend_pct !== null && row.utilization_trend_pct !== undefined ? formatTrend(row.utilization_trend_pct, ' pts') : formatTrend(row.trend_pct)}</td>
             <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '—'}</td>
-            <td><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} /></td>
+            <td><Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} />{row.authoritative_source && <Chip size="small" variant="outlined" label={row.corroborating_sources?.length ? `${row.authoritative_source} + ${row.corroborating_sources.length}` : row.authoritative_source} />}</Stack></td>
           </tr>
         ))}
       </tbody>
@@ -484,8 +486,10 @@ function UtilizationChart({ comparison }) {
   const innerW = width - pad.left - pad.right
   const innerH = height - pad.top - pad.bottom
   const maxLen = Math.max(...comparison.map((series) => (series.buckets || []).length))
+  const yMax = utilizationChartScale(comparison)
+  const ticks = Array.from({ length: Math.floor(yMax / 25) + 1 }, (_, index) => index * 25)
   const x = (index) => pad.left + (maxLen > 1 ? (index / (maxLen - 1)) * innerW : innerW / 2)
-  const y = (value) => pad.top + (1 - Math.max(0, Math.min(100, Number(value))) / 100) * innerH
+  const y = (value) => pad.top + (1 - Math.max(0, Math.min(yMax, Number(value))) / yMax) * innerH
 
   function handlePointerMove(event) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -519,9 +523,9 @@ function UtilizationChart({ comparison }) {
         onBlur={() => setHoverIndex(null)}
         tabIndex={0}
       >
-        {[0, 25, 50, 75, 100].map((tick) => (
+        {ticks.map((tick) => (
           <g key={tick}>
-            <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke={tick === 100 ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.06)'} strokeWidth={tick === 100 ? '1.5' : '1'} />
             <text x={pad.left - 6} y={y(tick) + 3} textAnchor="end" className="usage-axis-label">{tick}%</text>
           </g>
         ))}
@@ -763,7 +767,7 @@ export default function UsagePage() {
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
                   <Typography variant="overline" color="primary.main">Capacity over time</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Historical 0–100% utilization overlay. Gaps remain missing data, not zero.</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Historical utilization overlay with a fixed 100% quota reference. Values can extend above 100%; gaps remain missing data, not zero.</Typography>
                   <UtilizationChart comparison={overview.comparison} />
                 </CardContent>
               </Card>

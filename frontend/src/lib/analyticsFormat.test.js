@@ -23,6 +23,8 @@ import {
   unmeasurableProviders,
   usageAxisLabel,
   usageMetricLabel,
+  utilizationChartScale,
+  utilizationOverflowLabel,
 } from './analyticsFormat.js'
 
 describe('compactNumber', () => {
@@ -95,7 +97,7 @@ describe('percent-used display helpers', () => {
     expect(shouldDisplayPercentUsed('session_remaining_percent', 'remaining', '%')).toBe(true)
     expect(shouldDisplayPercentUsed('usage_percent', 'gauge', '%')).toBe(false)
     expect(displayUsageValue(120, { metric: 'session_remaining_percent', metricType: 'remaining', unit: '%' })).toBe(0)
-    expect(displayUsageValue(-5, { metric: 'session_remaining_percent', metricType: 'remaining', unit: '%' })).toBe(100)
+    expect(displayUsageValue(-28, { metric: 'session_remaining_percent', metricType: 'remaining', unit: '%' })).toBe(128)
   })
 
   it('labels converted metrics as used', () => {
@@ -221,5 +223,15 @@ describe('overview pressure helpers', () => {
     expect(riskRows(overview)).toEqual(overview.risks)
     expect(qualityLabel('partial')).toBe('Partial')
     expect(qualityLabel('wat')).toBe('Limited')
+  })
+
+  it('labels utilization overflow separately from progress-bar clamping', () => {
+    expect(utilizationOverflowLabel({ utilization_pct: 128, overage_pct: 28 })).toBe('128% used · 28% over allowance')
+    expect(utilizationOverflowLabel({ utilization_pct: 75 })).toBe('75% used')
+  })
+
+  it('extends utilization chart scale above the quota line', () => {
+    expect(utilizationChartScale([{ buckets: [{ value: 40 }, { value: 128 }] }])).toBe(150)
+    expect(utilizationChartScale([{ buckets: [{ value: 40 }, { value: 80 }] }])).toBe(100)
   })
 })

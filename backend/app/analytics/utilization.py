@@ -1,8 +1,9 @@
 """Quota-utilization helpers.
 
-Utilization is the fraction of a provider's own quota consumed (0-100), which
-is the one cross-provider axis that is comparable even when providers report
-tokens, USD, credits, or percentages.
+Utilization is the fraction of a provider's own quota consumed. It is usually
+0-100, but can legitimately exceed 100 when a provider is over its allowance.
+This remains the one cross-provider axis that is comparable even when providers
+report tokens, USD, credits, or percentages.
 """
 
 from __future__ import annotations
@@ -12,8 +13,8 @@ from bisect import bisect_right
 from app.analytics.types import Observation
 
 
-def clamp100(value: float) -> float:
-    return max(0.0, min(100.0, value))
+def floor_zero(value: float) -> float:
+    return max(0.0, value)
 
 
 def utilization_metric(capabilities: dict) -> tuple[str, dict] | None:
@@ -31,19 +32,23 @@ def utilization_metric(capabilities: dict) -> tuple[str, dict] | None:
 
 
 def utilization_value(value: float | None, *, spec: dict, capacity: float | None = None) -> float | None:
-    """Fraction of quota consumed (0-100), or None when no quota is known."""
+    """Fraction of quota consumed, or None when no quota is known.
+
+    Values above 100 are meaningful overage signals and must not be clamped;
+    only negative utilization is floored to zero.
+    """
     if value is None:
         return None
     metric_type = spec.get("type")
     maximum = spec.get("maximum")
     if metric_type == "counter":
         if maximum is not None and maximum > 0:
-            return clamp100(value / maximum * 100)
+            return floor_zero(value / maximum * 100)
         return None
     if metric_type in ("remaining", "balance"):
         denominator = capacity if capacity is not None else maximum
         if denominator is not None and denominator > 0:
-            return clamp100((denominator - value) / denominator * 100)
+            return floor_zero((denominator - value) / denominator * 100)
         return None
     return None
 

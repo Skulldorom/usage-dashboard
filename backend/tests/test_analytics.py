@@ -321,9 +321,10 @@ def test_utilization_value_returns_none_without_quota():
     assert utilization_value(5.0, spec={"type": "counter"}) is None  # no maximum
 
 
-def test_utilization_value_clamps_to_0_100():
-    assert utilization_value(150.0, spec={"type": "counter", "maximum": 100}) == 100.0
-    assert utilization_value(-10.0, spec={"type": "remaining", "maximum": 100}) == 100.0
+def test_utilization_value_floors_zero_but_preserves_overage():
+    assert utilization_value(150.0, spec={"type": "counter", "maximum": 100}) == 150.0
+    assert utilization_value(-10.0, spec={"type": "remaining", "maximum": 100}) == pytest.approx(110.0)
+    assert utilization_value(120.0, spec={"type": "remaining", "maximum": 100}) == 0.0
 
 
 def test_utilization_metric_prefers_marked_metric():

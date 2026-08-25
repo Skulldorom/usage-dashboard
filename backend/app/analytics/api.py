@@ -579,6 +579,19 @@ def _utilization_trend(current: float | None, previous: float | None) -> float |
     return round(current - previous, 1)
 
 
+def _observation_sources(observations: list[Observation]) -> list[str]:
+    return sorted({obs.source for obs in observations if obs.source})
+
+
+def _source_priority(source: str | None) -> int:
+    return {"native": 0, "snapshot": 1, "hermes": 2, "estimated": 3}.get(source or "", 9)
+
+
+def _authoritative_source(observations: list[Observation]) -> str | None:
+    sources = _observation_sources(observations)
+    return min(sources, key=_source_priority) if sources else None
+
+
 def _quality_state(*, has_observations: bool, has_utilization: bool, native_history: bool, supported: bool, coverage: float) -> tuple[str, str, str | None]:
     if not has_observations:
         return "unavailable", "unavailable", "No current analytics observations"
@@ -666,6 +679,7 @@ async def overview(
         remaining_pct: float | None = None
         reset_at: datetime | None = None
         util_buckets = None
+        latest_util_source: str | None = None
         forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
         if util:
@@ -683,7 +697,9 @@ async def overview(
                 providers_with_forecasts += 1
                 latest = max(util_obs, key=lambda obs: obs.observed_at)
                 util_pct = latest.value
+                latest_util_source = latest.source
                 remaining_pct = round(max(0.0, 100.0 - util_pct), 4)
+                overage_pct = round(max(0.0, util_pct - 100.0), 4)
                 reset_at = latest.reset_at or _latest_reset_at(point_obs)
                 current_utilizations.append(util_pct)
                 previous_points = [obs for obs in util_obs if start - span <= obs.observed_at < start]
@@ -694,6 +710,16 @@ async def overview(
                     bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
                     interval=interval, start=start, end=end, tz=timezone,
                 )
+
+        if util_pct is None:
+            overage_pct = None
+
+        headline_obs = [obs for obs in observations if headline_metric_name and obs.metric == headline_metric_name]
+        util_source_obs = [obs for obs in observations if util_metric_name and obs.metric == util_metric_name]
+        source_pool = util_source_obs + headline_obs
+        sources = _observation_sources(source_pool or observations)
+        authoritative_source = latest_util_source or _authoritative_source(headline_obs) or _authoritative_source(observations)
+        corroborating_sources = [source for source in sources if source != authoritative_source]
 
         quality, data_state, exclusion_reason = _quality_state(
             has_observations=bool(observations),
@@ -715,6 +741,7 @@ async def overview(
             utilization_metric=util_metric_name,
             utilization_pct=round(util_pct, 4) if util_pct is not None else None,
             remaining_pct=remaining_pct,
+            overage_pct=overage_pct,
             reset_at=reset_at,
             trend_pct=_period_trend(observations, headline_metric_name, start, end),
             utilization_trend_pct=_utilization_trend(util_pct, previous_util_pct),
@@ -724,6 +751,28 @@ async def overview(
             exclusion_reason=exclusion_reason if util_pct is None else None,
             coverage=cov["coverage"],
             confidence=conf,
+            authoritative_source=authoritative_source,
+            corroborating_sources=corroborating_sources,
+            sources=sources,
+            audit={
+                "capacity": {
+                    "metric": util_metric_name,
+                    "value": round(util_pct, 4) if util_pct is not None else None,
+                    "unit": "%" if util_pct is not None else None,
+                    "authoritative_source": authoritative_source if util_pct is not None else None,
+                    "window_start": latest.window_start.isoformat() if util_pct is not None and latest.window_start else None,
+                    "window_end": latest.window_end.isoformat() if util_pct is not None and latest.window_end else None,
+                    "reset_at": reset_at.isoformat() if reset_at else None,
+                    "confidence": conf,
+                },
+                "activity": {
+                    "metric": headline_metric_name,
+                    "value": round(headline_value, 4) if headline_value is not None else None,
+                    "unit": headline_unit,
+                    "authoritative_source": _authoritative_source(headline_obs),
+                },
+                "corroborating_sources": corroborating_sources,
+            },
         )
         providers.append(provider)
 
@@ -731,6 +780,8 @@ async def overview(
             state = _risk_state(util_pct)
             if state != "normal":
                 reason = f"{round(util_pct, 1)}% used"
+                if util_pct > 100:
+                    reason += f" · {round(util_pct - 100, 1)}% over allowance"
                 if reset_at is not None:
                     reason += f" · resets {reset_at.isoformat()}"
                 risks.append(
@@ -740,6 +791,7 @@ async def overview(
                         label=config.label,
                         utilization_pct=round(util_pct, 4),
                         remaining_pct=remaining_pct,
+                        overage_pct=overage_pct,
                         reset_at=reset_at,
                         forecast_pct=forecast_pct,
                         confidence=conf,
@@ -755,6 +807,8 @@ async def overview(
                     provider=config.provider,
                     label=config.label,
                     metric=util_metric_name,
+                    source=latest_util_source,
+                    confidence=conf,
                     buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in util_buckets],
                 )
             )

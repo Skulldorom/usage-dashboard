@@ -377,6 +377,38 @@ async def test_overview_utilization_comparison(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_overview_preserves_over_limit_utilization_and_audit_source(sqlite_db):
+    Session = sqlite_db
+    codex = await _create_config(Session, provider="codex")
+    base = datetime.now(UTC) - timedelta(days=2)
+    reset = base + timedelta(days=5)
+    await _seed_observations(Session, codex, [
+        {"metric": "weekly_remaining_percent", "value": -28.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base, "reset_at": reset},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    provider = next(p for p in payload["providers"] if p["provider"] == "codex")
+    assert provider["utilization_pct"] == 128.0
+    assert provider["remaining_pct"] == 0.0
+    assert provider["overage_pct"] == 28.0
+    assert provider["authoritative_source"] == "native"
+    assert provider["sources"] == ["native"]
+    assert provider["audit"]["capacity"]["value"] == 128.0
+    assert payload["highest_utilization"]["utilization_pct"] == 128.0
+    assert payload["provider_pressure_pct"] == 128.0
+    assert payload["risks"][0]["state"] == "exhausted"
+    assert "28.0% over allowance" in payload["risks"][0]["reason"]
+    series = next(s for s in payload["comparison"] if s["provider"] == "codex")
+    assert series["source"] == "native"
+    values = [b["value"] for b in series["buckets"] if b["value"] is not None]
+    assert 128.0 in values
+
+
+@pytest.mark.asyncio
 async def test_overview_uses_declared_headline_not_sum(sqlite_db):
     """Overlapping same-unit deltas must not inflate the headline or totals."""
     Session = sqlite_db
