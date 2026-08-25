@@ -37,6 +37,8 @@ import {
   hermesActivityLabel,
   isDeltaMetric,
   overviewTotalCards,
+  paceRatioLabel,
+  paceStatus,
   peakLabel,
   pressureSummaryCards,
   primaryValue,
@@ -271,6 +273,9 @@ function ForecastPanel({ forecast, unit }) {
 
   if (rates?.avg_7d !== null && rates?.avg_7d !== undefined) rows.push({ label: '7-day rate', value: formatMetricValue(rates.avg_7d, unit) + '/day' })
   if (rates?.current_24h !== null && rates?.current_24h !== undefined) rows.push({ label: '24h rate', value: formatMetricValue(rates.current_24h, unit) + '/day' })
+  if (forecast.pace_ratio !== null && forecast.pace_ratio !== undefined) {
+    rows.push({ label: 'Pace', value: paceRatioLabel(forecast.pace_ratio), status: paceStatus(forecast.pace_ratio) })
+  }
 
   return (
     <Card variant="outlined" className="glass-panel">
@@ -286,12 +291,126 @@ function ForecastPanel({ forecast, unit }) {
             {rows.map((row) => (
               <Box key={row.label} className="usage-stat-row">
                 <Typography variant="body2" color="text.secondary">{row.label}</Typography>
-                <Typography variant="body2">{row.value}</Typography>
+                <Typography variant="body2" color={row.status === 'warning' ? 'warning.main' : undefined}>{row.value}</Typography>
               </Box>
             ))}
           </Stack>
         )}
         {confidence?.reason && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>{confidence.reason}</Typography>}
+      </CardContent>
+    </Card>
+  )
+}
+
+function CapacityHistoryChart({ buckets }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
+  const points = (buckets || []).map((bucket, index) => ({ index, value: bucket.value })).filter((point) => typeof point.value === 'number')
+  if (points.length < 2) {
+    return <Typography variant="body2" color="text.secondary">Not enough history to chart capacity yet.</Typography>
+  }
+  const width = 720
+  const height = 160
+  const pad = { top: 10, right: 12, bottom: 22, left: 34 }
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+  const yMax = utilizationChartScale([{ buckets }])
+  const x = (index) => pad.left + (points.length > 1 ? (index / (points.length - 1)) * innerW : innerW / 2)
+  const y = (value) => pad.top + (1 - Math.max(0, Math.min(yMax, Number(value))) / yMax) * innerH
+  const d = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${x(point.index)} ${y(point.value)}`).join(' ')
+  const ticks = Array.from({ length: Math.floor(yMax / 50) + 1 }, (_, index) => index * 50)
+
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relativeX = ((event.clientX - rect.left) / rect.width) * width
+    const clamped = Math.max(pad.left, Math.min(width - pad.right, relativeX))
+    const index = points.length > 1 ? Math.round(((clamped - pad.left) / innerW) * (points.length - 1)) : 0
+    setHoverIndex(Math.max(0, Math.min(points.length - 1, index)))
+  }
+
+  const hovered = hoverIndex === null ? null : points[hoverIndex]
+  const hoverX = hovered === null ? null : x(hovered.index)
+  const hoverY = hovered === null ? null : y(hovered.value)
+
+  return (
+    <Box className="usage-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="usage-chart"
+        role="img"
+        aria-label="Capacity history"
+        preserveAspectRatio="none"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+        tabIndex={0}
+      >
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke={tick === 100 ? 'rgba(255,255,255,0.32)' : 'rgba(255,255,255,0.06)'} strokeWidth={tick === 100 ? '1.5' : '1'} />
+            <text x={pad.left - 6} y={y(tick) + 3} textAnchor="end" className="usage-axis-label">{tick}%</text>
+          </g>
+        ))}
+        <path d={d} fill="none" stroke="#06c8ff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {hovered !== null && (
+          <g className="usage-chart-hover">
+            <line x1={hoverX} x2={hoverX} y1={pad.top} y2={height - pad.bottom} />
+            <circle cx={hoverX} cy={hoverY} r="4" />
+          </g>
+        )}
+      </svg>
+      {hovered !== null && (
+        <div className="usage-chart-tooltip" aria-live="polite">
+          {formatAxis(new Date(hovered.value && buckets[hovered.index]?.start))} · {formatPercent(hovered.value)}
+        </div>
+      )}
+    </Box>
+  )
+}
+
+function CapacityPanel({ capacity }) {
+  if (!capacity) return null
+  const { capacity_used_pct: used, capacity_remaining_pct: remaining, overage_pct: overage, reset_at: resetAt, pace_ratio: paceRatio } = capacity
+  if (used === null || used === undefined) {
+    return (
+      <Card variant="outlined" className="glass-panel">
+        <CardContent>
+          <Typography variant="overline" color="primary.main">Capacity</Typography>
+          <Typography variant="body2" color="text.secondary">This provider does not expose a normalizable quota/capacity metric.</Typography>
+        </CardContent>
+      </Card>
+    )
+  }
+  return (
+    <Card variant="outlined" className="glass-panel">
+      <CardContent>
+        <Typography variant="overline" color="primary.main">Capacity</Typography>
+        <Stack spacing={1} sx={{ mt: 1 }}>
+          <Box className="usage-stat-row">
+            <Typography variant="body2" color="text.secondary">Used</Typography>
+            <Typography variant="body2">{utilizationOverflowLabel({ utilization_pct: used, overage_pct: overage })}</Typography>
+          </Box>
+          {remaining !== null && remaining !== undefined && (
+            <Box className="usage-stat-row">
+              <Typography variant="body2" color="text.secondary">Remaining</Typography>
+              <Typography variant="body2">{formatPercent(remaining)}</Typography>
+            </Box>
+          )}
+          {resetAt && (
+            <Box className="usage-stat-row">
+              <Typography variant="body2" color="text.secondary">Resets</Typography>
+              <Typography variant="body2">{new Date(resetAt).toLocaleString()}</Typography>
+            </Box>
+          )}
+          {paceRatio !== null && paceRatio !== undefined && (
+            <Box className="usage-stat-row">
+              <Typography variant="body2" color="text.secondary">Pace</Typography>
+              <Typography variant="body2" color={paceStatus(paceRatio) === 'warning' ? 'warning.main' : undefined}>{paceRatioLabel(paceRatio)}</Typography>
+            </Box>
+          )}
+        </Stack>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="overline" color="primary.main" sx={{ display: 'block', mb: 1 }}>Capacity history</Typography>
+          <CapacityHistoryChart buckets={capacity.buckets} />
+        </Box>
       </CardContent>
     </Card>
   )
@@ -721,6 +840,7 @@ export default function UsagePage() {
   const [daily, setDaily] = useState(null)
   const [comparison, setComparison] = useState(null)
   const [forecast, setForecast] = useState(null)
+  const [capacity, setCapacity] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [overviewMode, setOverviewMode] = useState('capacity')
@@ -773,11 +893,15 @@ export default function UsagePage() {
       setDaily(null)
       setComparison(null)
       setForecast(null)
+      setCapacity(null)
       try {
         const info = await api.analyticsProvider(selectedId)
         if (cancelled) return
         setProviderInfo(info)
         setMetric(info.preferred_metric || info.metrics[0]?.label || '')
+        const capacityData = await api.analyticsCapacity(selectedId, { timezone: TIMEZONE }).catch(() => null)
+        if (cancelled) return
+        setCapacity(capacityData)
       } catch (err) {
         if (!cancelled) setError(err.message)
       }
@@ -970,6 +1094,12 @@ export default function UsagePage() {
 
           {providerInfo && !providerInfo.supported && (
             <Alert severity="info">This provider exposes generic point history only - advanced analytics (forecasts, pacing) are unavailable.</Alert>
+          )}
+
+          {providerInfo && capacity && (
+            <Box id="usage-provider-capacity">
+              <CapacityPanel capacity={capacity} />
+            </Box>
           )}
 
           {providerInfo && (
