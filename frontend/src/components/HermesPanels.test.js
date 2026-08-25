@@ -5,6 +5,9 @@ import {
   hasHermesData,
   hermesHeadlineCards,
   hermesTotalMap,
+  estimatedCostCards,
+  estimatedCostNote,
+  estimatedCostTotal,
 } from '../lib/hermesFormat.js'
 import {
   HermesDataSourcesCards,
@@ -46,6 +49,45 @@ describe('HermesPanels helpers', () => {
   it('distinguishes empty Hermes payloads from observed telemetry', () => {
     expect(hasHermesData(hermesData)).toBe(true)
     expect(hasHermesData({ totals: [], sessions: 0 })).toBe(false)
+  })
+})
+
+describe('estimated cost helpers', () => {
+  const estimate = {
+    currency: 'USD',
+    pricing_version: '2026-08-25.1',
+    total_cost: 0.0105,
+    total_tokens: 1500,
+    unpriced_tokens: 0,
+    groups: [],
+    unpriced: { token_classes: {}, models: {} },
+  }
+
+  it('extracts the estimated total cost', () => {
+    expect(estimatedCostTotal(estimate)).toBe(0.0105)
+    expect(estimatedCostTotal(null)).toBe(null)
+    expect(estimatedCostTotal({})).toBe(null)
+  })
+
+  it('builds estimated-cost headline cards', () => {
+    const cards = estimatedCostCards(estimate)
+    expect(cards.find((c) => c.key === 'estimated_cost').value).toBe('$0.01')
+    expect(cards.find((c) => c.key === 'priced_tokens').value).toBe('1,500 tokens')
+  })
+
+  it('surfaces unpriced models rather than hiding them', () => {
+    const withUnpriced = {
+      ...estimate,
+      unpriced: { token_classes: { reasoning_tokens: 100 }, models: { 'mystery-model': 100 } },
+    }
+    const cards = estimatedCostCards(withUnpriced)
+    expect(cards.find((c) => c.key === 'unpriced_models').value).toBe('1')
+    expect(estimatedCostNote(withUnpriced)).toContain('unpriced: mystery-model')
+  })
+
+  it('returns no cards when no estimate is present', () => {
+    expect(estimatedCostCards(null)).toEqual([])
+    expect(estimatedCostCards({ total_cost: null, total_tokens: 0, unpriced_tokens: 0, unpriced: { models: {} } })).toEqual([])
   })
 })
 

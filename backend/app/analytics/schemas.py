@@ -136,6 +136,8 @@ class OverviewProvider(BaseModel):
     hermes_activity: dict[str, float] = Field(default_factory=dict)
     attribution: list[dict] = Field(default_factory=list)
     audit: dict = Field(default_factory=dict)
+    estimated_cost: float | None = None
+    estimated_cost_source: str | None = None
 
 
 class OverviewCoverage(BaseModel):

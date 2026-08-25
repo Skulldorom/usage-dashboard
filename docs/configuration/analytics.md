@@ -113,6 +113,34 @@ GET /api/v1/analytics/providers/{config_id}/comparison?metric=&window=day|week|m
 `interval` is one of `hour`, `day`, or `week`. Day and hour grouping honor the
 requested `timezone` (IANA name); the frontend passes the user's local timezone.
 
+## Estimated cost (Hermes-derived)
+
+When a Hermes data source supplies **model + token-class** telemetry for a mapped
+provider, the dashboard derives a supplementary **estimated cost** by pricing
+those token classes against a maintained catalogue of provider/model list prices.
+
+The estimate is intentionally distinct from provider-reported cost:
+
+- Token classes — `input`, `output`, `cache read`, `cache write`, and
+  `reasoning` — are priced **separately** where the catalogue lists them.
+- Rates are selected **by effective date**, so historical usage is priced with
+  the rate in effect on each observation's date rather than today's price.
+- The result is always labelled **Estimated cost** and carries the catalogue
+  version (`pricing_version`) used, so a number can be traced to its rate set.
+- Unknown models, and token classes with no listed rate, are surfaced as
+  **unpriced** — never silently priced at zero.
+- `requests` and provider-reported `cost` are never token-priced; the estimate
+  is never added to provider-authoritative totals.
+
+### Pricing catalogue
+
+Prices live in `backend/app/analytics/pricing.py`. Entries are keyed by
+(provider, model) with an `effective_from` date and per-token-class USD rates
+per 1M tokens. Bump `PRICING_VERSION` whenever you edit an entry so existing
+dashboards can tell which rate set produced a stored number. Seed values are
+representative list prices and should be reviewed against current provider
+pricing pages.
+
 ## Cross-provider comparison
 
 Because providers report different units (tokens, USD, credits, percentages),

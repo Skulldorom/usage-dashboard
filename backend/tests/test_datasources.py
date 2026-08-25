@@ -251,6 +251,23 @@ async def test_hermes_breakdown_and_attribution(sqlite_db):
         assert body["by_model"][0]["key"] == "claude-sonnet-4"
         assert body["by_profile"][0]["key"] == "coder"
 
+        # Estimated cost from model + token classes (claude-sonnet-4 pricing).
+        estimate = body["cost_estimate"]
+        assert estimate is not None
+        assert estimate["currency"] == "USD"
+        assert estimate["pricing_version"]
+        # input 1000 → 0.003, output 500 → 0.0075, total 0.0105
+        assert estimate["total_cost"] == 0.0105
+        assert estimate["total_tokens"] == 1500.0
+        assert estimate["unpriced_tokens"] == 0.0
+        assert len(estimate["groups"]) == 1
+        assert estimate["groups"][0]["provider"] == "anthropic"
+        assert estimate["groups"][0]["model"] == "claude-sonnet-4"
+        by_model = {row["key"]: row for row in body["by_model"]}
+        assert by_model["claude-sonnet-4"]["estimated_cost"] == 0.0105
+        by_provider = {row["key"]: row for row in body["by_provider"]}
+        assert by_provider["anthropic"]["estimated_cost"] == 0.0105
+
         attribution = await client.get(
             f"/api/v1/analytics/providers/{provider_id}/attribution", headers=AUTH
         )
