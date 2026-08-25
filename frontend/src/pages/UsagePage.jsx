@@ -12,6 +12,7 @@ import {
   MenuItem,
   Select,
   Stack,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
@@ -467,6 +468,11 @@ function ProviderComparisonTable({ providers }) {
                 <span>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</span>
                 {hermesActivityLabel(row.hermes_activity) && (
                   <Typography variant="caption" color="text.secondary">{hermesActivityLabel(row.hermes_activity)}</Typography>
+                )}
+                {row.estimated_cost !== null && row.estimated_cost !== undefined && (
+                  <Tooltip title={row.estimated_cost_source || 'Estimated from model + token pricing'} arrow>
+                    <Typography variant="caption" color="text.secondary" component="span">Estimated cost {formatMetricValue(row.estimated_cost, 'USD')}</Typography>
+                  </Tooltip>
                 )}
               </Stack>
             </td>

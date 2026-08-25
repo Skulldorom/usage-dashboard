@@ -21,13 +21,14 @@ import {
 import HubRoundedIcon from '@mui/icons-material/HubRounded'
 import { api } from '../api.js'
 import { rangeToParams } from '../lib/analyticsFormat.js'
-import { fmt, hasHermesData, hermesHeadlineCards, money } from '../lib/hermesFormat.js'
+import { fmt, hasHermesData, hermesHeadlineCards, money, estimatedCostCards, estimatedCostNote } from '../lib/hermesFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 const SOURCE_STATUS_COLOR = { healthy: 'success', error: 'error', never_connected: 'default' }
 
 function GroupTable({ title, rows }) {
   if (!rows?.length) return null
+  const showEstimated = rows.some((row) => row.estimated_cost !== null && row.estimated_cost !== undefined)
   return (
     <Card variant="outlined" className="glass-panel">
       <CardContent>
@@ -39,6 +40,7 @@ function GroupTable({ title, rows }) {
               <TableCell align="right">Cost</TableCell>
               <TableCell align="right">Tokens</TableCell>
               <TableCell align="right">Requests</TableCell>
+              {showEstimated && <TableCell align="right">Est. cost</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -48,6 +50,7 @@ function GroupTable({ title, rows }) {
                 <TableCell align="right">{money(row.cost)}</TableCell>
                 <TableCell align="right">{fmt(row.tokens)}</TableCell>
                 <TableCell align="right">{fmt(row.requests)}</TableCell>
+                {showEstimated && <TableCell align="right">{money(row.estimated_cost)}</TableCell>}
               </TableRow>
             ))}
           </TableBody>
@@ -230,6 +233,27 @@ export function HermesBreakdownPanel({ range }) {
           {!hasData && (
             <Box sx={{ mt: 2 }}>
               <HermesDiagnostics diagnostics={data.diagnostics} />
+            </Box>
+          )}
+          {estimatedCostCards(data.cost_estimate).length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mb: 1 }}>
+                <Typography variant="overline" color="primary.main">Estimated cost</Typography>
+                <Typography variant="caption" color="text.secondary">{estimatedCostNote(data.cost_estimate)}</Typography>
+              </Stack>
+              <Grid container spacing={1.5}>
+                {estimatedCostCards(data.cost_estimate).map((card) => (
+                  <Grid size={{ xs: 6, sm: 4, lg: 3 }} key={card.key}>
+                    <Box className="summary-card glass-panel">
+                      <div className="summary-label">{card.label}</div>
+                      <div className="summary-value">{card.value}</div>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                Estimated from Hermes-observed model + token usage against a maintained pricing catalogue. Separate from provider-reported cost and never added to it.
+              </Typography>
             </Box>
           )}
         </CardContent>
