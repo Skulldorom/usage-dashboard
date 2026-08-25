@@ -23,6 +23,9 @@ import { AttributionPanel, HermesBreakdownPanel } from '../components/HermesPane
 import {
   DEFAULT_RANGE,
   RANGE_OPTIONS,
+  activityChartScale,
+  activityDimensions,
+  activityShareRows,
   bucketWallClock,
   changeStatus,
   chartPoints,
@@ -585,6 +588,126 @@ function UtilizationChart({ comparison }) {
   )
 }
 
+function ActivityChart({ dimension, unit }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
+  const providers = dimension?.providers || []
+  if (providers.length === 0) {
+    return <Typography variant="body2" color="text.secondary">No providers expose this activity dimension.</Typography>
+  }
+  const width = 720
+  const height = 220
+  const pad = { top: 12, right: 12, bottom: 26, left: 40 }
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+  const maxLen = Math.max(...providers.map((provider) => (provider.buckets || []).length))
+  const yMax = activityChartScale(dimension)
+  const x = (index) => pad.left + (maxLen > 1 ? (index / (maxLen - 1)) * innerW : innerW / 2)
+  const y = (value) => pad.top + (1 - Math.max(0, Math.min(yMax, Number(value))) / yMax) * innerH
+  const ticks = [0, 0.5, 1].map((f) => Math.round(yMax * f))
+
+  function handlePointerMove(event) {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const relativeX = ((event.clientX - rect.left) / rect.width) * width
+    const clamped = Math.max(pad.left, Math.min(width - pad.right, relativeX))
+    const index = maxLen > 1 ? Math.round(((clamped - pad.left) / innerW) * (maxLen - 1)) : 0
+    setHoverIndex(Math.max(0, Math.min(maxLen - 1, index)))
+  }
+
+  const hoverX = hoverIndex === null ? null : x(hoverIndex)
+  const hoverRows = hoverIndex === null
+    ? []
+    : providers
+      .map((provider) => {
+        const value = (provider.buckets || [])[hoverIndex]?.total
+        return { provider: provider.provider, label: provider.label, value: typeof value === 'number' ? value : null }
+      })
+      .filter((row) => row.value !== null)
+
+  return (
+    <Box className="usage-chart-wrap">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="usage-chart"
+        role="img"
+        aria-label={`Provider ${unit || 'activity'} over time`}
+        preserveAspectRatio="none"
+        onPointerMove={handlePointerMove}
+        onPointerLeave={() => setHoverIndex(null)}
+        onFocus={() => setHoverIndex(maxLen - 1)}
+        onBlur={() => setHoverIndex(null)}
+        tabIndex={0}
+      >
+        {ticks.map((tick) => (
+          <g key={tick}>
+            <line x1={pad.left} x2={width - pad.right} y1={y(tick)} y2={y(tick)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <text x={pad.left - 6} y={y(tick) + 3} textAnchor="end" className="usage-axis-label">{formatMetricValue(tick, unit)}</text>
+          </g>
+        ))}
+        {providers.map((provider, seriesIndex) => {
+          const color = SERIES_COLORS[seriesIndex % SERIES_COLORS.length]
+          const points = (provider.buckets || []).map((bucket, index) => ({ index, value: bucket.total })).filter((point) => typeof point.value === 'number')
+          if (points.length < 2) return null
+          const d = points.map((point, i) => `${i === 0 ? 'M' : 'L'} ${x(point.index)} ${y(point.value)}`).join(' ')
+          const hoveredValue = hoverIndex === null ? null : (provider.buckets || [])[hoverIndex]?.total
+          const showHoverDot = hoveredValue !== undefined && typeof hoveredValue === 'number' && points.some((point) => point.index === hoverIndex)
+          return (
+            <g key={provider.config_id}>
+              <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+              {showHoverDot && (
+                <circle cx={x(hoverIndex)} cy={y(hoveredValue)} r="4" fill={color} stroke="rgba(255,255,255,0.9)" strokeWidth="1.5" />
+              )}
+            </g>
+          )
+        })}
+        {hoverX !== null && (
+          <g className="usage-chart-hover">
+            <line x1={hoverX} x2={hoverX} y1={pad.top} y2={height - pad.bottom} />
+          </g>
+        )}
+      </svg>
+      {hoverRows.length > 0 && (
+        <div className="usage-chart-tooltip usage-chart-tooltip--multi" aria-live="polite">
+          {hoverRows.map((row) => (
+            <div key={row.provider}>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}: {formatMetricValue(row.value, unit)}</div>
+          ))}
+        </div>
+      )}
+      <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 1 }}>
+        {providers.map((provider, seriesIndex) => (
+          <Stack key={provider.config_id} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+            <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
+            <Typography variant="caption" color="text.secondary">{provider.provider}{provider.label && provider.label !== 'main' ? ` · ${provider.label}` : ''}</Typography>
+          </Stack>
+        ))}
+      </Stack>
+    </Box>
+  )
+}
+
+function ActivityShare({ dimension }) {
+  const rows = activityShareRows(dimension)
+  if (rows.length === 0) {
+    return <Typography variant="body2" color="text.secondary">No providers expose this activity dimension.</Typography>
+  }
+  return (
+    <Stack spacing={1.5}>
+      {rows.map((row) => (
+        <Box key={row.config_id}>
+          <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
+            <Typography variant="body2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {formatMetricValue(row.value, row.unit)} · {formatPercent(row.share_pct)} of {row.unit}
+            </Typography>
+          </Stack>
+          <Box className="capacity-bar capacity-bar-normal">
+            <Box sx={{ width: `${Math.max(0, Math.min(100, row.shareFraction * 100))}%` }} />
+          </Box>
+        </Box>
+      ))}
+    </Stack>
+  )
+}
+
 export default function UsagePage() {
   const [configs, setConfigs] = useState([])
   const [overview, setOverview] = useState(null)
@@ -600,6 +723,7 @@ export default function UsagePage() {
   const [forecast, setForecast] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [overviewMode, setOverviewMode] = useState('capacity')
 
   useEffect(() => {
     let cancelled = false
@@ -704,6 +828,12 @@ export default function UsagePage() {
 
   const points = useMemo(() => chartPoints(timeseries?.buckets, metricType, { metric, unit }), [timeseries, metricType, metric, unit])
 
+  const dimensions = useMemo(() => activityDimensions(overview), [overview])
+  const selectedDimension = useMemo(
+    () => dimensions.find((dimension) => dimension.dimension === overviewMode) || null,
+    [dimensions, overviewMode],
+  )
+
   return (
     <>
       <header className="page-heading">
@@ -781,11 +911,42 @@ export default function UsagePage() {
               </Card>
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
-                  <Typography variant="overline" color="primary.main">Capacity over time</Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Historical utilization overlay with a fixed 100% quota reference. Values can extend above 100%; gaps remain missing data, not zero.</Typography>
-                  <UtilizationChart comparison={overview.comparison} />
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Box>
+                      <Typography variant="overline" color="primary.main">Overview by metric</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        {overviewMode === 'capacity'
+                          ? 'Historical utilization overlay with a fixed 100% quota reference. Values can extend above 100%; gaps remain missing data, not zero.'
+                          : 'Activity consumption across providers with compatible units. Unlike units are never placed on the same scale.'}
+                      </Typography>
+                    </Box>
+                    <FormControl size="small" sx={{ minWidth: 150 }}>
+                      <InputLabel>Metric mode</InputLabel>
+                      <Select value={overviewMode} label="Metric mode" onChange={(event) => setOverviewMode(event.target.value)}>
+                        <MenuItem value="capacity">Capacity %</MenuItem>
+                        <MenuItem value="tokens">Tokens</MenuItem>
+                        <MenuItem value="requests">Requests</MenuItem>
+                        <MenuItem value="cost">Cost</MenuItem>
+                        <MenuItem value="credits">Credits</MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Stack>
+                  {overviewMode === 'capacity'
+                    ? <UtilizationChart comparison={overview.comparison} />
+                    : <ActivityChart dimension={selectedDimension} unit={selectedDimension?.unit} />}
                 </CardContent>
               </Card>
+              {overviewMode !== 'capacity' && selectedDimension && (
+                <Card variant="outlined" className="glass-panel">
+                  <CardContent>
+                    <Typography variant="overline" color="primary.main">Activity share — {selectedDimension.label}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+                      Share of total {selectedDimension.unit} within this dimension. Shares are always calculated within a single compatible dimension.
+                    </Typography>
+                    <ActivityShare dimension={selectedDimension} />
+                  </CardContent>
+                </Card>
+              )}
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
                   <Typography variant="overline" color="primary.main">Attention / Risks</Typography>

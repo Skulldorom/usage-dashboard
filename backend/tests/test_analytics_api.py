@@ -353,6 +353,84 @@ async def test_overview_totals_and_like_unit_share(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_overview_activity_dimensions_group_and_share(sqlite_db):
+    """Activity dimensions group compatible units and share within a dimension."""
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    openrouter = await _create_config(Session, provider="openrouter")
+    firecrawl = await _create_config(Session, provider="firecrawl")
+    base = datetime.now(UTC) - timedelta(days=2)
+
+    # Anthropic tokens: input 100 + output 50 = 150 tokens; requests = 30.
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+        {"metric": "output_tokens", "value": 50.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+        {"metric": "num_requests", "value": 30.0, "unit": "requests", "kind": "delta", "observed_at": base},
+    ])
+    # OpenRouter credits: 10; Firecrawl credits: 40 (both credits → shared).
+    await _seed_observations(Session, openrouter, [
+        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+    await _seed_observations(Session, firecrawl, [
+        {"metric": "credits_used", "value": 40.0, "unit": "credits", "kind": "delta", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    dims = {d["dimension"]: d for d in payload["activity"]}
+
+    # tokens: only anthropic, sum of input+output (150), 100% share.
+    tokens = dims["tokens"]
+    assert tokens["unit"] == "tokens"
+    assert tokens["total"] == 150.0
+    assert len(tokens["providers"]) == 1
+    assert tokens["providers"][0]["value"] == 150.0
+    assert tokens["providers"][0]["share_pct"] == 100.0
+
+    # requests: only anthropic.
+    requests = dims["requests"]
+    assert requests["total"] == 30.0
+    assert requests["providers"][0]["provider"] == "anthropic"
+
+    # credits: openrouter (10) + firecrawl (40) share one dimension.
+    credits = dims["credits"]
+    assert credits["total"] == 50.0
+    by_provider = {p["provider"]: p for p in credits["providers"]}
+    assert by_provider["openrouter"]["share_pct"] == 20.0
+    assert by_provider["firecrawl"]["share_pct"] == 80.0
+
+    # No cost dimension (no USD counter deltas).
+    assert "cost" not in dims
+
+
+@pytest.mark.asyncio
+async def test_overview_activity_excludes_state_and_percent(sqlite_db):
+    """Balances, remaining, and % utilization never appear as activity."""
+    Session = sqlite_db
+    deepseek = await _create_config(Session, provider="deepseek")
+    codex = await _create_config(Session, provider="codex")
+    base = datetime.now(UTC) - timedelta(days=2)
+
+    await _seed_observations(Session, deepseek, [
+        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
+    ])
+    await _seed_observations(Session, codex, [
+        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=5)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    # DeepSeek balance is state, Codex % is capacity — no activity dimensions.
+    assert payload["activity"] == []
+
+
+@pytest.mark.asyncio
 async def test_overview_utilization_comparison(sqlite_db):
     Session = sqlite_db
     codex = await _create_config(Session, provider="codex")
