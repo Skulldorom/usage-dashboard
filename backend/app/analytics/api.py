@@ -43,6 +43,7 @@ from app.analytics.schemas import (
 from app.analytics.types import Observation
 from app.analytics.capabilities import activity_dimensions, activity_metric_labels, overview_metric
 from app.analytics.pricing import estimate_cost, normalize_model
+from app.analytics.quota_correlation import estimate_quota_impact
 from app.analytics.reconciliation import (
     authoritative_source,
     degrade_confidence,
@@ -313,6 +314,13 @@ async def provider_capacity(
             tz=timezone,
         )
 
+    # Quota-impact correlation: estimate how Hermes-observed activity tracks
+    # quota movement across complete reset windows (never a fixed conversion).
+    hermes_observations = await _load_mapped_hermes_observations(
+        session, config.provider, start=now - timedelta(days=365), end=now,
+    )
+    quota_impact = estimate_quota_impact(util_obs, hermes_observations)
+
     return ProviderCapacity(
         config_id=config.id,
         provider=config.provider,
@@ -329,6 +337,7 @@ async def provider_capacity(
         pace_ratio=pace_ratio,
         sustainable_rate=sustainable_rate,
         burn_rate=burn_rate,
+        quota_impact=quota_impact,
         buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in buckets],
     )
 
@@ -889,6 +898,7 @@ async def overview(
         latest_util_source: str | None = None
         forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
+        quota_impact = None
         if util:
             util_metric_name, util_spec = util
             point_obs = [obs for obs in observations if obs.metric == util_metric_name]
@@ -917,6 +927,11 @@ async def overview(
                     bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
                     interval=interval, start=start, end=end, tz=timezone,
                 )
+                # Quota-impact correlation over long history (not the 30d range).
+                impact_hermes = await _load_mapped_hermes_observations(
+                    session, config.provider, start=now - timedelta(days=365), end=now,
+                )
+                quota_impact = estimate_quota_impact(util_obs, impact_hermes)
 
         if util_pct is None:
             overage_pct = None
@@ -1016,6 +1031,7 @@ async def overview(
                     "note": "Hermes activity is corroborating telemetry and is not added to provider-authoritative totals.",
                 },
                 "corroborating_sources": corroborating_sources,
+                "quota_impact": quota_impact,
             },
             estimated_cost=estimated_cost,
             estimated_cost_source=estimated_cost_source,

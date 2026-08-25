@@ -426,7 +426,7 @@ async def test_overview_activity_excludes_state_and_percent(sqlite_db):
 
     assert response.status_code == 200, response.text
     payload = response.json()
-    # DeepSeek balance is state, Codex % is capacity — no activity dimensions.
+    # DeepSeek balance is state, Codex % is capacity - no activity dimensions.
     assert payload["activity"] == []
 
 
@@ -477,6 +477,65 @@ async def test_provider_capacity_graceful_for_non_quota_provider(sqlite_db):
     assert payload["capacity_used_pct"] is None
     assert payload["overage_pct"] is None
     assert payload["buckets"] == []
+
+
+@pytest.mark.asyncio
+async def test_provider_capacity_quota_impact_with_history(sqlite_db):
+    """Capacity endpoint returns a quota-impact estimate with enough windowed history."""
+    Session = sqlite_db
+    codex = await _create_config(Session, provider="codex")
+    base = datetime.now(UTC) - timedelta(days=35)
+
+    # 5 complete weekly windows of utilization, rising peak proportional to
+    # Hermes tokens so the correlation is clean.
+    util = []
+    for window in range(5):
+        reset = base + timedelta(days=7 * (window + 1))
+        peak = 10.0 * (window + 1)
+        for offset in (0, 2, 5):
+            util.append({
+                "metric": "weekly_remaining_percent",
+                "value": peak * (0.2 if offset == 0 else 0.6 if offset == 2 else 1.0),
+                "unit": "%",
+                "kind": "point",
+                "source": "native",
+                "observed_at": base + timedelta(days=7 * window + offset),
+                "reset_at": reset,
+            })
+    await _seed_observations(Session, codex, util)
+
+    # Hermes tokens in each window (token deltas map to codex).
+    async with Session() as session:
+        source = DataSourceConfig(kind="hermes", name="Hermes codex", base_url="http://hermes.local", is_enabled=True)
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        for window in range(5):
+            session.add(
+                UsageObservation(
+                    data_source_id=source.id,
+                    provider="codex",
+                    provider_mapping="codex",
+                    metric="input_tokens",
+                    value=1000.0 * (window + 1),
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=base + timedelta(days=7 * window + 3),
+                    model="gpt-5-codex",
+                )
+            )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/analytics/providers/{codex.id}/capacity", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["quota_impact"] is not None
+    assert payload["quota_impact"]["sample_size"] == 4
+    assert payload["quota_impact"]["explained"] is True
+    assert payload["quota_impact"]["confidence"] in {"high", "medium", "low"}
 
 
 @pytest.mark.asyncio
