@@ -1,4 +1,4 @@
-"""Hermes Agent data source — read-only usage telemetry over HTTP.
+"""Hermes Agent data source - read-only usage telemetry over HTTP.
 
 Hermes does not expose a documented REST usage endpoint today, so this adapter
 implements a clean HTTP seam: it GETs ``{base_url}/usage`` and expects a JSON

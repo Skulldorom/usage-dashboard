@@ -207,7 +207,7 @@ export default function DataSourcesSection() {
     setActionResult(null)
     try {
       const result = action === 'test' ? await api.testDataSource(id) : await api.syncDataSource(id)
-      setActionResult({ type: 'success', text: action === 'test' ? `Connection OK — ${result.records} record(s) returned` : formatSyncResult(result) })
+      setActionResult({ type: 'success', text: action === 'test' ? `Connection OK - ${result.records} record(s) returned` : formatSyncResult(result) })
       await load()
     } catch (err) {
       setActionResult({ type: 'error', text: err.message })
@@ -397,9 +397,9 @@ export default function DataSourcesSection() {
                     <TableRow key={row.id}>
                       <TableCell>{row.observed_at}</TableCell>
                       <TableCell>{row.provider_mapping && row.provider_mapping !== row.provider ? `${row.provider} → ${row.provider_mapping}` : row.provider}</TableCell>
-                      <TableCell>{row.model || '—'}</TableCell>
-                      <TableCell>{row.profile || '—'}</TableCell>
-                      <TableCell>{row.session_id || '—'}</TableCell>
+                      <TableCell>{row.model || '-'}</TableCell>
+                      <TableCell>{row.profile || '-'}</TableCell>
+                      <TableCell>{row.session_id || '-'}</TableCell>
                       <TableCell>{row.metric.replaceAll('_', ' ')}</TableCell>
                       <TableCell align="right">{formatObservationValue(row)}</TableCell>
                     </TableRow>

@@ -309,7 +309,7 @@ function ComparisonPanel({ comparison, unit }) {
           <Box className="usage-stat-row">
             <Typography variant="body2" color="text.secondary">Change</Typography>
             <Typography variant="body2" color={comparison.change_pct >= 0 ? 'error' : 'success'}>
-              {comparison.change_pct === null || comparison.change_pct === undefined ? '—' : `${comparison.change_pct > 0 ? '+' : ''}${comparison.change_pct}%`}
+              {comparison.change_pct === null || comparison.change_pct === undefined ? '-' : `${comparison.change_pct > 0 ? '+' : ''}${comparison.change_pct}%`}
             </Typography>
           </Box>
         </Stack>
@@ -341,7 +341,7 @@ function DailyTable({ rows, metricType, unit }) {
               <td>{row.date}</td>
               <td>{formatMetricValue(primary, unit)}</td>
               <td>{peakLabel(row.peak_hour)}</td>
-              <td>{row.change_pct === null || row.change_pct === undefined ? '—' : `${row.change_pct > 0 ? '+' : ''}${row.change_pct}%`}</td>
+              <td>{row.change_pct === null || row.change_pct === undefined ? '-' : `${row.change_pct > 0 ? '+' : ''}${row.change_pct}%`}</td>
               <td><Chip size="small" label={changeStatus(row.change_pct)} /></td>
             </tr>
           )
@@ -464,7 +464,7 @@ function ProviderComparisonTable({ providers }) {
             <td>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</td>
             <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : utilizationOverflowLabel(row)}</td>
             <td>{row.utilization_trend_pct !== null && row.utilization_trend_pct !== undefined ? formatTrend(row.utilization_trend_pct, ' pts') : formatTrend(row.trend_pct)}</td>
-            <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '—'}</td>
+            <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '-'}</td>
             <td><Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} />{row.authoritative_source && <Chip size="small" variant="outlined" label={row.corroborating_sources?.length ? `${row.authoritative_source} + ${row.corroborating_sources.length}` : row.authoritative_source} />}</Stack></td>
           </tr>
         ))}
@@ -793,7 +793,7 @@ export default function UsagePage() {
           )}
 
           {providerInfo && !providerInfo.supported && (
-            <Alert severity="info">This provider exposes generic point history only — advanced analytics (forecasts, pacing) are unavailable.</Alert>
+            <Alert severity="info">This provider exposes generic point history only - advanced analytics (forecasts, pacing) are unavailable.</Alert>
           )}
 
           {providerInfo && (

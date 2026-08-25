@@ -46,7 +46,7 @@ describe('formatMetricValue', () => {
     expect(formatMetricValue(382_000, 'tokens')).toBe('382k tokens')
   })
   it('renders an em-dash for missing values', () => {
-    expect(formatMetricValue(null, 'credits')).toBe('—')
+    expect(formatMetricValue(null, 'credits')).toBe('-')
   })
 })
 
@@ -127,7 +127,7 @@ describe('peakLabel', () => {
   it('formats hour of day with leading zero', () => {
     expect(peakLabel(14)).toBe('14:00')
     expect(peakLabel(5)).toBe('05:00')
-    expect(peakLabel(null)).toBe('—')
+    expect(peakLabel(null)).toBe('-')
   })
 })
 

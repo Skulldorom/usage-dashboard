@@ -503,7 +503,7 @@ function UsageCard({ item, icon }) {
         </Typography>
         {isStale && (
           <Alert severity="warning" sx={{ mt: 1.5 }}>
-            Using last-known data — the latest refresh failed.
+            Using last-known data - the latest refresh failed.
           </Alert>
         )}
         {alertSeverity(alert_state) && (

@@ -286,7 +286,7 @@ async def test_native_history_upsert_persists_dedupes_and_updates(sqlite_db, mon
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
 
-    # Poll 2: rolling window advances — native hours 2..25 at factor 2.0, so the
+    # Poll 2: rolling window advances - native hours 2..25 at factor 2.0, so the
     # overlapping hours 2..24 arrive again with *different* values.
     NativeFakeAdapter.native = buckets(2, 25, factor=2.0)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

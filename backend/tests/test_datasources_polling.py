@@ -37,7 +37,7 @@ async def session_factory():
 @pytest_asyncio.fixture(autouse=True)
 async def _reset_scheduler_state():
     # asyncio.Lock binds to an event loop on first acquire, and pytest-asyncio
-    # runs each test on a fresh loop — clear module state so locks/tasks don't
+    # runs each test on a fresh loop - clear module state so locks/tasks don't
     # leak across tests.
     ds_service._locks.clear()
     scheduler._task = None

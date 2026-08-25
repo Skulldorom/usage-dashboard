@@ -658,7 +658,7 @@ async def overview(
         if bool(capabilities.get("native_history")):
             providers_with_history += 1
 
-        # Headline is the single explicitly declared overview metric — never a
+        # Headline is the single explicitly declared overview metric - never a
         # sum of same-unit metrics, so overlapping windows (e.g. daily/weekly/
         # monthly counters) can't inflate the value or its share.
         headline = overview_metric(capabilities) if capabilities else None

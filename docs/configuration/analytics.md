@@ -5,7 +5,7 @@ into historical analytics: trends, daily/hourly breakdowns, peak-usage windows,
 previous-period comparisons, and pace-based forecasts.
 
 Analytics are built as a normalization layer on top of the existing
-`UsageSnapshot` history — not a separate tracking system. Nothing about the
+`UsageSnapshot` history - not a separate tracking system. Nothing about the
 Dashboard's current-usage view changes.
 
 ## How it works
@@ -26,14 +26,14 @@ negative usage.
 
 ## What you can see
 
-- **Summary cards** — usage this week, average per day, trend vs. last week.
-- **Historical chart** — the selected metric over time (hourly / daily / weekly).
-- **Daily breakdown** — per-day usage, peak hour, day-over-day change, and status.
-- **Time-of-day heatmap** — when usage concentrates across the day and week.
-- **Previous-period comparison** — current period vs. the equivalent prior period.
-- **Forecast** — rate-based projections, estimated exhaustion, and a sustainable
+- **Summary cards** - usage this week, average per day, trend vs. last week.
+- **Historical chart** - the selected metric over time (hourly / daily / weekly).
+- **Daily breakdown** - per-day usage, peak hour, day-over-day change, and status.
+- **Time-of-day heatmap** - when usage concentrates across the day and week.
+- **Previous-period comparison** - current period vs. the equivalent prior period.
+- **Forecast** - rate-based projections, estimated exhaustion, and a sustainable
   daily pace, with a `high` / `medium` / `low` confidence indicator.
-- **All providers comparison** — a cross-provider view with like-unit totals,
+- **All providers comparison** - a cross-provider view with like-unit totals,
   a per-provider share table, and a quota-utilization overlay.
 
 Forecasts are deterministic and rate-based; they are scoped to the relevant
@@ -118,10 +118,10 @@ requested `timezone` (IANA name); the frontend passes the user's local timezone.
 Because providers report different units (tokens, USD, credits, percentages),
 the "All providers" view compares along two honest axes:
 
-- **Like-unit totals and share** — consumption is summed only within matching
+- **Like-unit totals and share** - consumption is summed only within matching
   units, and each provider's share is its fraction of its own unit group (so
   "95% of tokens" is real, never tokens blended with USD).
-- **Quota utilization** — each quota-tracking provider's fraction of its own
+- **Quota utilization** - each quota-tracking provider's fraction of its own
   quota consumed (0–100%), overlaid on one chart. Providers without a declared
   quota (token/balance/cost providers) simply don't appear on the overlay.
 
@@ -141,11 +141,11 @@ Analytics capability is declared per provider through reusable metadata rather
 than provider-specific conditionals. Providers expose the metric semantics the
 analytics engine needs:
 
-- **Anthropic** — token/request counters with native hourly history.
-- **OpenAI** — rolling 30-day cost plus native daily cost buckets.
-- **Codex** — session/weekly remaining percentages with reset windows.
-- **OpenRouter** — credit counters and remaining limit.
-- **DeepSeek** — account balance.
-- **Firecrawl** — credits and usage percent with a billing window.
-- **Custom HTTP** — generic point history; advanced analytics (forecasts,
+- **Anthropic** - token/request counters with native hourly history.
+- **OpenAI** - rolling 30-day cost plus native daily cost buckets.
+- **Codex** - session/weekly remaining percentages with reset windows.
+- **OpenRouter** - credit counters and remaining limit.
+- **DeepSeek** - account balance.
+- **Firecrawl** - credits and usage percent with a billing window.
+- **Custom HTTP** - generic point history; advanced analytics (forecasts,
   pacing) are unavailable because metric semantics are unknown.

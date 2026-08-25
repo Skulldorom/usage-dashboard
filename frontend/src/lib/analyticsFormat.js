@@ -22,7 +22,7 @@ export function compactNumber(value) {
 }
 
 export function formatMetricValue(value, unit) {
-  if (value === null || value === undefined) return '—'
+  if (value === null || value === undefined) return '-'
   const suffix = unit ? (unit === '%' ? '%' : ` ${unit}`) : ''
   const compact = compactNumber(value)
   return `${compact ?? value}${suffix}`
@@ -86,7 +86,7 @@ export function changeStatus(changePct) {
 }
 
 export function peakLabel(peakHour) {
-  if (peakHour === null || peakHour === undefined) return '—'
+  if (peakHour === null || peakHour === undefined) return '-'
   return `${String(peakHour).padStart(2, '0')}:00`
 }
 
@@ -134,7 +134,7 @@ export function overviewTotalCards(totals) {
 }
 
 export function formatPercent(value) {
-  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—'
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
   return `${compactNumber(value)}%`
 }
 
@@ -169,7 +169,7 @@ export function pressureSummaryCards(overview) {
     {
       key: 'highest',
       label: 'Highest Utilization',
-      value: highest ? `${highest.provider}${highest.label && highest.label !== 'main' ? ` · ${highest.label}` : ''}` : '—',
+      value: highest ? `${highest.provider}${highest.label && highest.label !== 'main' ? ` · ${highest.label}` : ''}` : '-',
       detail: highest ? `${formatPercent(highest.utilization_pct)} used${highest.reset_at ? ` · resets ${new Date(highest.reset_at).toLocaleString()}` : ''}` : 'No measurable providers',
     },
     {

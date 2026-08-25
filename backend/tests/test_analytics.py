@@ -347,7 +347,7 @@ def test_utilization_capacity_joined_at_or_before():
     capacity_obs = [
         Observation(metric="limit", value=100.0, unit="credits", observed_at=base, kind="point", source="snapshot"),
     ]
-    # Capacity persisted ~2s before the usage observation — must still pair.
+    # Capacity persisted ~2s before the usage observation - must still pair.
     result = utilization_observations(point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs)
     assert len(result) == 1
     assert result[0].value == 20.0

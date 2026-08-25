@@ -78,7 +78,7 @@ def is_point_type(metric_type: str) -> bool:
 def overview_metric(capabilities: dict | None) -> tuple[str, dict] | None:
     """Return the explicitly declared headline metric (label, spec), if any.
 
-    The headline is deterministic — declared via ``overview=True`` — rather than
+    The headline is deterministic - declared via ``overview=True`` - rather than
     inferred from summed unit totals, so overlapping or derived metrics never
     inflate a provider's headline value.
     """

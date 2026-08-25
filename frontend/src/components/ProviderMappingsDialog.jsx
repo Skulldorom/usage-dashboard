@@ -61,7 +61,7 @@ export function ProviderMappingsTable({ data, savingKey, onChange }) {
             <TableRow key={row.raw_provider}>
               <TableCell><code>{row.raw_provider}</code></TableCell>
               <TableCell>{observedMetrics(row)}</TableCell>
-              <TableCell>{row.last_observed_at ? new Date(row.last_observed_at).toLocaleString() : '—'}</TableCell>
+              <TableCell>{row.last_observed_at ? new Date(row.last_observed_at).toLocaleString() : '-'}</TableCell>
               <TableCell>
                 <FormControl size="small" sx={{ minWidth: 190 }} disabled={savingKey === row.raw_provider}>
                   <InputLabel>Provider</InputLabel>
@@ -160,11 +160,11 @@ export default function ProviderMappingsDialog({ source, onClose }) {
 
   return (
     <Dialog open={Boolean(source)} onClose={onClose} fullWidth maxWidth="md">
-      <DialogTitle>Provider mapping — {source?.name || ''}</DialogTitle>
+      <DialogTitle>Provider mapping - {source?.name || ''}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ mt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Map raw Hermes provider identifiers to providers configured in Usage Dashboard. Mapping is an attribution layer — raw identifiers are never rewritten in stored observations.
+            Map raw Hermes provider identifiers to providers configured in Usage Dashboard. Mapping is an attribution layer - raw identifiers are never rewritten in stored observations.
           </Typography>
           {loading && (
             <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>

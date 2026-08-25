@@ -1,8 +1,8 @@
 """Provider health derivation from snapshot history.
 
 Health is derived from targeted snapshot queries rather than a dedicated table
-or a bounded scan window. Every poll already persists a snapshot — success
-(``status != "error"``) or failure (``status == "error"``) — so last-success,
+or a bounded scan window. Every poll already persists a snapshot - success
+(``status != "error"``) or failure (``status == "error"``) - so last-success,
 last-failure, and consecutive-failure counts are recovered with cheap aggregate
 queries and no arbitrary history window.
 """

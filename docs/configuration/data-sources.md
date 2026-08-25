@@ -2,17 +2,17 @@
 
 Usage Dashboard separates two concepts that are easy to conflate:
 
-- **Providers** — the accounts/services whose usage, quotas, balances and
+- **Providers** - the accounts/services whose usage, quotas, balances and
   limits are being measured. Provider-reported numbers are **authoritative**
   where available.
-- **Data sources** — applications, gateways, or agents that supply additional
+- **Data sources** - applications, gateways, or agents that supply additional
   **observed** telemetry about usage flowing through them. Data sources
   supplement provider-reported metrics and are **never** counted as separate
   usage.
 
 [Hermes Agent](https://github.com/NousResearch/hermes-agent) is the first data
 source. It can report detailed, per-request usage (tokens, cache, reasoning,
-cost) for the portion of your AI usage that passes through it — which is
+cost) for the portion of your AI usage that passes through it - which is
 especially useful for providers that expose little or no detailed usage
 information on their own.
 
@@ -35,7 +35,7 @@ unattributed     = provider_total - hermes_observed
 ```
 
 Attribution reports `hermes_observed` as a **subset** of `provider_total`.
-It never computes `provider_total + hermes_observed` — that would double-count.
+It never computes `provider_total + hermes_observed` - that would double-count.
 
 Where the provider exposes an authoritative total, Hermes answers *"where did
 this usage come from?"*. Where the provider exposes incomplete metrics, Hermes
@@ -85,7 +85,7 @@ analytics use the right provider:
    provider alerts**. The provider remains visible in this dialog, but sync
    result warnings stop prompting you to map it.
 
-Mapping is an attribution layer — the raw Hermes identifier is never rewritten
+Mapping is an attribution layer - the raw Hermes identifier is never rewritten
 in stored observations.
 
 The dashboard will then poll `{base_url}/usage` and sync observed usage into the
@@ -126,7 +126,7 @@ or a bare array of those records. Recognized metric fields are `input_tokens`,
 `requests`, and `cost` (`USD`). `cost_type` may be `estimated`, `actual`, or
 `unavailable`. `timestamp` accepts an ISO-8601 string or epoch.
 
-Each record may include an `event_id` (or `id`) — a stable identifier for that
+Each record may include an `event_id` (or `id`) - a stable identifier for that
 source event. The dashboard stores it and enforces uniqueness per data source so
 re-syncing identical data is idempotent. Records without an event ID get a
 deterministic identity derived from their full provenance (provider, timestamp,

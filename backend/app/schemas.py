@@ -284,7 +284,7 @@ class PollStatusRead(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Data sources (observed telemetry) — distinct from providers.
+# Data sources (observed telemetry) - distinct from providers.
 # ---------------------------------------------------------------------------
 
 
