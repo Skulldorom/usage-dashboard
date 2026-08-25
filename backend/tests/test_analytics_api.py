@@ -647,3 +647,97 @@ async def test_hermes_breakdown_explains_empty_range_and_unmapped_providers(sqli
     assert any("outside the selected range" in message for message in messages)
     assert any("unmapped providers: mystery" in message for message in messages)
     assert any("No Hermes observations between" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_overview_reconciliation_flags_activity_disagreement(sqlite_db):
+    """A Hermes observation materially above the native headline must show as a
+    disagreement in audit.activity.reconciliation and reduce confidence."""
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    now = datetime.now(UTC)
+    base = now - timedelta(hours=2)
+
+    # Native headline: 1000 input tokens (authoritative).
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 1000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+
+    # Hermes observed 2000 input tokens for the same provider/window.
+    async with Session() as session:
+        source = DataSourceConfig(kind="hermes", name="Hermes rec", base_url="http://hermes.local", is_enabled=True)
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        session.add(
+            UsageObservation(
+                data_source_id=source.id,
+                provider="anthropic",
+                provider_mapping="anthropic",
+                metric="input_tokens",
+                value=2000.0,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=base,
+                model="claude-sonnet-4",
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    row = next(p for p in payload["providers"] if p["provider"] == "anthropic")
+    activity = row["audit"]["activity"]
+    assert activity["reconciliation"]["has_disagreement"] is True
+    assert activity["reconciliation"]["authoritative_source"] == "native"
+    assert activity["reconciliation"]["disagreements"][0]["source"] == "hermes"
+    assert activity["reconciliation"]["confidence_impact"] < 0
+    # The provider-level confidence must be demoted below the raw level (low).
+    assert row["confidence"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_overview_reconciliation_clean_when_hermes_agrees(sqlite_db):
+    """A Hermes observation within tolerance produces no disagreement."""
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    now = datetime.now(UTC)
+    base = now - timedelta(hours=2)
+
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 1000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+    async with Session() as session:
+        source = DataSourceConfig(kind="hermes", name="Hermes rec", base_url="http://hermes.local", is_enabled=True)
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        session.add(
+            UsageObservation(
+                data_source_id=source.id,
+                provider="anthropic",
+                provider_mapping="anthropic",
+                metric="input_tokens",
+                value=1100.0,  # within 50% relative tolerance
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=base,
+                model="claude-sonnet-4",
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    row = next(p for p in payload["providers"] if p["provider"] == "anthropic")
+    activity = row["audit"]["activity"]
+    assert activity["reconciliation"]["has_disagreement"] is False
+    assert activity["reconciliation"]["confidence_impact"] == 0
