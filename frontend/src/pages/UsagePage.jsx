@@ -708,7 +708,7 @@ export default function UsagePage() {
 
       {!loading && configs.length > 0 && (
         <Stack spacing={3}>
-          <Card variant="outlined" className="glass-panel">
+          <Card id="usage-filters" variant="outlined" className="glass-panel">
             <CardContent>
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
                 <FormControl size="small" sx={{ minWidth: 200 }}>
@@ -751,7 +751,7 @@ export default function UsagePage() {
           </Card>
 
           {selectedId === 'all' && overview && (
-            <Stack spacing={2.5}>
+            <Stack id="usage-overview" spacing={2.5}>
               <OverviewSummaryCards overview={overview} />
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
@@ -793,7 +793,7 @@ export default function UsagePage() {
           )}
 
           {providerInfo && (
-            <Grid container spacing={2.5}>
+            <Grid id="usage-provider-trends" container spacing={2.5}>
               <Grid size={{ xs: 12, lg: 8 }}>
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
@@ -815,7 +815,7 @@ export default function UsagePage() {
           )}
 
           {providerInfo && (
-            <Grid container spacing={2.5}>
+            <Grid id="usage-breakdowns" container spacing={2.5}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
@@ -835,7 +835,11 @@ export default function UsagePage() {
             </Grid>
           )}
 
-          {providerInfo && <AttributionPanel configId={selectedId} />}
+          {providerInfo && (
+            <Box id="usage-attribution">
+              <AttributionPanel configId={selectedId} />
+            </Box>
+          )}
         </Stack>
       )}
     </>
