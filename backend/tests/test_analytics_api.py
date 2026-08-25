@@ -431,6 +431,55 @@ async def test_overview_activity_excludes_state_and_percent(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_provider_capacity_summary_and_history(sqlite_db):
+    """Capacity endpoint returns used/remaining/overage, reset, and history."""
+    Session = sqlite_db
+    codex = await _create_config(Session, provider="codex")
+    base = datetime.now(UTC) - timedelta(days=2)
+    reset = base + timedelta(days=5)
+    await _seed_observations(Session, codex, [
+        {"metric": "weekly_remaining_percent", "value": -28.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base, "reset_at": reset},
+        {"metric": "weekly_remaining_percent", "value": -30.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base + timedelta(hours=1), "reset_at": reset},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/analytics/providers/{codex.id}/capacity", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider"] == "codex"
+    assert payload["capacity_used_pct"] == 130.0
+    assert payload["capacity_remaining_pct"] == 0.0
+    assert payload["overage_pct"] == 30.0
+    assert payload["source"] == "native"
+    assert payload["reset_at"] is not None
+    # Utilization history buckets exist (not empty).
+    assert len(payload["buckets"]) > 0
+    assert any(b["value"] is not None for b in payload["buckets"])
+
+
+@pytest.mark.asyncio
+async def test_provider_capacity_graceful_for_non_quota_provider(sqlite_db):
+    """Non-quota providers return null utilization, never fabricated 0%."""
+    Session = sqlite_db
+    anthropic = await _create_config(Session, provider="anthropic")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, anthropic, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/analytics/providers/{anthropic.id}/capacity", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["provider"] == "anthropic"
+    assert payload["capacity_used_pct"] is None
+    assert payload["overage_pct"] is None
+    assert payload["buckets"] == []
+
+
+@pytest.mark.asyncio
 async def test_overview_utilization_comparison(sqlite_db):
     Session = sqlite_db
     codex = await _create_config(Session, provider="codex")

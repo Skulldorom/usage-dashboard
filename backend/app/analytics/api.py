@@ -38,6 +38,7 @@ from app.analytics.schemas import (
     OverviewPressure,
     OverviewProvider,
     OverviewRisk,
+    ProviderCapacity,
 )
 from app.analytics.types import Observation
 from app.analytics.capabilities import activity_dimensions, activity_metric_labels, overview_metric
@@ -223,6 +224,112 @@ async def provider_analytics(config_id: int, session: AsyncSession = Depends(get
         native_history=bool(capabilities.get("native_history")),
         metrics=metric_infos,
         preferred_metric=preferred,
+    )
+
+
+@router.get(
+    "/providers/{config_id}/capacity",
+    response_model=ProviderCapacity,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def provider_capacity(
+    config_id: int,
+    interval: str = "day",
+    timezone: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Capacity summary + history for a provider's quota/utilization metric.
+
+    Returns current utilization (used/remaining/overage), reset/window, source,
+    confidence, pace ratio vs sustainable burn, and a bucketed utilization
+    history. Providers without a normalizable quota metric return a capacity
+    object with null utilization and empty history (never fabricated 0%).
+    """
+    if interval not in aggregation.INTERVALS:
+        raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
+    config = await _get_config(session, config_id)
+    capabilities = _capabilities_for(config.provider)
+    observations = await _load_observations(session, config_id)
+    now = datetime.now(UTC)
+
+    util = utilization_metric(capabilities) if capabilities else None
+    if util is None:
+        return ProviderCapacity(
+            config_id=config.id,
+            provider=config.provider,
+            label=config.label,
+            confidence=confidence_level(observations)["level"],
+        )
+
+    util_metric_name, util_spec = util
+    point_obs = [obs for obs in observations if obs.metric == util_metric_name]
+    capacity_obs = (
+        [obs for obs in observations if obs.metric == util_spec.get("capacity_metric")]
+        if util_spec.get("capacity_metric")
+        else None
+    )
+    util_obs = utilization_observations(
+        point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
+    )
+
+    used_pct = None
+    remaining_pct = None
+    overage_pct = None
+    reset_at = None
+    window_start = None
+    window_end = None
+    source = None
+    latest = None
+    if util_obs:
+        latest = max(util_obs, key=lambda obs: obs.observed_at)
+        used_pct = round(latest.value, 4)
+        remaining_pct = round(max(0.0, 100.0 - used_pct), 4)
+        overage_pct = round(max(0.0, used_pct - 100.0), 4)
+        reset_at = latest.reset_at or _latest_reset_at(point_obs)
+        source = latest.source
+        window_start = latest.window_start
+        window_end = latest.window_end
+
+    # Pace ratio: actual burn vs sustainable burn for the remaining window.
+    pace_ratio = None
+    sustainable_rate = None
+    burn_rate = None
+    metric_obs = point_obs if point_obs else observations
+    rates = rates_from_deltas(metric_obs, now=now)
+    avg_7d = rates["avg_7d"] or rates["avg_30d"] or rates["current_24h"]
+    if reset_at is not None and avg_7d and avg_7d > 0 and used_pct is not None:
+        days_left = max((_as_aware(reset_at) - now).total_seconds() / 86_400.0, 0.0)
+        if days_left > 0:
+            sustainable_rate = round(remaining_pct / days_left, 4)
+            if sustainable_rate and sustainable_rate > 0:
+                pace_ratio = round(avg_7d / sustainable_rate, 3)
+                burn_rate = round(avg_7d, 4)
+
+    buckets = []
+    if util_obs:
+        buckets = fill_buckets(
+            bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone),
+            interval=interval,
+            tz=timezone,
+        )
+
+    return ProviderCapacity(
+        config_id=config.id,
+        provider=config.provider,
+        label=config.label,
+        metric=util_metric_name,
+        capacity_used_pct=used_pct,
+        capacity_remaining_pct=remaining_pct,
+        overage_pct=overage_pct,
+        reset_at=reset_at,
+        window_start=window_start,
+        window_end=window_end,
+        source=source,
+        confidence=confidence_level(observations)["level"],
+        pace_ratio=pace_ratio,
+        sustainable_rate=sustainable_rate,
+        burn_rate=burn_rate,
+        buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in buckets],
     )
 
 
