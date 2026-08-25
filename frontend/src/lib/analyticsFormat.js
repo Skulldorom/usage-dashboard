@@ -219,3 +219,24 @@ export function utilizationChartScale(comparison) {
   const max = Math.max(100, ...values)
   return Math.ceil(max / 25) * 25
 }
+
+export function hermesActivityLabel(activity) {
+  const entries = Object.entries(activity || {})
+    .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value > 0)
+    .sort(([a], [b]) => {
+      const order = ['cost', 'input_tokens', 'output_tokens', 'requests', 'sessions']
+      const ai = order.indexOf(a)
+      const bi = order.indexOf(b)
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi) || a.localeCompare(b)
+    })
+  if (entries.length === 0) return null
+  const pieces = entries.slice(0, 3).map(([metric, value]) => {
+    const label = metric.replaceAll('_', ' ')
+    if (metric === 'cost') return `${formatMetricValue(value, 'USD')} estimated cost`
+    if (metric.includes('tokens')) return `${compactNumber(value)} ${label}`
+    if (metric === 'requests') return `${compactNumber(value)} requests`
+    return `${compactNumber(value)} ${label}`
+  })
+  const suffix = entries.length > 3 ? ` +${entries.length - 3} more` : ''
+  return `Hermes observed: ${pieces.join(' · ')}${suffix}`
+}

@@ -9,6 +9,7 @@ import {
   formatMetricValue,
   formatPercent,
   formatTrend,
+  hermesActivityLabel,
   isDeltaMetric,
   overviewTotalCards,
   peakLabel,
@@ -47,6 +48,17 @@ describe('formatMetricValue', () => {
   })
   it('renders an em-dash for missing values', () => {
     expect(formatMetricValue(null, 'credits')).toBe('-')
+  })
+})
+
+describe('hermesActivityLabel', () => {
+  it('summarizes mapped Hermes activity without implying provider totals', () => {
+    expect(hermesActivityLabel({ input_tokens: 900, requests: 7 })).toBe('Hermes observed: 900 input tokens · 7 requests')
+  })
+
+  it('returns null when no positive activity exists', () => {
+    expect(hermesActivityLabel({ input_tokens: 0 })).toBeNull()
+    expect(hermesActivityLabel(null)).toBeNull()
   })
 })
 

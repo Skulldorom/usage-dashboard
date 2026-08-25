@@ -29,6 +29,7 @@ import {
   formatMetricValue,
   formatPercent,
   formatTrend,
+  hermesActivityLabel,
   isDeltaMetric,
   overviewTotalCards,
   peakLabel,
@@ -461,7 +462,14 @@ function ProviderComparisonTable({ providers }) {
         {providers.map((row) => (
           <tr key={row.config_id}>
             <td>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</td>
-            <td>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</td>
+            <td>
+              <Stack spacing={0.5}>
+                <span>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</span>
+                {hermesActivityLabel(row.hermes_activity) && (
+                  <Typography variant="caption" color="text.secondary">{hermesActivityLabel(row.hermes_activity)}</Typography>
+                )}
+              </Stack>
+            </td>
             <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : utilizationOverflowLabel(row)}</td>
             <td>{row.utilization_trend_pct !== null && row.utilization_trend_pct !== undefined ? formatTrend(row.utilization_trend_pct, ' pts') : formatTrend(row.trend_pct)}</td>
             <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '-'}</td>
