@@ -113,6 +113,40 @@ GET /api/v1/analytics/providers/{config_id}/comparison?metric=&window=day|week|m
 `interval` is one of `hour`, `day`, or `week`. Day and hour grouping honor the
 requested `timezone` (IANA name); the frontend passes the user's local timezone.
 
+## Source reconciliation & data audit
+
+Because provider-reported and Hermes-observed data describe the *same* underlying
+usage, the dashboard never blindly sums them. Each provider's analytics value is
+built from an **authoritative** source with other compatible observations used as
+**corroboration**:
+
+- **Authoritative priority** — `native` provider data &gt; `snapshot`-derived &gt;
+  `hermes`-observed &gt; `estimated`.
+- **Material disagreement** — when a corroborating source differs from the
+  authoritative value by more than a tolerance (15 percentage points for
+  capacity, 50% relative for activity), it is flagged as a disagreement rather
+  than silently blended in.
+- **Staleness guard** — a corroborating source fresher than the authoritative
+  reading (by more than 6 hours) marks the authoritative data as potentially
+  stale, so lagging primary data cannot silently win on priority alone.
+- **Confidence degradation** — disagreements and staleness each reduce the
+  provider's confidence by one step (`high → medium → low`).
+
+### "Why this number?" audit
+
+Each provider row in the comparison table exposes a **"Why this number?"**
+button. It opens a panel showing, per value:
+
+- the authoritative source and value;
+- the quota/window and reset timestamp (capacity);
+- corroborating sources and Hermes activity/estimated cost (activity);
+- the confidence level; and
+- any reconciliation warnings (disagreements, staleness).
+
+This makes unexpected analytics diagnosable without inspecting the database or
+API directly. The same reconciliation metadata is available under `audit.*.reconciliation`
+in the `/analytics/overview` response.
+
 ## Estimated cost (Hermes-derived)
 
 When a Hermes data source supplies **model + token-class** telemetry for a mapped

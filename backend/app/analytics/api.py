@@ -40,6 +40,11 @@ from app.analytics.schemas import (
 from app.analytics.types import Observation
 from app.analytics.capabilities import overview_metric
 from app.analytics.pricing import estimate_cost, normalize_model
+from app.analytics.reconciliation import (
+    authoritative_source,
+    degrade_confidence,
+    reconcile,
+)
 from app.analytics.utilization import utilization_metric, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
@@ -637,15 +642,6 @@ def _observation_sources(observations: list[Observation]) -> list[str]:
     return sorted({obs.source for obs in observations if obs.source})
 
 
-def _source_priority(source: str | None) -> int:
-    return {"native": 0, "snapshot": 1, "hermes": 2, "estimated": 3}.get(source or "", 9)
-
-
-def _authoritative_source(observations: list[Observation]) -> str | None:
-    sources = _observation_sources(observations)
-    return min(sources, key=_source_priority) if sources else None
-
-
 def _quality_state(*, has_observations: bool, has_utilization: bool, native_history: bool, supported: bool, coverage: float) -> tuple[str, str, str | None]:
     if not has_observations:
         return "unavailable", "unavailable", "No current analytics observations"
@@ -782,8 +778,8 @@ async def overview(
         util_source_obs = [obs for obs in observations if util_metric_name and obs.metric == util_metric_name]
         source_pool = util_source_obs + headline_obs + hermes_observations
         sources = _observation_sources(source_pool or observations)
-        authoritative_source = latest_util_source or _authoritative_source(headline_obs) or _authoritative_source(observations)
-        corroborating_sources = [source for source in sources if source != authoritative_source]
+        authoritative = latest_util_source or authoritative_source(_observation_sources(headline_obs)) or authoritative_source(_observation_sources(observations))
+        corroborating_sources = [source for source in sources if source != authoritative]
 
         quality, data_state, exclusion_reason = _quality_state(
             has_observations=bool(observations),
@@ -794,6 +790,34 @@ async def overview(
         )
         if quality in {"stale", "unavailable"}:
             stale_or_unavailable += 1
+
+        # --- Source reconciliation (issue #165 §4) -------------------------
+        # Capacity: authoritative utilization has no direct %-corroboration, but
+        # Hermes activity fresher than the authoritative reading flags staleness.
+        capacity_recon = reconcile(
+            authoritative_source_name=authoritative if util_pct is not None else None,
+            authoritative_value=util_pct,
+            authoritative_at=latest.observed_at if util_pct is not None else None,
+            corroborating_sources=corroborating_sources,
+            corroborating_times=[obs.observed_at for obs in hermes_observations],
+            is_percent=True,
+        )
+        # Activity: provider-native headline vs Hermes-observed same-metric total
+        # (relative disagreement). Hermes is corroborating, never summed.
+        activity_authoritative = authoritative_source(_observation_sources(headline_obs))
+        activity_latest = _latest_point(headline_obs, headline_metric_name) if headline_metric_name else None
+        hermes_headline_value = hermes_activity.get(headline_metric_name) if headline_metric_name else None
+        activity_recon = reconcile(
+            authoritative_source_name=activity_authoritative,
+            authoritative_value=headline_value,
+            authoritative_at=activity_latest.observed_at if activity_latest is not None else None,
+            corroborating=[{"source": "hermes", "value": hermes_headline_value}],
+            corroborating_sources=corroborating_sources,
+            corroborating_times=[obs.observed_at for obs in hermes_observations],
+            is_percent=headline_unit == "%",
+        )
+        confidence_impact = capacity_recon["confidence_impact"] + activity_recon["confidence_impact"]
+        conf = degrade_confidence(conf, confidence_impact)
 
         provider = OverviewProvider(
             config_id=config.id,
@@ -815,7 +839,7 @@ async def overview(
             exclusion_reason=exclusion_reason if util_pct is None else None,
             coverage=cov["coverage"],
             confidence=conf,
-            authoritative_source=authoritative_source,
+            authoritative_source=authoritative,
             corroborating_sources=corroborating_sources,
             sources=sources,
             hermes_activity=hermes_activity,
@@ -825,21 +849,23 @@ async def overview(
                     "metric": util_metric_name,
                     "value": round(util_pct, 4) if util_pct is not None else None,
                     "unit": "%" if util_pct is not None else None,
-                    "authoritative_source": authoritative_source if util_pct is not None else None,
+                    "authoritative_source": authoritative if util_pct is not None else None,
                     "window_start": latest.window_start.isoformat() if util_pct is not None and latest.window_start else None,
                     "window_end": latest.window_end.isoformat() if util_pct is not None and latest.window_end else None,
                     "reset_at": reset_at.isoformat() if reset_at else None,
                     "confidence": conf,
+                    "reconciliation": capacity_recon,
                 },
                 "activity": {
                     "metric": headline_metric_name,
                     "value": round(headline_value, 4) if headline_value is not None else None,
                     "unit": headline_unit,
-                    "authoritative_source": _authoritative_source(headline_obs),
+                    "authoritative_source": activity_authoritative,
                     "hermes_activity": hermes_activity,
                     "attribution": attribution_rows,
                     "estimated_cost": estimated_cost,
                     "estimated_cost_source": estimated_cost_source,
+                    "reconciliation": activity_recon,
                     "note": "Hermes activity is corroborating telemetry and is not added to provider-authoritative totals.",
                 },
                 "corroborating_sources": corroborating_sources,
