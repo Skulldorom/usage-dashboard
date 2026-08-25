@@ -19,8 +19,9 @@ import {
   paceStatus,
   peakLabel,
   pressureSummaryCards,
-  qualityLabel,
   primaryValue,
+  qualityLabel,
+  quotaImpactLabel,
   rangeToParams,
   riskRows,
   sortedCapacityProviders,
@@ -310,5 +311,14 @@ describe('overview pressure helpers', () => {
     expect(paceStatus(0.8)).toBe('normal')
     expect(paceStatus(1.0)).toBe('normal')
     expect(paceStatus(null)).toBe('normal')
+  })
+
+  it('summarizes a quota-impact estimate', () => {
+    const impact = { estimated_impact_per_token: 0.01, sample_size: 4, confidence: 'high', unattributed_pct: 0.0 }
+    expect(quotaImpactLabel(impact)).toContain('~0.010000 quota pts/token')
+    expect(quotaImpactLabel(impact)).toContain('estimated from 4 reset windows')
+    expect(quotaImpactLabel(impact)).toContain('0% unexplained')
+    expect(quotaImpactLabel(null)).toBe(null)
+    expect(quotaImpactLabel({})).toBe(null)
   })
 })

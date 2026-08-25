@@ -68,7 +68,7 @@ export default function ProviderAuditPanel({ provider }) {
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <InfoOutlinedIcon color="primary" />
-            <span>Why this number? — {provider.provider}{provider.label && provider.label !== 'main' ? ` · ${provider.label}` : ''}</span>
+            <span>Why this number? - {provider.provider}{provider.label && provider.label !== 'main' ? ` · ${provider.label}` : ''}</span>
           </Stack>
           <IconButton onClick={() => setOpen(false)} aria-label="Close">
             <CloseRoundedIcon />

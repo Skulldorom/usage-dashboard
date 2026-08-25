@@ -80,6 +80,22 @@ describe('auditRows', () => {
     }
     expect(auditRows(minimal)).toEqual([])
   })
+
+  it('surfaces quota-impact correlation rows', () => {
+    const withImpact = {
+      audit: {
+        capacity: {},
+        activity: {},
+        corroborating_sources: [],
+        quota_impact: { estimated_impact_per_token: 0.01, sample_size: 4, confidence: 'high', unattributed_pct: 0.0 },
+      },
+    }
+    const rows = auditRows(withImpact)
+    const labels = rows.map((row) => `${row.section}:${row.label}`)
+    expect(labels).toContain('Correlation:Quota impact')
+    expect(labels).toContain('Correlation:Sample')
+    expect(labels).toContain('Correlation:Unattributed')
+  })
 })
 
 describe('reconciliationWarnings', () => {

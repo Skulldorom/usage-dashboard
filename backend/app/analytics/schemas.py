@@ -216,6 +216,7 @@ class ProviderCapacity(BaseModel):
     pace_ratio: float | None = None
     sustainable_rate: float | None = None
     burn_rate: float | None = None
+    quota_impact: dict | None = None
     buckets: list[AnalyticsBucket] = Field(default_factory=list)
 
 
