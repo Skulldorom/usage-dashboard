@@ -131,6 +131,14 @@ def forecast_for_metric(
                 remaining = max(0.0, capacity - window_usage)
                 result["sustainable_per_day"] = round(remaining / days_left, 4)
 
+            pacing = _pacing_block(
+                actual_per_day=avg_7d,
+                sustainable_per_day=result.get("sustainable_per_day"),
+            )
+            if pacing is not None:
+                result["pacing"] = pacing
+                result["pace_ratio"] = pacing.get("pace_ratio")
+
     if metric_type == "balance":
         result["balance"] = latest_point
         if avg_7d and avg_7d > 0 and latest_point is not None:
@@ -175,3 +183,28 @@ def sustainable_pacing(
         result["actual_per_day"] = round(actual_per_day, 4)
         result["difference_pct"] = round((actual_per_day - target) / target * 100, 1)
     return result
+
+
+def _pacing_block(*, actual_per_day: float | None, sustainable_per_day: float | None) -> dict | None:
+    """Build the canonical pacing object (actual vs sustainable, pace ratio).
+
+    ``pace_ratio`` is the §2/§6 canonical dimension: 1.0 = on pace, >1 = burning
+    faster than the remaining quota can sustain, <1 = under pace. Returns
+    ``None`` when either rate is unavailable or the sustainable rate is not
+    positive (nothing meaningful to compare).
+    """
+    if actual_per_day is None or sustainable_per_day is None or sustainable_per_day <= 0:
+        return None
+    pace_ratio = round(actual_per_day / sustainable_per_day, 3)
+    if pace_ratio > 1.05:
+        status = "over"
+    elif pace_ratio < 0.95:
+        status = "under"
+    else:
+        status = "on_pace"
+    return {
+        "actual_per_day": round(actual_per_day, 4),
+        "sustainable_per_day": round(sustainable_per_day, 4),
+        "pace_ratio": pace_ratio,
+        "status": status,
+    }
