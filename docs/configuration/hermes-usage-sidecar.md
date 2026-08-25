@@ -147,7 +147,7 @@ current watermark.
 8. After your first sync, click the **Edit provider mappings** (tune) icon on
    the saved source to map Hermes provider identifiers (for example `auto`,
    `openai-codex`, `unknown`) to your configured providers. See
-   [Data sources → Provider mapping](./data-sources.md).
+   [Data sources → Provider mapping](./data-sources.md#provider-mapping).
 
 Use one sidecar/data-source pair per Hermes installation.
 

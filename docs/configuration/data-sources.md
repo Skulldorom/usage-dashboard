@@ -45,9 +45,9 @@ clearly labels the figures as **Hermes-observed only**.
 ## Connecting Hermes
 
 Usage Dashboard connects to Hermes Agent through the supported
-[Hermes Usage Sidecar](./hermes-usage-sidecar.md). Stock Hermes does not expose
-this dashboard's `/usage` contract directly; install the sidecar on the machine
-running Hermes, then configure the dashboard to poll it.
+[Hermes Usage Sidecar](./hermes-usage-sidecar.md#install-and-run-locally). Stock
+Hermes does not expose this dashboard's `/usage` contract directly; install the
+sidecar on the machine running Hermes, then configure the dashboard to poll it.
 
 1. In **Settings → Data sources**, click **Add Hermes source**.
 2. In **Install with Hermes**, click **Copy installation prompt**.
@@ -81,13 +81,16 @@ analytics use the right provider:
    unmapped. Multiple raw identifiers may map to the same provider.
 4. Changes apply immediately and persist. A mapping whose target provider is
    later deleted or disabled is shown as invalid so you can repair it.
+5. If you intentionally leave a raw provider unmapped, enable **Mute unmapped
+   provider alerts**. The provider remains visible in this dialog, but sync
+   result warnings stop prompting you to map it.
 
 Mapping is an attribution layer — the raw Hermes identifier is never rewritten
 in stored observations.
 
 The dashboard will then poll `{base_url}/usage` and sync observed usage into the
 analytics history. See
-[Installing the Hermes Usage Sidecar](./hermes-usage-sidecar.md) for the
+[Installing the Hermes Usage Sidecar](./hermes-usage-sidecar.md#add-it-to-usage-dashboard) for the
 end-to-end setup steps, multi-profile behavior, token configuration,
 verification commands, and Docker networking notes.
 

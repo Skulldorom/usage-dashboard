@@ -302,6 +302,7 @@ class DataSourceConfigCreate(BaseModel):
     token: str | None = None
     profiles: list[str] | None = None
     provider_mappings: dict[str, str] | None = None
+    mute_unmapped_provider_alerts: bool = False
     poll_interval_minutes: int = Field(default=60, ge=1)
     is_enabled: bool = True
 
@@ -312,6 +313,7 @@ class DataSourceConfigUpdate(BaseModel):
     token: str | None = None
     profiles: list[str] | None = None
     provider_mappings: dict[str, str] | None = None
+    mute_unmapped_provider_alerts: bool | None = None
     poll_interval_minutes: int | None = Field(default=None, ge=1)
     is_enabled: bool | None = None
 
@@ -335,6 +337,7 @@ class DataSourceConfigRead(BaseModel):
     base_url: str | None
     profiles: list[str] = Field(default_factory=list)
     provider_mappings: dict[str, str] = Field(default_factory=dict)
+    mute_unmapped_provider_alerts: bool = False
     poll_interval_minutes: int
     is_enabled: bool
     created_at: datetime

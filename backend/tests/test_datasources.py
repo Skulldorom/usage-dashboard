@@ -192,14 +192,28 @@ async def test_data_source_crud_and_status(sqlite_db):
 
         created = await client.post(
             "/api/v1/datasources/configs",
-            json={"kind": "hermes", "base_url": "http://hermes.local", "token": "secret-token"},
+            json={
+                "kind": "hermes",
+                "base_url": "http://hermes.local",
+                "token": "secret-token",
+                "mute_unmapped_provider_alerts": True,
+            },
             headers=AUTH,
         )
         assert created.status_code == 201, created.text
         body = created.json()
         assert body["token_masked"] == "••••••••"
         assert "token" not in body
+        assert body["mute_unmapped_provider_alerts"] is True
         assert body["status"]["status"] == "never_connected"
+
+        updated = await client.patch(
+            f"/api/v1/datasources/configs/{body['id']}",
+            json={"mute_unmapped_provider_alerts": False},
+            headers=AUTH,
+        )
+        assert updated.status_code == 200, updated.text
+        assert updated.json()["mute_unmapped_provider_alerts"] is False
 
         status = await client.get(f"/api/v1/datasources/configs/{body['id']}/status", headers=AUTH)
         assert status.json()["status"] == "never_connected"
@@ -298,6 +312,29 @@ async def test_sync_result_reports_diagnostics(sqlite_db, monkeypatch):
         duplicate = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
     assert duplicate["inserted"] == 0
     assert duplicate["duplicates_skipped"] == 3
+
+
+@pytest.mark.asyncio
+async def test_sync_result_can_mute_unmapped_provider_alerts(sqlite_db, monkeypatch):
+    class FakeHermes:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return [_record(event_id="evt-1", provider="mystery", input_tokens=100)]
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeHermes)
+    source_id = await _make_source(sqlite_db)
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.extra = {"mute_unmapped_provider_alerts": True}
+        session.add(ProviderConfig(provider="anthropic", label="main", encrypted_api_key="encrypted", is_enabled=True))
+        await session.commit()
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+
+    assert result["status"] == "healthy"
+    assert result["providers_discovered"] == ["mystery"]
+    assert result["unmapped_providers"] == []
 
 
 @pytest.mark.asyncio

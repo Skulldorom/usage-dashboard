@@ -66,6 +66,7 @@ def _read(source: DataSourceConfig) -> DataSourceConfigRead:
         base_url=source.base_url,
         profiles=list(extra.get("profiles") or []),
         provider_mappings=dict(extra.get("provider_mappings") or {}),
+        mute_unmapped_provider_alerts=bool(extra.get("mute_unmapped_provider_alerts", False)),
         poll_interval_minutes=source.poll_interval_minutes,
         is_enabled=source.is_enabled,
         created_at=source.created_at,
@@ -75,12 +76,14 @@ def _read(source: DataSourceConfig) -> DataSourceConfigRead:
     )
 
 
-def _extra_from(payload_profiles, payload_mappings) -> dict:
+def _extra_from(payload_profiles, payload_mappings, mute_unmapped_provider_alerts=None) -> dict:
     extra: dict = {}
     if payload_profiles is not None:
         extra["profiles"] = [str(p).strip() for p in payload_profiles if str(p).strip()]
     if payload_mappings is not None:
         extra["provider_mappings"] = {str(k): str(v) for k, v in payload_mappings.items()}
+    if mute_unmapped_provider_alerts is not None:
+        extra["mute_unmapped_provider_alerts"] = bool(mute_unmapped_provider_alerts)
     return extra
 
 
@@ -108,7 +111,7 @@ async def create_data_source_config(payload: DataSourceConfigCreate, session: As
         name=name,
         base_url=payload.base_url,
         encrypted_token=encrypted,
-        extra=_extra_from(payload.profiles, payload.provider_mappings),
+        extra=_extra_from(payload.profiles, payload.provider_mappings, payload.mute_unmapped_provider_alerts),
         is_enabled=payload.is_enabled,
         poll_interval_minutes=payload.poll_interval_minutes,
     )
@@ -133,9 +136,15 @@ async def update_data_source_config(source_id: int, payload: DataSourceConfigUpd
         source.base_url = payload.base_url
     if payload.has_update_for("token"):
         source.encrypted_token = _crypto().encrypt(payload.token) if payload.token else None
-    if payload.has_update_for("profiles") or payload.has_update_for("provider_mappings"):
+    if payload.has_update_for("profiles") or payload.has_update_for("provider_mappings") or payload.has_update_for("mute_unmapped_provider_alerts"):
         extra = dict(source.extra or {})
-        extra.update(_extra_from(payload.profiles, payload.provider_mappings))
+        extra.update(
+            _extra_from(
+                payload.profiles,
+                payload.provider_mappings,
+                payload.mute_unmapped_provider_alerts if payload.has_update_for("mute_unmapped_provider_alerts") else None,
+            )
+        )
         source.extra = extra
     if payload.has_update_for("poll_interval_minutes") and payload.poll_interval_minutes is not None:
         source.poll_interval_minutes = payload.poll_interval_minutes

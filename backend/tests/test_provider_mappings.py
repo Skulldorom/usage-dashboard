@@ -136,6 +136,23 @@ async def test_get_returns_observed_providers_with_aggregates(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_data_source_config_exposes_unmapped_alert_mute(sqlite_db):
+    source_id = await _seed(sqlite_db)
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.extra = {"mute_unmapped_provider_alerts": True}
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/datasources/configs", headers=AUTH)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body[0]["id"] == source_id
+    assert body[0]["mute_unmapped_provider_alerts"] is True
+
+
+@pytest.mark.asyncio
 async def test_put_creates_many_to_one_and_clears_mappings(sqlite_db):
     source_id = await _seed(sqlite_db)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:

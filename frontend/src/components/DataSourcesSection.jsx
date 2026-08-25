@@ -3,12 +3,14 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   Paper,
   Stack,
@@ -152,6 +154,7 @@ export default function DataSourcesSection() {
     token: '',
     profiles: '',
     provider_mappings: '',
+    mute_unmapped_provider_alerts: false,
     poll_interval_minutes: 60,
   })
 
@@ -170,7 +173,7 @@ export default function DataSourcesSection() {
   useEffect(() => { load() }, [load])
 
   function openAdd() {
-    setForm({ name: '', base_url: '', token: '', profiles: '', provider_mappings: '', poll_interval_minutes: 60 })
+    setForm({ name: '', base_url: '', token: '', profiles: '', provider_mappings: '', mute_unmapped_provider_alerts: false, poll_interval_minutes: 60 })
     setActionResult(null)
     setOpen(true)
   }
@@ -186,6 +189,7 @@ export default function DataSourcesSection() {
         token: form.token || undefined,
         profiles: parseProfiles(form.profiles).length ? parseProfiles(form.profiles) : undefined,
         provider_mappings: Object.keys(parseMappings(form.provider_mappings)).length ? parseMappings(form.provider_mappings) : undefined,
+        mute_unmapped_provider_alerts: Boolean(form.mute_unmapped_provider_alerts),
         poll_interval_minutes: Number(form.poll_interval_minutes) || 60,
       }
       await api.createDataSourceConfig(payload)
@@ -315,6 +319,11 @@ export default function DataSourcesSection() {
                       {source.status?.latest_error && (
                         <Typography variant="caption" color="error.main" sx={{ display: 'block' }}>
                           {source.status.latest_error}
+                        </Typography>
+                      )}
+                      {source.mute_unmapped_provider_alerts && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                          Unmapped provider alerts muted
                         </Typography>
                       )}
                     </Box>
@@ -463,6 +472,13 @@ export default function DataSourcesSection() {
             <TextField label="Bearer token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Token configured in USAGE_SIDECAR_TOKEN. Stored encrypted." />
             <TextField label="Profiles" value={form.profiles} onChange={(event) => setForm({ ...form, profiles: event.target.value })} placeholder="coder, default" helperText="Comma-separated. Leave blank for all profiles." />
             <TextField label="Provider mappings" value={form.provider_mappings} onChange={(event) => setForm({ ...form, provider_mappings: event.target.value })} placeholder="anthropic=anthropic, openrouter=openrouter" helperText="Optional overrides: hermes-provider=dashboard-provider, comma-separated." />
+            <FormControlLabel
+              control={<Checkbox checked={form.mute_unmapped_provider_alerts} onChange={(event) => setForm({ ...form, mute_unmapped_provider_alerts: event.target.checked })} />}
+              label="Mute unmapped provider alerts"
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              Leaves unmapped Hermes providers visible in the mapping dialog, but suppresses sync-result warning banners if you intentionally do not want to map them.
+            </Typography>
             <TextField label="Poll interval (minutes)" type="number" value={form.poll_interval_minutes} onChange={(event) => setForm({ ...form, poll_interval_minutes: event.target.value })} />
           </Stack>
         </DialogContent>
