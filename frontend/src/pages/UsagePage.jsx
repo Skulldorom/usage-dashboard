@@ -18,6 +18,7 @@ import {
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
 import { api } from '../api.js'
 import ProviderIcon from '../components/ProviderIcon.jsx'
+import ProviderAuditPanel from '../components/ProviderAuditPanel.jsx'
 import { AttributionPanel, HermesBreakdownPanel } from '../components/HermesPanels.jsx'
 import {
   DEFAULT_RANGE,
@@ -479,7 +480,7 @@ function ProviderComparisonTable({ providers }) {
             <td>{row.utilization_pct === null || row.utilization_pct === undefined ? (row.exclusion_reason || 'No quota available') : utilizationOverflowLabel(row)}</td>
             <td>{row.utilization_trend_pct !== null && row.utilization_trend_pct !== undefined ? formatTrend(row.utilization_trend_pct, ' pts') : formatTrend(row.trend_pct)}</td>
             <td>{row.forecast_pct ? `Projected ${formatPercent(row.forecast_pct)}` : row.reset_at ? new Date(row.reset_at).toLocaleString() : '-'}</td>
-            <td><Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap' }}><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} />{row.authoritative_source && <Chip size="small" variant="outlined" label={row.corroborating_sources?.length ? `${row.authoritative_source} + ${row.corroborating_sources.length}` : row.authoritative_source} />}</Stack></td>
+            <td><Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', alignItems: 'center' }}><Chip size="small" variant="outlined" label={qualityLabel(row.quality)} />{row.authoritative_source && <Chip size="small" variant="outlined" label={row.corroborating_sources?.length ? `${row.authoritative_source} + ${row.corroborating_sources.length}` : row.authoritative_source} />}<ProviderAuditPanel provider={row} /></Stack></td>
           </tr>
         ))}
       </tbody>
