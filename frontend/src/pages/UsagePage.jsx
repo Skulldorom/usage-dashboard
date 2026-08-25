@@ -43,6 +43,7 @@ import {
   pressureSummaryCards,
   primaryValue,
   qualityLabel,
+  quotaImpactLabel,
   rangeToParams,
   riskRows,
   sortedCapacityProviders,
@@ -404,6 +405,12 @@ function CapacityPanel({ capacity }) {
             <Box className="usage-stat-row">
               <Typography variant="body2" color="text.secondary">Pace</Typography>
               <Typography variant="body2" color={paceStatus(paceRatio) === 'warning' ? 'warning.main' : undefined}>{paceRatioLabel(paceRatio)}</Typography>
+            </Box>
+          )}
+          {quotaImpactLabel(capacity.quota_impact) && (
+            <Box className="usage-stat-row">
+              <Typography variant="body2" color="text.secondary">Quota impact</Typography>
+              <Typography variant="body2">{quotaImpactLabel(capacity.quota_impact)}</Typography>
             </Box>
           )}
         </Stack>
@@ -1063,7 +1070,7 @@ export default function UsagePage() {
               {overviewMode !== 'capacity' && selectedDimension && (
                 <Card variant="outlined" className="glass-panel">
                   <CardContent>
-                    <Typography variant="overline" color="primary.main">Activity share — {selectedDimension.label}</Typography>
+                    <Typography variant="overline" color="primary.main">Activity share - {selectedDimension.label}</Typography>
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                       Share of total {selectedDimension.unit} within this dimension. Shares are always calculated within a single compatible dimension.
                     </Typography>

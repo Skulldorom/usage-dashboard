@@ -84,6 +84,28 @@ export function auditRows(provider) {
     })
   }
 
+  // Quota-impact correlation estimate.
+  const impact = audit.quota_impact
+  if (impact && typeof impact.estimated_impact_per_token === 'number') {
+    rows.push({
+      section: 'Correlation',
+      label: 'Quota impact',
+      value: `~${impact.estimated_impact_per_token.toFixed(6)} quota pts/token`,
+    })
+    rows.push({
+      section: 'Correlation',
+      label: 'Sample',
+      value: `${impact.sample_size} reset windows (${impact.confidence} confidence)`,
+    })
+    if (impact.unattributed_pct !== null && impact.unattributed_pct !== undefined) {
+      rows.push({
+        section: 'Correlation',
+        label: 'Unattributed',
+        value: `${impact.unattributed_pct}% of quota movement unexplained by Hermes activity`,
+      })
+    }
+  }
+
   return rows
 }
 

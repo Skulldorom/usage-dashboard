@@ -270,6 +270,19 @@ export function paceStatus(paceRatio) {
   return 'normal'
 }
 
+export function quotaImpactLabel(impact) {
+  // Summarize a quota-impact estimate as a human-readable string.
+  if (!impact || typeof impact.estimated_impact_per_token !== 'number') return null
+  const perToken = impact.estimated_impact_per_token
+  const sample = impact.sample_size ?? 0
+  const confidence = impact.confidence ?? 'low'
+  const unattributed = impact.unattributed_pct ?? null
+  const prefix = `~${perToken.toFixed(6)} quota pts/token`
+  const parts = [`estimated from ${sample} reset windows`, `${confidence} confidence`]
+  if (unattributed !== null) parts.push(`${unattributed}% unexplained`)
+  return `${prefix} (${parts.join(' · ')})`
+}
+
 export function hermesActivityLabel(activity) {
   const entries = Object.entries(activity || {})
     .filter(([, value]) => typeof value === 'number' && Number.isFinite(value) && value > 0)
