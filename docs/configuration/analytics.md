@@ -180,12 +180,33 @@ pricing pages.
 Because providers report different units (tokens, USD, credits, percentages),
 the "All providers" view compares along two honest axes:
 
-- **Like-unit totals and share** - consumption is summed only within matching
-  units, and each provider's share is its fraction of its own unit group (so
-  "95% of tokens" is real, never tokens blended with USD).
-- **Quota utilization** - each quota-tracking provider's fraction of its own
-  quota consumed (0–100%), overlaid on one chart. Providers without a declared
-  quota (token/balance/cost providers) simply don't appear on the overlay.
+- **Capacity** - each quota-tracking provider's fraction of its own quota
+  consumed (0–100%, and above 100% when over allowance), overlaid on one chart.
+  Providers without a declared quota simply don't appear on the overlay.
+- **Activity dimensions** - consumption grouped into compatible dimensions:
+  `tokens`, `requests`, `cost`, and `credits`. Only providers exposing a
+  compatible unit appear in a given dimension, and shares are always calculated
+  within a single dimension.
+
+### Activity metric modes
+
+The overview graph switches between **Capacity %** (default) and the four
+activity dimensions. Rules that keep the numbers honest:
+
+- **State is not activity.** Gauges, balances, remaining-quota, and rolling
+  totals are point-in-time state and never appear in an activity dimension.
+- **Disjoint classes sum.** A provider's input/output/cache token counters are
+  disjoint and are summed into its token total.
+- **Overlapping windows do not sum.** When a provider reports the same unit over
+  multiple overlapping windows (e.g. OpenRouter daily/weekly/monthly credits),
+  only the declared overview metric is used — never a naive sum that
+  double-counts.
+- **Shares are dimension-scoped.** A provider's share is its fraction of the
+  total *within one compatible dimension*, never a ranking across units.
+
+The same data is available under `activity` in the `/analytics/overview`
+response: one entry per dimension with `total`, per-provider `value`/`share_pct`,
+and a bucketed time series.
 
 ## Retention
 
