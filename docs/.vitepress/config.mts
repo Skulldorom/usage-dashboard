@@ -40,17 +40,7 @@ export default defineConfig({
           { text: 'Authentication', link: '/configuration/authentication' },
           { text: 'API tokens', link: '/configuration/api-tokens' },
           { text: 'Automatic polling', link: '/configuration/polling' },
-          {
-            text: 'Usage analytics',
-            link: '/configuration/analytics',
-            items: [
-              { text: 'What you can see', link: '/configuration/analytics#what-you-can-see' },
-              { text: 'Provider health', link: '/configuration/analytics#provider-health-stale-data' },
-              { text: 'Analytics API', link: '/configuration/analytics#analytics-api' },
-              { text: 'Cross-provider comparison', link: '/configuration/analytics#cross-provider-comparison' },
-              { text: 'Provider support', link: '/configuration/analytics#provider-support' },
-            ],
-          },
+          { text: 'Usage analytics', link: '/configuration/analytics' },
           { text: 'Data sources', link: '/configuration/data-sources' },
           { text: 'Hermes Usage Sidecar', link: '/configuration/hermes-usage-sidecar' },
         ],
