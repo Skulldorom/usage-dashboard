@@ -52,7 +52,7 @@
   </head>
   <body>
     <h1>Usage Dashboard Extension - Privacy Policy</h1>
-    <p class="updated">Last updated: 2026-08-20</p>
+    <p class="updated">Last updated: 2026-08-25</p>
 
     <p>
       This policy describes how the <strong>Usage Dashboard</strong> browser
@@ -87,10 +87,71 @@
         A short-lived <strong>cache</strong> of provider usage/status data
         retrieved from your instance, used to render the popup quickly.
       </li>
+      <li>
+        <strong>Popup presentation preferences</strong>, such as which providers
+        are pinned or hidden and a preferred metric per provider.
+      </li>
+      <li>
+        <strong>Popup filter and sort</strong> preferences.
+      </li>
+      <li>
+        <strong>Alert dismissal state</strong>, so acknowledged alerts stay
+        acknowledged.
+      </li>
+      <li>
+        <strong>Notification preferences</strong> and
+        <strong>notification deduplication / last-seen state</strong> (see
+        below).
+      </li>
+      <li>
+        <strong>Connection-health state</strong>, including whether the last
+        sync succeeded and the timestamp of the last successful sync.
+      </li>
+      <li>
+        Other minimal local state needed for polling and popup presentation.
+      </li>
     </ul>
     <p>
       None of this data is transmitted to the extension developer or any third
-      party.
+      party. Locally stored data is required for the extension to function; it
+      is <strong>not</strong> collected by the extension developer.
+    </p>
+
+    <h2>Browser notifications</h2>
+    <p>
+      If you enable browser notifications, the extension may display local
+      browser notifications when configured usage thresholds are reached
+      (warning, critical, or exhausted) or when a configured provider becomes
+      unavailable. Notifications are <strong>optional</strong> and
+      <strong>off by default</strong>. The extension requests the browser
+      notification permission only after you enable the feature, and you can
+      disable notifications at any time in extension settings.
+    </p>
+    <p>
+      Notifications are driven by <strong>state changes</strong> rather than
+      sent on every polling cycle, so a provider that remains in the same state
+      does not repeat its notification. Clicking a provider notification opens
+      the Usage Dashboard you configured.
+    </p>
+    <p>
+      Notification preferences and notification state are stored locally in the
+      browser. Notification information is not transmitted to the extension
+      developer or to third-party analytics or advertising services. Sensitive
+      values such as bearer tokens are never included in notification text.
+    </p>
+
+    <h2>Provider diagnostics and error information</h2>
+    <p>
+      Provider or API error information may be temporarily cached and displayed
+      locally in the popup to help you troubleshoot your own self-hosted Usage
+      Dashboard connection and providers. This error/diagnostic information is
+      stored and shown only in your browser.
+    </p>
+    <p>
+      The extension does not intentionally transmit provider errors to the
+      extension developer, and it uses no telemetry or crash-reporting service.
+      Sensitive values such as bearer tokens are excluded from notifications and
+      from displayed diagnostic information.
     </p>
 
     <h2>What data the extension sends, and where</h2>
@@ -101,6 +162,7 @@
     </p>
     <ul>
       <li><code>GET /api/v1/usage</code></li>
+      <li><code>GET /api/v1/providers</code></li>
       <li><code>GET /api/v1/poll/status</code></li>
       <li><code>POST /api/v1/poll</code> (scheduled/manual refresh)</li>
       <li>
@@ -110,6 +172,12 @@
     <p>
       Your bearer token is sent <strong>only</strong> to the server origin you
       explicitly configure and authorize. It is never sent anywhere else.
+    </p>
+    <p>
+      Normal extension operation does <strong>not</strong> route your dashboard
+      credentials, usage data, or provider information through infrastructure
+      operated by the extension developer. The only data flow is directly
+      between the extension and the Usage Dashboard instance you configure.
     </p>
 
     <h2>Host access</h2>
@@ -149,8 +217,9 @@
     <h2>Telemetry, analytics, and tracking</h2>
     <p>
       The extension does <strong>not</strong> collect analytics, usage
-      telemetry, or crash reports, and does <strong>not</strong> use tracking or
-      advertising. No data is transmitted to the developer or any third party.
+      telemetry, or crash reports, and does <strong>not</strong> use tracking,
+      advertising, or any third-party telemetry or crash-reporting service. No
+      data is transmitted to the developer or any third party.
     </p>
 
     <h2>Data retention and deletion</h2>
