@@ -2,12 +2,15 @@ import { describe, it, expect } from 'vitest'
 import {
   alertMessage,
   alertSeverity,
+  codexLimitSections,
   codexRemainingValue,
   firecrawlSummary,
   formatAge,
   formatDateTime,
   formatMetricLabel,
   formatMetricValue,
+  formatRelativeReset,
+  formatResetTime,
   formatThresholdRule,
   healthMeta,
   healthText,
@@ -300,5 +303,102 @@ describe('healthText', () => {
 
   it('describes never_connected', () => {
     expect(healthText({ status: 'never_connected' })).toBe('No successful connection yet')
+  })
+})
+
+describe('formatResetTime', () => {
+  it('returns null for empty or invalid values', () => {
+    expect(formatResetTime(null)).toBeNull()
+    expect(formatResetTime('')).toBeNull()
+    expect(formatResetTime('not-a-date')).toBeNull()
+  })
+
+  it('includes the date for weekly windows', () => {
+    expect(formatResetTime('2026-08-20T00:00:00Z', { includeDate: true })).toContain('2026')
+  })
+
+  it('omits the date for same-day session windows', () => {
+    expect(formatResetTime('2026-08-14T12:30:00Z', { includeDate: false })).not.toContain('2026')
+  })
+})
+
+describe('formatRelativeReset', () => {
+  const NOW = Date.parse('2026-08-14T09:46:00Z')
+
+  it('returns null for empty, invalid, or past values', () => {
+    expect(formatRelativeReset(null, NOW)).toBeNull()
+    expect(formatRelativeReset('not-a-date', NOW)).toBeNull()
+    expect(formatRelativeReset('2026-08-14T08:00:00Z', NOW)).toBeNull()
+  })
+
+  it('formats sub-hour, hour, and day spans', () => {
+    expect(formatRelativeReset('2026-08-14T09:46:00Z', NOW)).toBeNull() // now, not future
+    expect(formatRelativeReset('2026-08-14T10:31:00Z', NOW)).toBe('in 45m')
+    expect(formatRelativeReset('2026-08-14T12:00:00Z', NOW)).toBe('in 2h 14m')
+    expect(formatRelativeReset('2026-08-15T12:00:00Z', NOW)).toBe('in 1d 2h')
+  })
+})
+
+describe('codexLimitSections', () => {
+  it('builds session and weekly sections with titles and reset times', () => {
+    const sections = codexLimitSections([
+      { label: 'session_remaining_percent', value: 42.4, unit: '%', maximum: 100 },
+      { label: 'session_reset_at', value: '2026-08-14T12:30:00Z' },
+      { label: 'weekly_remaining_percent', value: 12, unit: '%', maximum: 100 },
+      { label: 'weekly_reset_at', value: '2026-08-20T00:00:00Z' },
+    ])
+
+    expect(sections.map((section) => section.key)).toEqual(['session', 'weekly'])
+    expect(sections.map((section) => section.title)).toEqual(['5 hour usage limit', 'Weekly usage limit'])
+    expect(sections[0].remaining).toBe(42.4)
+    expect(sections[0].remainingLabel).toBe('42% remaining')
+    expect(sections[0].resetAt).toBe('2026-08-14T12:30:00Z')
+    expect(typeof sections[0].resetLabel).toBe('string')
+    expect(sections[1].remaining).toBe(12)
+    expect(sections[1].resetLabel).toContain('2026')
+  })
+
+  it('clamps remaining percent to [0, 100]', () => {
+    const sections = codexLimitSections([
+      { label: 'session_remaining_percent', value: 150, unit: '%' },
+      { label: 'weekly_remaining_percent', value: -5, unit: '%' },
+    ])
+    expect(sections[0].remaining).toBe(100)
+    expect(sections[1].remaining).toBe(0)
+  })
+
+  it('omits a window that has neither percent nor reset timestamp', () => {
+    const sections = codexLimitSections([
+      { label: 'session_remaining_percent', value: 88, unit: '%' },
+    ])
+    expect(sections.map((section) => section.key)).toEqual(['session'])
+  })
+
+  it('keeps a window that has a reset timestamp but no percent', () => {
+    const sections = codexLimitSections([
+      { label: 'weekly_reset_at', value: '2026-08-20T00:00:00Z' },
+    ])
+    expect(sections).toHaveLength(1)
+    expect(sections[0].key).toBe('weekly')
+    expect(sections[0].remaining).toBeNull()
+    expect(sections[0].remainingLabel).toBeNull()
+    expect(typeof sections[0].resetLabel).toBe('string')
+  })
+
+  it('does not fabricate a reset time when the provider omits it', () => {
+    const sections = codexLimitSections([
+      { label: 'session_remaining_percent', value: 88, unit: '%' },
+      { label: 'weekly_remaining_percent', value: 12, unit: '%' },
+      { label: 'weekly_reset_at', value: '' },
+    ])
+    expect(sections[0].resetLabel).toBeNull()
+    expect(sections[0].relativeLabel).toBeNull()
+    expect(sections[1].resetAt).toBeNull()
+    expect(sections[1].resetLabel).toBeNull()
+  })
+
+  it('returns an empty list for empty or missing metrics', () => {
+    expect(codexLimitSections([])).toEqual([])
+    expect(codexLimitSections(undefined)).toEqual([])
   })
 })

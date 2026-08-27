@@ -19,9 +19,11 @@ import { api } from "../api.js";
 import { HermesDataSourcesCards } from "../components/HermesPanels.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
 import {
+  CODEX_LIMIT_METRIC_LABELS,
   PROVIDER_USAGE_URLS,
   alertMessage,
   alertSeverity,
+  codexLimitSections,
   firecrawlSummary,
   formatDateTime,
   formatMetricLabel,
@@ -435,6 +437,12 @@ function UsageCard({ item, icon }) {
   const metrics = display?.metrics || [];
   const firecrawlComposite =
     config.provider === "firecrawl" ? firecrawlSummary(metrics) : null;
+  const isCodex = config.provider === "codex";
+  const codexSections = isCodex ? codexLimitSections(metrics) : [];
+  const sectionLabels = new Set(CODEX_LIMIT_METRIC_LABELS);
+  const listMetrics = isCodex
+    ? metrics.filter((metric) => !sectionLabels.has(metric.label))
+    : metrics;
 
   return (
     <Card
@@ -534,10 +542,9 @@ function UsageCard({ item, icon }) {
               />
             </Box>
           ) : (
-            metrics.map((metric) => {
-              const percent = metricPercent(metric, config.provider);
-              return (
-                <Box className="metric-row" key={metric.label}>
+            <>
+              {codexSections.map((section) => (
+                <Box className="metric-row codex-limit-section" key={section.key}>
                   <Stack
                     className="metric-header"
                     direction="row"
@@ -545,22 +552,61 @@ function UsageCard({ item, icon }) {
                     sx={{ justifyContent: "space-between" }}
                   >
                     <Typography className="metric-label" variant="body2">
-                      {formatMetricLabel(metric.label, config.provider)}
+                      {section.title}
                     </Typography>
-                    <Typography className="metric-value" variant="body2">
-                      {formatMetricValue(metric, config.provider, percent)}
-                    </Typography>
+                    {section.remainingLabel && (
+                      <Typography className="metric-value" variant="body2">
+                        {section.remainingLabel}
+                      </Typography>
+                    )}
                   </Stack>
-                  {percent !== null && (
+                  {section.remaining !== null && (
                     <GraphProgress
-                      value={percent}
-                      title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`}
+                      value={section.remaining}
+                      title={`${config.label} · ${section.title}: ${section.remainingLabel}`}
                       sx={{ mt: 1 }}
                     />
                   )}
+                  {section.resetLabel && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75 }}
+                    >
+                      Resets {section.resetLabel}
+                      {section.relativeLabel ? ` · ${section.relativeLabel}` : ""}
+                    </Typography>
+                  )}
                 </Box>
-              );
-            })
+              ))}
+              {listMetrics.map((metric) => {
+                const percent = metricPercent(metric, config.provider);
+                return (
+                  <Box className="metric-row" key={metric.label}>
+                    <Stack
+                      className="metric-header"
+                      direction="row"
+                      spacing={2}
+                      sx={{ justifyContent: "space-between" }}
+                    >
+                      <Typography className="metric-label" variant="body2">
+                        {formatMetricLabel(metric.label, config.provider)}
+                      </Typography>
+                      <Typography className="metric-value" variant="body2">
+                        {formatMetricValue(metric, config.provider, percent)}
+                      </Typography>
+                    </Stack>
+                    {percent !== null && (
+                      <GraphProgress
+                        value={percent}
+                        title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`}
+                        sx={{ mt: 1 }}
+                      />
+                    )}
+                  </Box>
+                );
+              })}
+            </>
           )}
         </Stack>
         {latest?.error && !isStale && (

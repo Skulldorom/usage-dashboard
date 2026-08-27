@@ -10,6 +10,20 @@ export const PREFERRED_METRICS = {
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
 }
 
+// Codex metric labels consumed by the usage-window limit sections rather than
+// the generic metric list. The session window is the provider's 5-hour limit.
+export const CODEX_LIMIT_METRIC_LABELS = [
+  'session_remaining_percent',
+  'session_reset_at',
+  'weekly_remaining_percent',
+  'weekly_reset_at',
+]
+
+const CODEX_LIMIT_WINDOWS = [
+  { prefix: 'session', title: '5 hour usage limit', includeDate: false },
+  { prefix: 'weekly', title: 'Weekly usage limit', includeDate: true },
+]
+
 export const PROVIDER_USAGE_URLS = {
   anthropic: 'https://console.anthropic.com/settings/usage',
   codex: 'https://chatgpt.com/codex/cloud/settings/analytics',
@@ -49,6 +63,58 @@ export function formatMetricValue(metric, provider, percent) {
 
 export function isPercentBasedMetric(metric) {
   return metric?.unit === '%' && typeof metric.value === 'number'
+}
+
+export function formatResetTime(value, { includeDate = true } = {}) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const options = includeDate
+    ? { dateStyle: 'medium', timeStyle: 'short' }
+    : { timeStyle: 'short' }
+  return new Intl.DateTimeFormat(undefined, options).format(date)
+}
+
+export function formatRelativeReset(value, now = Date.now()) {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  const diffMs = date.getTime() - now
+  if (diffMs <= 0) return null
+  const totalMinutes = Math.round(diffMs / 60000)
+  if (totalMinutes < 60) return `in ${totalMinutes}m`
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours < 24) return minutes ? `in ${hours}h ${minutes}m` : `in ${hours}h`
+  const days = Math.floor(hours / 24)
+  return `in ${days}d ${hours % 24}h`
+}
+
+// Build the Codex 5-hour/session and weekly usage-window sections from a
+// snapshot metric list. Returns sections only for windows that have a remaining
+// percent or a reset timestamp; reset times are never fabricated.
+export function codexLimitSections(metrics) {
+  const byLabel = new Map((metrics || []).map((metric) => [metric.label, metric]))
+  return CODEX_LIMIT_WINDOWS.map(({ prefix, title, includeDate }) => {
+    const remaining = byLabel.get(`${prefix}_remaining_percent`)
+    const resetAt = byLabel.get(`${prefix}_reset_at`)
+    const remainingValue =
+      typeof remaining?.value === 'number'
+        ? Math.min(100, Math.max(0, remaining.value))
+        : null
+    const resetValue =
+      typeof resetAt?.value === 'string' && resetAt.value ? resetAt.value : null
+    if (remainingValue === null && resetValue === null) return null
+    return {
+      key: prefix,
+      title,
+      remaining: remainingValue,
+      remainingLabel: remainingValue === null ? null : `${formatPercent(remainingValue)} remaining`,
+      resetAt: resetValue,
+      resetLabel: resetValue ? formatResetTime(resetValue, { includeDate }) : null,
+      relativeLabel: resetValue ? formatRelativeReset(resetValue) : null,
+    }
+  }).filter(Boolean)
 }
 
 function displaySnapshot(item) {
