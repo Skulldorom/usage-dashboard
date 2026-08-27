@@ -1,4 +1,5 @@
 import json
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -289,6 +290,32 @@ def _window_candidates(limit: dict[str, Any], key: str) -> list[Any]:
     return [candidate for candidate in candidates if isinstance(candidate, dict)]
 
 
+def _normalize_reset_at(value: Any) -> str | None:
+    """Normalize a provider reset timestamp to a UTC ISO-8601 string.
+
+    Preserves provider-supplied ISO strings verbatim, converts numeric Unix
+    timestamps (seconds since epoch) to a UTC ISO-8601 string, and returns
+    ``None`` for anything unusable (missing, boolean, or non-finite/out-of-range
+    numbers) so callers never fabricate a reset time.
+    """
+    if isinstance(value, str):
+        return value.strip() or None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(timestamp):
+            return None
+        try:
+            return datetime.fromtimestamp(timestamp, tz=UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (OverflowError, OSError, ValueError):
+            return None
+    return None
+
+
 def _window(limit: Any, key: str) -> dict[str, float | int | str | None]:
     if not isinstance(limit, dict):
         return {"used_percent": None, "reset_at": None}
@@ -304,9 +331,11 @@ def _window(limit: Any, key: str) -> dict[str, float | int | str | None]:
                 if remaining is not None:
                     used = 100 - remaining
                     break
-        reset_at = window.get("reset_at") or window.get("resets_at") or window.get("resetAt") or window.get("reset_time")
-        if used is not None or isinstance(reset_at, str):
-            return {"used_percent": used, "reset_at": reset_at if isinstance(reset_at, str) else None}
+        reset_at = _normalize_reset_at(
+            window.get("reset_at") or window.get("resets_at") or window.get("resetAt") or window.get("reset_time")
+        )
+        if used is not None or reset_at is not None:
+            return {"used_percent": used, "reset_at": reset_at}
     return {"used_percent": None, "reset_at": None}
 
 
