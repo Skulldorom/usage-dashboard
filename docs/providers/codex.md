@@ -24,6 +24,10 @@ refreshed automatically before they expire.
 - `limit_reached` - whether the current window is exhausted.
 - `review_session_remaining_percent` / `review_weekly_remaining_percent` - code review windows, when present.
 
+The provider card groups the session (5-hour) and weekly limits into usage-window
+sections that show the remaining percentage, a progress bar, and a "Resets …"
+timestamp in the viewer's local timezone whenever the provider supplies one.
+
 ## Notes
 
 - If the OAuth token is rejected (401/403), re-authorize the Codex provider from
