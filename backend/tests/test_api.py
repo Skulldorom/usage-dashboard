@@ -3,7 +3,6 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from time import perf_counter
 
 import httpx
 import pytest
@@ -71,6 +70,34 @@ class FakeAdapter(ProviderAdapter):
         await asyncio.sleep(float(self.extra.get("delay", 0)))
         if self.api_key == "bad-key":
             raise ValueError("invalid test key")
+        return ProviderUsage(
+            status="healthy",
+            summary=f"{self.api_key} ok",
+            metrics=[Metric(label="remaining", value=42, unit="credits", maximum=100)],
+            raw={"ok": True},
+        )
+
+
+class ParallelProbeAdapter(FakeAdapter):
+    """FakeAdapter that records how many fetch_usage calls overlap.
+
+    The poll endpoint must fan provider fetches out concurrently. Tracking the
+    peak number of simultaneously-active fetches proves that deterministically,
+    without relying on wall-clock timing (which is flaky on loaded CI runners).
+    """
+
+    id = "parallel-probe"
+    name = "Parallel probe"
+    active = 0
+    max_active = 0
+
+    async def fetch_usage(self) -> ProviderUsage:
+        type(self).active += 1
+        type(self).max_active = max(type(self).max_active, type(self).active)
+        try:
+            await asyncio.sleep(float(self.extra.get("delay", 0)))
+        finally:
+            type(self).active -= 1
         return ProviderUsage(
             status="healthy",
             summary=f"{self.api_key} ok",
@@ -1147,7 +1174,9 @@ async def providers_payload():
 
 @pytest.mark.asyncio
 async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
-    monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
+    monkeypatch.setitem(ADAPTERS, ParallelProbeAdapter.id, ParallelProbeAdapter)
+    ParallelProbeAdapter.active = 0
+    ParallelProbeAdapter.max_active = 0
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -1156,22 +1185,23 @@ async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
             created = await client.post(
                 "/api/v1/configs",
                 json={
-                    "provider": "fake",
+                    "provider": "parallel-probe",
                     "label": f"provider-{idx}",
                     "api_key": f"key-{idx}",
-                    "extra": {"delay": 0.15},
+                    "extra": {"delay": 0.05},
                 },
                 headers=auth,
             )
             assert created.status_code == 201, created.text
 
-        start = perf_counter()
         polled = await client.post("/api/v1/poll", headers=auth)
-        elapsed = perf_counter() - start
 
         assert polled.status_code == 200, polled.text
         assert len(polled.json()) == 3
-        assert elapsed < 0.35
+
+    # A serial poll would peak at one concurrent fetch; parallel polling must
+    # overlap all three.
+    assert ParallelProbeAdapter.max_active == 3
 
 
 @pytest.mark.asyncio
