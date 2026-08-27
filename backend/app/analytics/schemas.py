@@ -51,6 +51,22 @@ class CoverageInfo(BaseModel):
     median_gap_seconds: float | None = None
 
 
+class HermesOverlay(BaseModel):
+    """Hermes-observed usage aligned to a provider's native timeseries.
+
+    ``compatible`` is False when the provider metric has no comparable Hermes
+    counterpart (state/percent/credits), the provider is unmapped, or there is
+    no Hermes data for the selected range - ``reason`` explains which.
+    """
+
+    compatible: bool = False
+    metric: str | None = None
+    hermes_metrics: list[str] = Field(default_factory=list)
+    unit: str | None = None
+    buckets: list[AnalyticsBucket] = Field(default_factory=list)
+    reason: str | None = None
+
+
 class AnalyticsTimeseries(BaseModel):
     metric: str
     metric_type: str
@@ -59,6 +75,7 @@ class AnalyticsTimeseries(BaseModel):
     timezone: str
     buckets: list[AnalyticsBucket]
     coverage: CoverageInfo
+    hermes_overlay: HermesOverlay | None = None
 
 
 class AnalyticsDailyRow(BaseModel):

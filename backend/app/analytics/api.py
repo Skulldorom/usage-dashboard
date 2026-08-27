@@ -31,6 +31,7 @@ from app.analytics.schemas import (
     AnalyticsSummaryCard,
     AnalyticsTimeseries,
     CoverageInfo,
+    HermesOverlay,
     OverviewActivityDimension,
     OverviewActivityProvider,
     OverviewComparisonSeries,
@@ -41,7 +42,7 @@ from app.analytics.schemas import (
     ProviderCapacity,
 )
 from app.analytics.types import Observation
-from app.analytics.capabilities import activity_dimensions, activity_metric_labels, overview_metric
+from app.analytics.capabilities import activity_dimensions, activity_metric_labels, comparison_dimension, overview_metric
 from app.analytics.pricing import estimate_cost, normalize_model
 from app.analytics.quota_correlation import estimate_quota_impact
 from app.analytics.reconciliation import (
@@ -375,6 +376,9 @@ async def timeseries(
     buckets = bucketize(metric_obs, metric=resolved, interval=interval, tz=timezone, start=start, end=end)
     buckets = fill_buckets(buckets, interval=interval, start=start, end=end, tz=timezone)
     cov = series_coverage(metric_obs)
+    hermes_overlay = await _hermes_overlay(
+        session, config.provider, metric_type, spec, interval=interval, tz=timezone, start=start, end=end,
+    )
 
     return AnalyticsTimeseries(
         metric=resolved,
@@ -384,6 +388,7 @@ async def timeseries(
         timezone=timezone or "UTC",
         buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in buckets],
         coverage=CoverageInfo(**cov),
+        hermes_overlay=hermes_overlay,
     )
 
 
@@ -754,6 +759,92 @@ async def _load_mapped_hermes_observations(
         )
     ).scalars().all()
     return [_orm_to_observation(row) for row in rows]
+
+
+def _hermes_overlay_series(
+    observations: list[Observation],
+    metrics: list[str],
+    *,
+    interval: str,
+    tz: str | None,
+    start: datetime,
+    end: datetime,
+) -> list[aggregation.Bucket]:
+    """Bucketize mapped Hermes delta observations into one aligned series.
+
+    Multiple token classes are relabelled to a synthetic metric and summed by
+    the shared ``bucketize``/``fill_buckets`` path so gaps stay explicit and
+    missing data is never read as zero usage.
+    """
+    combined = [
+        Observation(
+            metric="_hermes_overlay",
+            value=obs.value,
+            unit=obs.unit,
+            observed_at=obs.observed_at,
+            kind="delta",
+            source=obs.source,
+            window_start=obs.window_start,
+            window_end=obs.window_end,
+            reset_at=obs.reset_at,
+        )
+        for obs in observations
+        if obs.kind == "delta" and obs.metric in metrics
+    ]
+    buckets = bucketize(combined, metric="_hermes_overlay", interval=interval, tz=tz, start=start, end=end)
+    return fill_buckets(buckets, interval=interval, start=start, end=end, tz=tz)
+
+
+async def _hermes_overlay(
+    session: AsyncSession,
+    provider: str,
+    metric_type: str,
+    spec: dict | None,
+    *,
+    interval: str,
+    tz: str | None,
+    start: datetime,
+    end: datetime,
+) -> HermesOverlay:
+    """Build the Hermes-observed series aligned to a provider's native metric.
+
+    Returns ``compatible=False`` with a ``reason`` when the metric has no
+    comparable Hermes counterpart or there is no mapped Hermes data in range,
+    so the frontend never draws a misleading overlay.
+    """
+    dimension = comparison_dimension(spec)
+    if dimension is None:
+        if spec and spec.get("utilization"):
+            reason = "native metric is a utilization percentage"
+        elif metric_type not in ("counter", "rate_limit"):
+            reason = "native metric is a point/state value, not consumption"
+        else:
+            reason = "no comparable Hermes metric for this unit"
+        return HermesOverlay(compatible=False, reason=reason)
+
+    hermes_metrics = _HERMES_METRICS_BY_DIMENSION[dimension]
+    unit = _HERMES_OVERLAY_UNITS[dimension]
+    hermes_observations = await _load_mapped_hermes_observations(session, provider, start=start, end=end)
+    has_data = any(obs.kind == "delta" and obs.metric in hermes_metrics for obs in hermes_observations)
+    if not has_data:
+        return HermesOverlay(
+            compatible=False,
+            metric=dimension,
+            hermes_metrics=hermes_metrics,
+            unit=unit,
+            reason="no mapped Hermes data for the selected range",
+        )
+
+    buckets = _hermes_overlay_series(
+        hermes_observations, hermes_metrics, interval=interval, tz=tz, start=start, end=end,
+    )
+    return HermesOverlay(
+        compatible=True,
+        metric=dimension,
+        hermes_metrics=hermes_metrics,
+        unit=unit,
+        buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in buckets],
+    )
 
 
 def _period_trend(observations: list[Observation], metric: str | None, start: datetime, end: datetime) -> float | None:
@@ -1186,6 +1277,19 @@ _TOKEN_METRICS = frozenset(
     {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
 )
 
+# Hermes observation metrics that back each native comparison dimension, and
+# the unit the summed series is reported in.
+_HERMES_METRICS_BY_DIMENSION = {
+    "tokens": sorted(_TOKEN_METRICS),
+    "requests": ["requests"],
+    "cost": ["cost"],
+}
+_HERMES_OVERLAY_UNITS = {
+    "tokens": "tokens",
+    "requests": "count",
+    "cost": "USD",
+}
+
 
 async def _load_hermes_rows(session: AsyncSession, start: datetime, end: datetime) -> list[UsageObservation]:
     return (
@@ -1280,6 +1384,7 @@ async def _hermes_source_summaries(
                 provider_mappings=mappings,
                 providers_observed=observed,
                 providers_unmapped=unmapped,
+                mute_unmapped_provider_alerts=bool((source.extra or {}).get("mute_unmapped_provider_alerts", False)),
             )
         )
     return summaries
@@ -1300,7 +1405,7 @@ def _hermes_diagnostics(*, sources: list[HermesSourceSummary], rows: list[UsageO
             diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has not synced successfully yet."))
         if source.profiles:
             diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} is filtered to profiles: {', '.join(source.profiles)}."))
-        if source.providers_unmapped:
+        if source.providers_unmapped and not source.mute_unmapped_provider_alerts:
             diagnostics.append(HermesDiagnostic(severity="warning", message=f"{source.name} observed unmapped providers: {', '.join(source.providers_unmapped)}."))
         if source.total_observations and source.observations_in_range == 0 and source.latest_observation_at:
             diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has stored Hermes observations, but the latest ({source.latest_observation_at.isoformat()}) is outside the selected range."))

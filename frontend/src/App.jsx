@@ -5,6 +5,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useSearchParams,
 } from "react-router-dom";
 import {
   Alert,
@@ -32,6 +33,9 @@ import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
 import UsagePage from "./pages/UsagePage.jsx";
+import {
+  visibleUsageSubmenuItems as filterUsageSubmenuItems,
+} from "./lib/navigation.js";
 import {
   UNAUTHORIZED_EVENT,
   api,
@@ -222,14 +226,6 @@ const settingsSubmenuItems = [
   { href: "#integration-tokens", label: "Integration tokens" },
 ];
 
-const usageSubmenuItems = [
-  { href: "#usage-filters", label: "Filters" },
-  { href: "#usage-overview", label: "Overview" },
-  { href: "#usage-provider-trends", label: "Provider trends" },
-  { href: "#usage-breakdowns", label: "Daily / hourly" },
-  { href: "#usage-attribution", label: "Attribution" },
-];
-
 function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
@@ -299,9 +295,15 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
 
 function Navigation({ mobile = false, isAuthenticated = true }) {
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const showUsageSubmenu = !mobile && location.pathname.startsWith("/usage");
   const showSettingsSubmenu =
     !mobile && location.pathname.startsWith("/settings");
+
+  const providerParam = searchParams.get("provider");
+  const hasProviderSelected =
+    Boolean(providerParam) && providerParam !== "all";
+  const visibleUsageSubmenuItems = filterUsageSubmenuItems(hasProviderSelected);
 
   return (
     <nav
@@ -333,10 +335,12 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
               </NavLink>
               {item.to === "/usage" && showUsageSubmenu && (
                 <div className="nav-submenu" aria-label="Usage sections">
-                  {usageSubmenuItems.map((subitem) => (
+                  {visibleUsageSubmenuItems.map((subitem) => (
                     <a
                       key={subitem.href}
-                      className="nav-submenu-link"
+                      className={`nav-submenu-link${
+                        location.hash === subitem.href ? " active" : ""
+                      }`}
                       href={subitem.href}
                     >
                       {subitem.label}

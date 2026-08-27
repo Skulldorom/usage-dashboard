@@ -109,5 +109,17 @@ describe('HermesDataSourcesCards', () => {
     const html = renderToString(React.createElement(HermesSourceCard, { source }))
     expect(html).toContain('Unmapped')
     expect(html).toContain('mystery')
+    expect(html).toContain('Dismiss')
+  })
+
+  it('hides the unmapped warning when alerts are muted for the source', () => {
+    const source = {
+      ...hermesData.sources[0],
+      providers_unmapped: ['mystery'],
+      mute_unmapped_provider_alerts: true,
+    }
+    const html = renderToString(React.createElement(HermesSourceCard, { source }))
+    expect(html).not.toContain('Unmapped')
+    expect(html).not.toContain('Dismiss')
   })
 })

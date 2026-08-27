@@ -173,3 +173,26 @@ def activity_metric_labels(dimensions: dict[str, list[tuple[str, dict]]]) -> dic
         dimension: [label for label, _spec in entries]
         for dimension, entries in dimensions.items()
     }
+
+
+# Hermes only observes consumption counters (tokens / requests / cost), so an
+# overlay only makes sense for delta-capable counter/rate_limit metrics whose
+# unit maps to one of those dimensions.
+HERMES_COMPARABLE_DIMENSIONS = {"tokens", "requests", "cost"}
+
+
+def comparison_dimension(spec: dict | None) -> str | None:
+    """Canonical Hermes-comparable dimension for a metric spec, if any.
+
+    State metrics (gauge/balance/remaining/rolling_total), utilization
+    percentages, and non-comparable units (e.g. credits) return ``None`` so
+    callers never fabricate a Hermes overlay for an incompatible metric.
+    """
+    if not spec:
+        return None
+    if spec.get("utilization"):
+        return None
+    if spec.get("type") not in _ACTIVITY_TYPES:
+        return None
+    dimension = _dimension_for_unit(spec.get("unit"))
+    return dimension if dimension in HERMES_COMPARABLE_DIMENSIONS else None

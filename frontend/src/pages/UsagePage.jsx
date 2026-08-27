@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -63,36 +64,9 @@ function formatAxis(value) {
   return new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric' }).format(date)
 }
 
-function TimeSeriesChart({ points, metric, metricType, unit }) {
-  const [hoverIndex, setHoverIndex] = useState(null)
-  const width = 720
-  const height = 220
-  const pad = { top: 12, right: 12, bottom: 26, left: 8 }
-
-  const values = points
-    .map((point) => point.value)
-    .filter((value) => typeof value === 'number')
-
-  if (values.length === 0) {
-    return (
-      <Box className="usage-chart-empty">
-        <Typography variant="body2" color="text.secondary">
-          Not enough data to draw a chart yet.
-        </Typography>
-      </Box>
-    )
-  }
-
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min || 1
-  const innerW = width - pad.left - pad.right
-  const innerH = height - pad.top - pad.bottom
-
-  const x = (index) => pad.left + (points.length > 1 ? (index / (points.length - 1)) * innerW : innerW / 2)
-  const y = (value) => pad.top + (1 - (value - min) / span) * innerH
-
-  // Split the polyline into segments on gaps (missing samples read as gaps, not zero).
+// Split a point list into contiguous segments on gaps so missing samples read
+// as gaps rather than a false drop to zero.
+function buildSegments(points) {
   const segments = []
   let current = []
   points.forEach((point, index) => {
@@ -107,12 +81,55 @@ function TimeSeriesChart({ points, metric, metricType, unit }) {
     current.push({ index, value: point.value })
   })
   if (current.length) segments.push(current)
+  return segments
+}
+
+function TimeSeriesChart({ points, metric, metricType, unit, overlayPoints = [], overlayUnit }) {
+  const [hoverIndex, setHoverIndex] = useState(null)
+  const width = 720
+  const height = 220
+  const pad = { top: 12, right: 12, bottom: 26, left: 8 }
+
+  const values = points
+    .map((point) => point.value)
+    .filter((value) => typeof value === 'number')
+  const hasOverlay = (overlayPoints || []).some((point) => typeof point.value === 'number')
+
+  if (values.length === 0) {
+    return (
+      <Box className="usage-chart-empty">
+        <Typography variant="body2" color="text.secondary">
+          Not enough data to draw a chart yet.
+        </Typography>
+      </Box>
+    )
+  }
+
+  const overlayValues = (overlayPoints || [])
+    .map((point) => point.value)
+    .filter((value) => typeof value === 'number')
+  const min = Math.min(...values, ...overlayValues)
+  const max = Math.max(...values, ...overlayValues)
+  const span = max - min || 1
+  const innerW = width - pad.left - pad.right
+  const innerH = height - pad.top - pad.bottom
+
+  const x = (index) => pad.left + (points.length > 1 ? (index / (points.length - 1)) * innerW : innerW / 2)
+  const y = (value) => pad.top + (1 - (value - min) / span) * innerH
+
+  // Split the polylines into segments on gaps (missing samples read as gaps, not zero).
+  const segments = buildSegments(points)
+  const overlaySegments = buildSegments(overlayPoints || [])
 
   const ticks = points.length > 1 ? [0, Math.floor((points.length - 1) / 2), points.length - 1] : [0]
   const hoveredPoint = hoverIndex === null ? null : points[hoverIndex]
   const hoveredValue = hoveredPoint ? displayUsageValue(primaryValue(hoveredPoint.raw, metricType), { metric, metricType, unit }) : null
   const hoverX = hoverIndex === null ? null : x(hoverIndex)
   const hoverY = typeof hoveredValue === 'number' ? y(hoveredValue) : null
+  const overlayHoveredValue =
+    hasOverlay && hoverIndex !== null && typeof overlayPoints[hoverIndex]?.value === 'number'
+      ? overlayPoints[hoverIndex].value
+      : null
 
   function handlePointerMove(event) {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -123,7 +140,7 @@ function TimeSeriesChart({ points, metric, metricType, unit }) {
   }
 
   const hoverLabel = hoveredPoint && typeof hoveredValue === 'number'
-    ? `${formatAxis(hoveredPoint.x)} · ${formatMetricValue(hoveredValue, unit)}`
+    ? `${formatAxis(hoveredPoint.x)} · ${formatMetricValue(hoveredValue, unit)}${typeof overlayHoveredValue === 'number' ? ` · Hermes ${formatMetricValue(overlayHoveredValue, overlayUnit)}` : ''}`
     : ''
 
   return (
@@ -161,6 +178,12 @@ function TimeSeriesChart({ points, metric, metricType, unit }) {
           </g>
         )
       })}
+      {overlaySegments.map((segment, segmentIndex) => {
+        const linePath = segment.map((p, i) => `${i === 0 ? 'M' : 'L'} ${x(p.index)} ${y(p.value)}`).join(' ')
+        return (
+          <path key={`hermes-${segmentIndex}`} d={linePath} fill="none" stroke="#8b5cf6" strokeWidth="2" strokeDasharray="6 5" strokeLinejoin="round" strokeLinecap="round" />
+        )
+      })}
       {ticks.map((index) => (
         <text key={index} x={x(index)} y={height - 6} textAnchor={index === 0 ? 'start' : index === points.length - 1 ? 'end' : 'middle'} className="usage-axis-label">
           {formatAxis(points[index]?.x)}
@@ -173,11 +196,26 @@ function TimeSeriesChart({ points, metric, metricType, unit }) {
         <g className="usage-chart-hover">
           <line x1={hoverX} x2={hoverX} y1={pad.top} y2={height - pad.bottom} />
           <circle cx={hoverX} cy={hoverY} r="4" />
+          {typeof overlayHoveredValue === 'number' && (
+            <circle cx={hoverX} cy={y(overlayHoveredValue)} r="4" fill="#8b5cf6" stroke="rgba(255,255,255,0.9)" strokeWidth="1.5" />
+          )}
           <rect x={Math.min(width - 174, Math.max(10, hoverX - 82))} y={Math.max(10, hoverY - 34)} width="164" height="24" rx="6" />
           <text x={Math.min(width - 92, Math.max(92, hoverX))} y={Math.max(27, hoverY - 17)} textAnchor="middle">{hoverLabel}</text>
         </g>
       )}
     </svg>
+    {hasOverlay && (
+      <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 1 }}>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: '#06c8ff' }} />
+          <Typography variant="caption" color="text.secondary">Provider usage</Typography>
+        </Stack>
+        <Stack direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Box sx={{ width: 14, height: 0, borderTop: '2px dashed #8b5cf6' }} />
+          <Typography variant="caption" color="text.secondary">Hermes observed usage</Typography>
+        </Stack>
+      </Stack>
+    )}
     {hoverLabel && <div className="usage-chart-tooltip" aria-live="polite">{hoverLabel}</div>}
     </Box>
   )
@@ -837,7 +875,8 @@ function ActivityShare({ dimension }) {
 export default function UsagePage() {
   const [configs, setConfigs] = useState([])
   const [overview, setOverview] = useState(null)
-  const [selectedId, setSelectedId] = useState('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const selectedId = searchParams.get('provider') || 'all'
   const [providerInfo, setProviderInfo] = useState(null)
   const [metric, setMetric] = useState('')
   const [interval, setInterval] = useState('day')
@@ -959,6 +998,12 @@ export default function UsagePage() {
 
   const points = useMemo(() => chartPoints(timeseries?.buckets, metricType, { metric, unit }), [timeseries, metricType, metric, unit])
 
+  const overlay = timeseries?.hermes_overlay
+  const overlayPoints = useMemo(
+    () => (overlay?.compatible ? chartPoints(overlay.buckets, 'counter', { metric: overlay.metric, unit: overlay.unit }) : []),
+    [overlay],
+  )
+
   const dimensions = useMemo(() => activityDimensions(overview), [overview])
   const selectedDimension = useMemo(
     () => dimensions.find((dimension) => dimension.dimension === overviewMode) || null,
@@ -993,7 +1038,7 @@ export default function UsagePage() {
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ flexWrap: 'wrap' }}>
                 <FormControl size="small" sx={{ minWidth: 200 }}>
                   <InputLabel>Provider</InputLabel>
-                  <Select value={selectedId} label="Provider" onChange={(event) => setSelectedId(event.target.value)}>
+                  <Select value={selectedId} label="Provider" onChange={(event) => setSearchParams(event.target.value === 'all' ? {} : { provider: event.target.value })}>
                     <MenuItem value="all">All providers</MenuItem>
                     {configs.map((item) => (
                       <MenuItem key={item.config.id} value={String(item.config.id)}>{item.config.provider} · {item.config.label}</MenuItem>
@@ -1118,7 +1163,7 @@ export default function UsagePage() {
                       <Typography variant="overline" color="primary.main">Historical usage</Typography>
                       {providerInfo.native_history && <Chip size="small" label="native history" color="primary" variant="outlined" />}
                     </Stack>
-                    <TimeSeriesChart points={points} metric={metric} metricType={metricType} unit={unit} />
+                    <TimeSeriesChart points={points} metric={metric} metricType={metricType} unit={unit} overlayPoints={overlayPoints} overlayUnit={overlay?.unit} />
                   </CardContent>
                 </Card>
               </Grid>
