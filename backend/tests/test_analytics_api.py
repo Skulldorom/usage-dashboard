@@ -91,6 +91,39 @@ async def _create_config(Session, provider="deepseek"):
         return config
 
 
+async def _seed_hermes_observations(Session, observations):
+    """Create a Hermes data source and persist mapped telemetry observations."""
+    now = datetime.now(UTC)
+    async with Session() as session:
+        source = DataSourceConfig(
+            kind="hermes",
+            name="Hermes overlay",
+            base_url="http://hermes.local",
+            is_enabled=True,
+            last_attempt_at=now - timedelta(minutes=1),
+            last_success_at=now - timedelta(minutes=1),
+            consecutive_failures=0,
+        )
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        for obs in observations:
+            session.add(
+                UsageObservation(
+                    data_source_id=source.id,
+                    provider=obs["provider"],
+                    provider_mapping=obs.get("provider_mapping", obs["provider"]),
+                    metric=obs["metric"],
+                    value=obs["value"],
+                    unit=obs.get("unit"),
+                    kind=obs.get("kind", "delta"),
+                    source="hermes",
+                    observed_at=obs["observed_at"],
+                )
+            )
+        await session.commit()
+
+
 @pytest.mark.asyncio
 async def test_provider_analytics_info(sqlite_db):
     Session = sqlite_db
@@ -833,6 +866,160 @@ async def test_hermes_breakdown_explains_empty_range_and_unmapped_providers(sqli
     assert any("outside the selected range" in message for message in messages)
     assert any("unmapped providers: mystery" in message for message in messages)
     assert any("No Hermes observations between" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_hermes_breakdown_mute_suppresses_unmapped_diagnostic(sqlite_db):
+    """Muting unmapped-provider alerts keeps the provider listed but drops the
+    warning diagnostic (issue #175)."""
+    Session = sqlite_db
+    await _create_config(Session, provider="anthropic")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        source = DataSourceConfig(
+            kind="hermes",
+            name="Hermes muted",
+            base_url="http://hermes.local",
+            is_enabled=True,
+            last_attempt_at=now - timedelta(minutes=3),
+            last_success_at=now - timedelta(minutes=3),
+            consecutive_failures=0,
+            extra={"mute_unmapped_provider_alerts": True},
+        )
+        session.add(source)
+        await session.commit()
+        await session.refresh(source)
+        session.add(
+            UsageObservation(
+                data_source_id=source.id,
+                provider="mystery",
+                provider_mapping="mystery",
+                metric="requests",
+                value=3.0,
+                unit="count",
+                kind="delta",
+                source="hermes",
+                observed_at=now - timedelta(minutes=3),
+            )
+        )
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/hermes", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    source = payload["sources"][0]
+    assert source["mute_unmapped_provider_alerts"] is True
+    # The provider stays visible for the mapping dialog even when muted.
+    assert source["providers_unmapped"] == ["mystery"]
+    messages = [item["message"] for item in payload["diagnostics"]]
+    assert not any("unmapped providers: mystery" in message for message in messages)
+
+
+@pytest.mark.asyncio
+async def test_timeseries_hermes_overlay_compatible(sqlite_db):
+    """A mapped provider with Hermes data gets a compatible overlay series."""
+    Session = sqlite_db
+    config = await _create_config(Session, provider="anthropic")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, config, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+    await _seed_hermes_observations(Session, [
+        {"provider": "anthropic", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
+        {"provider": "anthropic", "metric": "output_tokens", "value": 10.0, "unit": "tokens", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries",
+            params={"metric": "input_tokens", "interval": "day"},
+            headers=ADMIN_AUTH,
+        )
+
+    assert response.status_code == 200, response.text
+    overlay = response.json()["hermes_overlay"]
+    assert overlay["compatible"] is True
+    assert overlay["metric"] == "tokens"
+    assert overlay["unit"] == "tokens"
+    # The overlay sums every Hermes token class, not just the seeded two.
+    assert {"input_tokens", "output_tokens"} <= set(overlay["hermes_metrics"])
+    totals = [b["total"] for b in overlay["buckets"] if b["total"]]
+    assert sum(totals) == 50.0
+
+
+@pytest.mark.asyncio
+async def test_timeseries_hermes_overlay_unmapped_provider(sqlite_db):
+    """Hermes data for a *different* provider never leaks onto this one."""
+    Session = sqlite_db
+    config = await _create_config(Session, provider="anthropic")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, config, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+    await _seed_hermes_observations(Session, [
+        {"provider": "mystery", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries",
+            params={"metric": "input_tokens", "interval": "day"},
+            headers=ADMIN_AUTH,
+        )
+
+    assert response.status_code == 200, response.text
+    overlay = response.json()["hermes_overlay"]
+    assert overlay["compatible"] is False
+    assert overlay["buckets"] == []
+    assert "no mapped Hermes data" in overlay["reason"]
+
+
+@pytest.mark.asyncio
+async def test_timeseries_hermes_overlay_no_data(sqlite_db):
+    """A compatible metric with no Hermes observations stays compatible=False."""
+    Session = sqlite_db
+    config = await _create_config(Session, provider="anthropic")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, config, [
+        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries",
+            params={"metric": "input_tokens", "interval": "day"},
+            headers=ADMIN_AUTH,
+        )
+
+    assert response.status_code == 200, response.text
+    overlay = response.json()["hermes_overlay"]
+    assert overlay["compatible"] is False
+    assert overlay["buckets"] == []
+
+
+@pytest.mark.asyncio
+async def test_timeseries_hermes_overlay_incompatible_metric(sqlite_db):
+    """State/percent metrics never get a Hermes overlay (no fabricated series)."""
+    Session = sqlite_db
+    config = await _create_config(Session, provider="deepseek")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, config, [
+        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "source": "snapshot", "observed_at": base},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries",
+            params={"metric": "total_balance", "interval": "day"},
+            headers=ADMIN_AUTH,
+        )
+
+    assert response.status_code == 200, response.text
+    overlay = response.json()["hermes_overlay"]
+    assert overlay["compatible"] is False
+    assert overlay["reason"] is not None
 
 
 @pytest.mark.asyncio

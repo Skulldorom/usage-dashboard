@@ -485,6 +485,7 @@ class HermesSourceSummary(BaseModel):
     provider_mappings: dict[str, str] = Field(default_factory=dict)
     providers_observed: list[str] = Field(default_factory=list)
     providers_unmapped: list[str] = Field(default_factory=list)
+    mute_unmapped_provider_alerts: bool = False
 
 
 class HermesDiagnostic(BaseModel):

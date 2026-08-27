@@ -87,7 +87,26 @@ function HermesDailyChart({ daily }) {
 }
 
 export function HermesSourceCard({ source, compact = false }) {
+  const [dismissed, setDismissed] = useState(false)
   const latest = source.latest_observation_at ? new Date(source.latest_observation_at).toLocaleString() : 'No stored observations'
+
+  function dismissUnmapped(event) {
+    // The card itself is a link to /usage; keep the dismiss action from also
+    // triggering that navigation.
+    event.preventDefault()
+    event.stopPropagation()
+    setDismissed(true)
+    api.updateDataSourceConfig(source.id, { mute_unmapped_provider_alerts: true }).catch(() => {
+      // Persist failed - restore the warning rather than silently dropping it.
+      setDismissed(false)
+    })
+  }
+
+  const showUnmapped =
+    source.providers_unmapped?.length > 0 &&
+    !source.mute_unmapped_provider_alerts &&
+    !dismissed
+
   return (
     <Card variant="outlined" className="glass-panel data-source-card">
       <CardActionArea component="a" href="/usage" aria-label={`Open Hermes telemetry for ${source.name}`}>
@@ -105,14 +124,19 @@ export function HermesSourceCard({ source, compact = false }) {
             {source.providers_observed?.length > 0 && (
               <Typography variant="caption" color="text.secondary">Providers: {source.providers_observed.slice(0, 4).join(', ')}{source.providers_observed.length > 4 ? '…' : ''}</Typography>
             )}
-            {source.providers_unmapped?.length > 0 && (
+            {showUnmapped && (
               <Alert
                 severity="warning"
                 sx={{ mt: 0.5 }}
                 action={
-                  <Button component="a" href="/settings#data-sources" size="small" color="inherit">
-                    Manage mappings
-                  </Button>
+                  <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+                    <Button component="a" href="/settings#data-sources" size="small" color="inherit">
+                      Manage mappings
+                    </Button>
+                    <Button size="small" color="inherit" onClick={dismissUnmapped} aria-label={`Dismiss unmapped provider warning for ${source.name}`}>
+                      Dismiss
+                    </Button>
+                  </Stack>
                 }
               >
                 Unmapped: {source.providers_unmapped.join(', ')}
