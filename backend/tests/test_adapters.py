@@ -5,6 +5,7 @@ from app.providers.custom_http import CustomHTTPAdapter
 from app.providers.deepseek import DeepSeekAdapter
 from app.providers.firecrawl import FirecrawlAdapter
 from app.providers.openai import OpenAIAdapter
+from app.providers.opencode_go import OpenCodeGoAdapter
 from app.providers.openrouter import OpenRouterAdapter
 
 def test_firecrawl_parser_uses_credit_endpoint_values_and_usage_percent():
@@ -39,6 +40,24 @@ def test_openrouter_parser_extracts_credit_usage():
     assert usage.status == "healthy"
     assert any(m.label == "limit_remaining" and m.value == 45.2 and m.maximum == 100 for m in usage.metrics)
     assert any(m.label == "usage_monthly" and m.value == 55 for m in usage.metrics)
+
+def test_opencode_go_parser_extracts_windows_and_models():
+    usage = OpenCodeGoAdapter.parse_usage(
+        {
+            "data": {
+                "plan_type": "Go",
+                "windows": {
+                    "five_hour": {"usage": 4, "limit": 12, "remaining": 8, "reset_at": "2026-09-01T16:00:00Z"},
+                    "weekly": {"usage": 15, "limit": 30, "remaining": 15, "reset_at": "2026-09-07T00:00:00Z"},
+                    "monthly": {"usage": 50, "limit": 60, "remaining": 10, "reset_at": "2026-09-30T00:00:00Z"},
+                },
+                "models": [{"id": "kimi-k2.7-code", "usage": 100}],
+            }
+        }
+    )
+    assert usage.status == "healthy"
+    assert any(m.label == "weekly_remaining" and m.value == 15 for m in usage.metrics)
+    assert any(m.label == "models_used" for m in usage.metrics)
 
 def test_custom_http_parser_extracts_configured_json_paths():
     config = {"metrics": [{"label": "remaining", "path": "$.credits.remaining", "unit": "credits", "maximum_path": "$.credits.limit"}]}
