@@ -22,6 +22,15 @@ export const OPENCODEGO_LIMIT_METRIC_LABELS = [
   'monthly_reset_at',
 ]
 
+// Codex metric labels consumed by the usage-window limit sections rather than
+// the generic metric list. The session window is the provider's 5-hour limit.
+export const CODEX_LIMIT_METRIC_LABELS = [
+  'session_remaining_percent',
+  'session_reset_at',
+  'weekly_remaining_percent',
+  'weekly_reset_at',
+]
+
 const OPENCODEGO_LIMIT_WINDOWS = [
   { prefix: 'five_hour', title: '5-hour usage limit', includeDate: false },
   { prefix: 'weekly', title: 'Weekly usage limit', includeDate: true },
