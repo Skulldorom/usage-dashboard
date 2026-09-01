@@ -3,6 +3,77 @@ import pytest
 from app.providers.opencode_go import OpenCodeGoAdapter, _canonical_model_id, _extract_model_usage, _extract_windows
 
 
+def metrics_by_label(usage):
+    return {metric.label: metric for metric in usage.metrics}
+
+
+def test_parser_normalizes_current_percent_usage_shape():
+    usage = OpenCodeGoAdapter.parse_usage(
+        {
+            "usage": {
+                "weekly": {"status": "ok", "percent": 13, "resetsAt": "2026-09-07T00:00:00.272Z"},
+                "monthly": {"status": "ok", "percent": 6, "resetsAt": "2026-10-01T11:00:59.272Z"},
+                "rolling": {"status": "ok", "percent": 33, "resetsAt": "2026-09-01T16:06:10.272Z"},
+            }
+        }
+    )
+
+    assert usage.status == "healthy"
+    assert "33% 5h" in usage.summary
+    by_label = metrics_by_label(usage)
+    assert by_label["five_hour_used_percent"].value == 33
+    assert by_label["five_hour_used_percent"].unit == "%"
+    assert by_label["five_hour_used_percent"].maximum == 100
+    assert by_label["five_hour_remaining_percent"].value == 67
+    assert by_label["five_hour_reset_at"].value == "2026-09-01T16:06:10.272Z"
+    assert by_label["weekly_used_percent"].value == 13
+    assert by_label["weekly_remaining_percent"].value == 87
+    assert by_label["weekly_reset_at"].value == "2026-09-07T00:00:00.272Z"
+    assert by_label["monthly_used_percent"].value == 6
+    assert by_label["monthly_remaining_percent"].value == 94
+    assert by_label["monthly_reset_at"].value == "2026-10-01T11:00:59.272Z"
+    assert "five_hour_limit" not in by_label
+    assert usage.raw["usage"]["rolling"]["percent"] == 33
+
+
+def test_parser_clamps_percent_windows_and_computes_remaining():
+    usage = OpenCodeGoAdapter.parse_usage(
+        {
+            "usage": {
+                "rolling": {"percent": 133},
+                "weekly": {"percent": -9},
+                "monthly": {"percent": "40.5"},
+            }
+        }
+    )
+
+    by_label = metrics_by_label(usage)
+    assert by_label["five_hour_used_percent"].value == 100
+    assert by_label["five_hour_remaining_percent"].value == 0
+    assert by_label["weekly_used_percent"].value == 0
+    assert by_label["weekly_remaining_percent"].value == 100
+    assert by_label["monthly_used_percent"].value == 40.5
+    assert by_label["monthly_remaining_percent"].value == 59.5
+
+
+def test_parser_skips_missing_percent_windows_without_fabricating_dates():
+    usage = OpenCodeGoAdapter.parse_usage(
+        {
+            "usage": {
+                "rolling": {"percent": 33},
+                "weekly": {"status": "ok"},
+            }
+        }
+    )
+
+    by_label = metrics_by_label(usage)
+    assert by_label["five_hour_used_percent"].value == 33
+    assert by_label["five_hour_remaining_percent"].value == 67
+    assert "five_hour_reset_at" not in by_label
+    assert "weekly_used_percent" not in by_label
+    assert "monthly_used_percent" not in by_label
+
+
 def test_parser_extracts_all_three_windows():
     usage = OpenCodeGoAdapter.parse_usage(
         {

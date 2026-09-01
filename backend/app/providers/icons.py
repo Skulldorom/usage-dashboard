@@ -25,9 +25,11 @@ PROVIDER_ICONS: dict[str, dict[str, str]] = {
         "viewBox": "0 0 24 24",
         "path": "M18.654 3.87a5.087 5.087 0 110 10.174L23.7 19.09c.64.641.187 1.737-.72 1.737H8.48a8.479 8.479 0 010-16.958h10.175zM8.479 7.26a5.087 5.087 0 100 10.176 5.087 5.087 0 000-10.175z",
     },
+    # Official OpenCode "O" mark (two-tone frame + block) flattened to a
+    # monochrome silhouette: a filled 240x300 rectangle with the top slot cut out.
     "opencode-go": {
-        "viewBox": "0 0 24 24",
-        "path": "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z",
+        "viewBox": "0 0 240 300",
+        "path": "M180 60H60V120H180V60ZM240 300H0V0H240V300Z",
     },
     "firecrawl": {
         "viewBox": "0 0 50 72",

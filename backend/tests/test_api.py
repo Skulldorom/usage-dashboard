@@ -147,6 +147,8 @@ async def test_providers_include_icons():
     assert by_id["deepseek"]["icon"]["viewBox"] == "0 0 600 600"
     assert by_id["openrouter"]["icon"]["viewBox"] == "0 0 24 24"
     assert by_id["firecrawl"]["icon"]["viewBox"] == "0 0 50 72"
+    assert by_id["opencode-go"]["icon"]["viewBox"] == "0 0 240 300"
+    assert by_id["opencode-go"]["icon"]["path"] == "M180 60H60V120H180V60ZM240 300H0V0H240V300Z"
     assert by_id["custom_http"]["icon"] is None
 
 
