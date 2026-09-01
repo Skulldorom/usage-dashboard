@@ -113,6 +113,17 @@ const PROVIDER_SETUP = {
     linkLabel: "Open OpenRouter Keys",
     keyPlaceholder: "sk-or-v1-…",
   },
+  "opencode-go": {
+    title: "OpenCode Go API key",
+    steps: [
+      "Sign in to OpenCode Zen and subscribe to OpenCode Go.",
+      "Copy the Go API key from your account/API keys page.",
+      "Paste the key below; the dashboard reads the rolling 5-hour, weekly, and monthly usage windows plus per-model request limits.",
+    ],
+    url: "https://opencode.ai/auth",
+    linkLabel: "Open OpenCode account",
+    keyPlaceholder: "sk-…",
+  },
   custom_http: {
     title: "Custom JSON endpoint",
     steps: [

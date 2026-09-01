@@ -8,7 +8,19 @@ export const PREFERRED_METRICS = {
   firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
+  'opencode-go': ['weekly_remaining', 'five_hour_remaining', 'monthly_remaining', 'exhausted'],
 }
+
+// OpenCode Go metric labels consumed by the limit-window sections rather than
+// the generic metric list. The 5-hour window is the provider's rolling session limit.
+export const OPENCODEGO_LIMIT_METRIC_LABELS = [
+  'five_hour_remaining',
+  'five_hour_reset_at',
+  'weekly_remaining',
+  'weekly_reset_at',
+  'monthly_remaining',
+  'monthly_reset_at',
+]
 
 // Codex metric labels consumed by the usage-window limit sections rather than
 // the generic metric list. The session window is the provider's 5-hour limit.
@@ -17,6 +29,12 @@ export const CODEX_LIMIT_METRIC_LABELS = [
   'session_reset_at',
   'weekly_remaining_percent',
   'weekly_reset_at',
+]
+
+const OPENCODEGO_LIMIT_WINDOWS = [
+  { prefix: 'five_hour', title: '5-hour usage limit', includeDate: false },
+  { prefix: 'weekly', title: 'Weekly usage limit', includeDate: true },
+  { prefix: 'monthly', title: 'Monthly usage limit', includeDate: true },
 ]
 
 const CODEX_LIMIT_WINDOWS = [
@@ -31,6 +49,7 @@ export const PROVIDER_USAGE_URLS = {
   firecrawl: 'https://www.firecrawl.dev/app',
   openai: 'https://platform.openai.com/settings/organization/usage',
   openrouter: 'https://openrouter.ai/settings/credits',
+  'opencode-go': 'https://opencode.ai/auth',
 }
 
 export function isCodexPercentMetric(provider, metric) {
@@ -110,6 +129,43 @@ export function codexLimitSections(metrics) {
       title,
       remaining: remainingValue,
       remainingLabel: remainingValue === null ? null : `${formatPercent(remainingValue)} remaining`,
+      resetAt: resetValue,
+      resetLabel: resetValue ? formatResetTime(resetValue, { includeDate }) : null,
+      relativeLabel: resetValue ? formatRelativeReset(resetValue) : null,
+    }
+  }).filter(Boolean)
+}
+
+// Build the OpenCode Go 5-hour, weekly, and monthly usage-window sections from
+// a snapshot metric list. Values are USD remaining; reset times are never fabricated.
+export function opencodeGoLimitSections(metrics) {
+  const byLabel = new Map((metrics || []).map((metric) => [metric.label, metric]))
+  return OPENCODEGO_LIMIT_WINDOWS.map(({ prefix, title, includeDate }) => {
+    const remaining = byLabel.get(`${prefix}_remaining`)
+    const limit = byLabel.get(`${prefix}_limit`)
+    const resetAt = byLabel.get(`${prefix}_reset_at`)
+    const remainingValue =
+      typeof remaining?.value === 'number'
+        ? Math.max(0, remaining.value)
+        : null
+    const limitValue =
+      typeof limit?.value === 'number' && limit.value > 0 ? limit.value : null
+    const resetValue =
+      typeof resetAt?.value === 'string' && resetAt.value ? resetAt.value : null
+    if (remainingValue === null && limitValue === null && resetValue === null) return null
+    return {
+      key: prefix,
+      title,
+      remaining: remainingValue,
+      limit: limitValue,
+      remainingLabel:
+        remainingValue === null
+          ? null
+          : `$${remainingValue.toFixed(2)} remaining`,
+      percent:
+        remainingValue !== null && limitValue !== null && limitValue > 0
+          ? Math.min(100, Math.max(0, (remainingValue / limitValue) * 100))
+          : null,
       resetAt: resetValue,
       resetLabel: resetValue ? formatResetTime(resetValue, { includeDate }) : null,
       relativeLabel: resetValue ? formatRelativeReset(resetValue) : null,

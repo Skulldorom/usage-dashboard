@@ -20,6 +20,7 @@ import { HermesDataSourcesCards } from "../components/HermesPanels.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
 import {
   CODEX_LIMIT_METRIC_LABELS,
+  OPENCODEGO_LIMIT_METRIC_LABELS,
   PROVIDER_USAGE_URLS,
   alertMessage,
   alertSeverity,
@@ -32,6 +33,7 @@ import {
   healthText,
   metricPercent,
   numericMetric,
+  opencodeGoLimitSections,
   overallUsageGroups,
   selectHistoryMetric,
 } from "../lib/usageFormat.js";
@@ -438,9 +440,13 @@ function UsageCard({ item, icon }) {
   const firecrawlComposite =
     config.provider === "firecrawl" ? firecrawlSummary(metrics) : null;
   const isCodex = config.provider === "codex";
+  const isOpenCodeGo = config.provider === "opencode-go";
   const codexSections = isCodex ? codexLimitSections(metrics) : [];
-  const sectionLabels = new Set(CODEX_LIMIT_METRIC_LABELS);
-  const listMetrics = isCodex
+  const opencodeGoSections = isOpenCodeGo ? opencodeGoLimitSections(metrics) : [];
+  const sectionLabels = new Set(
+    isOpenCodeGo ? OPENCODEGO_LIMIT_METRIC_LABELS : CODEX_LIMIT_METRIC_LABELS,
+  );
+  const listMetrics = isCodex || isOpenCodeGo
     ? metrics.filter((metric) => !sectionLabels.has(metric.label))
     : metrics;
 
@@ -563,6 +569,42 @@ function UsageCard({ item, icon }) {
                   {section.remaining !== null && (
                     <GraphProgress
                       value={section.remaining}
+                      title={`${config.label} · ${section.title}: ${section.remainingLabel}`}
+                      sx={{ mt: 1 }}
+                    />
+                  )}
+                  {section.resetLabel && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75 }}
+                    >
+                      Resets {section.resetLabel}
+                      {section.relativeLabel ? ` · ${section.relativeLabel}` : ""}
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+              {opencodeGoSections.map((section) => (
+                <Box className="metric-row opencode-go-limit-section" key={section.key}>
+                  <Stack
+                    className="metric-header"
+                    direction="row"
+                    spacing={2}
+                    sx={{ justifyContent: "space-between" }}
+                  >
+                    <Typography className="metric-label" variant="body2">
+                      {section.title}
+                    </Typography>
+                    {section.remainingLabel && (
+                      <Typography className="metric-value" variant="body2">
+                        {section.remainingLabel}
+                      </Typography>
+                    )}
+                  </Stack>
+                  {section.percent !== null && (
+                    <GraphProgress
+                      value={section.percent}
                       title={`${config.label} · ${section.title}: ${section.remainingLabel}`}
                       sx={{ mt: 1 }}
                     />
