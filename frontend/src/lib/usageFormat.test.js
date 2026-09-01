@@ -16,7 +16,10 @@ import {
   healthText,
   metricPercent,
   numericMetric,
+  OPENCODEGO_LIMIT_METRIC_LABELS,
+  opencodeGoLimitSections,
   overallUsageGroups,
+  PREFERRED_METRICS,
   selectHistoryMetric,
 } from './usageFormat.js'
 
@@ -202,6 +205,20 @@ describe('selectHistoryMetric', () => {
 
   it('returns null when no metric has more than one value', () => {
     expect(selectHistoryMetric('deepseek', [{ metrics: [{ label: 'total_balance', value: 100 }] }])).toBeNull()
+  })
+
+  it('prefers OpenCode Go used-percent metrics for history', () => {
+    const snapshots = [
+      { metrics: [{ label: 'five_hour_used_percent', value: 33 }, { label: 'weekly_remaining', value: 20 }] },
+      { metrics: [{ label: 'five_hour_used_percent', value: 44 }, { label: 'weekly_remaining', value: 19 }] },
+    ]
+
+    expect(PREFERRED_METRICS['opencode-go'].slice(0, 3)).toEqual([
+      'five_hour_used_percent',
+      'weekly_used_percent',
+      'monthly_used_percent',
+    ])
+    expect(selectHistoryMetric('opencode-go', snapshots).label).toBe('five_hour_used_percent')
   })
 })
 
@@ -400,5 +417,68 @@ describe('codexLimitSections', () => {
   it('returns an empty list for empty or missing metrics', () => {
     expect(codexLimitSections([])).toEqual([])
     expect(codexLimitSections(undefined)).toEqual([])
+  })
+})
+
+describe('opencodeGoLimitSections', () => {
+  it('builds 5-hour, weekly, and monthly used-percent sections', () => {
+    const sections = opencodeGoLimitSections([
+      { label: 'five_hour_used_percent', value: 33, unit: '%', maximum: 100 },
+      { label: 'five_hour_remaining_percent', value: 67, unit: '%', maximum: 100 },
+      { label: 'five_hour_reset_at', value: '2026-09-01T16:06:10.272Z' },
+      { label: 'weekly_used_percent', value: 13, unit: '%', maximum: 100 },
+      { label: 'weekly_remaining_percent', value: 87, unit: '%', maximum: 100 },
+      { label: 'weekly_reset_at', value: '2026-09-07T00:00:00.272Z' },
+      { label: 'monthly_used_percent', value: 6, unit: '%', maximum: 100 },
+      { label: 'monthly_remaining_percent', value: 94, unit: '%', maximum: 100 },
+      { label: 'monthly_reset_at', value: '2026-10-01T11:00:59.272Z' },
+    ])
+
+    expect(sections.map((section) => section.key)).toEqual(['five_hour', 'weekly', 'monthly'])
+    expect(sections.map((section) => section.title)).toEqual(['5-hour Usage', 'Weekly Usage', 'Monthly Usage'])
+    expect(sections.map((section) => section.percent)).toEqual([33, 13, 6])
+    expect(sections.map((section) => section.usageLabel)).toEqual([
+      '33% used / 67% remaining',
+      '13% used / 87% remaining',
+      '6% used / 94% remaining',
+    ])
+    expect(sections[0].resetAt).toBe('2026-09-01T16:06:10.272Z')
+    expect(typeof sections[0].resetLabel).toBe('string')
+    expect(sections[1].resetLabel).toContain('2026')
+  })
+
+  it('clamps displayed used and remaining percentages', () => {
+    const sections = opencodeGoLimitSections([
+      { label: 'five_hour_used_percent', value: 133, unit: '%' },
+      { label: 'five_hour_remaining_percent', value: -12, unit: '%' },
+    ])
+
+    expect(sections[0].percent).toBe(100)
+    expect(sections[0].remaining).toBe(0)
+    expect(sections[0].usageLabel).toBe('100% used / 0% remaining')
+  })
+
+  it('filters dedicated window metrics out of generic rows', () => {
+    expect(OPENCODEGO_LIMIT_METRIC_LABELS).toEqual(
+      expect.arrayContaining([
+        'five_hour_used_percent',
+        'five_hour_remaining_percent',
+        'five_hour_reset_at',
+        'weekly_used_percent',
+        'weekly_remaining_percent',
+        'weekly_reset_at',
+        'monthly_used_percent',
+        'monthly_remaining_percent',
+        'monthly_reset_at',
+      ]),
+    )
+
+    const genericRows = [
+      { label: 'five_hour_used_percent', value: 33 },
+      { label: 'balance_fallback_enabled', value: false },
+      { label: 'exhausted', value: false },
+    ].filter((metric) => !OPENCODEGO_LIMIT_METRIC_LABELS.includes(metric.label))
+
+    expect(genericRows.map((metric) => metric.label)).toEqual(['balance_fallback_enabled', 'exhausted'])
   })
 })

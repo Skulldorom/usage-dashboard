@@ -92,14 +92,20 @@ class OpenCodeGoAdapter(ProviderAdapter):
     default_base_url = "https://opencode.ai"
     metric_names = [
         "plan_type",
+        "five_hour_used_percent",
+        "five_hour_remaining_percent",
         "five_hour_usage",
         "five_hour_remaining",
         "five_hour_limit",
         "five_hour_reset_at",
+        "weekly_used_percent",
+        "weekly_remaining_percent",
         "weekly_usage",
         "weekly_remaining",
         "weekly_limit",
         "weekly_reset_at",
+        "monthly_used_percent",
+        "monthly_remaining_percent",
         "monthly_usage",
         "monthly_remaining",
         "monthly_limit",
@@ -109,6 +115,9 @@ class OpenCodeGoAdapter(ProviderAdapter):
         "models_used",
     ]
     alert_metrics = [
+        {"metric": "five_hour_used_percent", "label": "5-hour usage", "unit": "%", "direction": "increasing"},
+        {"metric": "weekly_used_percent", "label": "Weekly usage", "unit": "%", "direction": "increasing"},
+        {"metric": "monthly_used_percent", "label": "Monthly usage", "unit": "%", "direction": "increasing"},
         {"metric": "five_hour_remaining", "label": "5-hour remaining", "unit": "USD", "direction": "decreasing"},
         {"metric": "weekly_remaining", "label": "Weekly remaining", "unit": "USD", "direction": "decreasing"},
         {"metric": "monthly_remaining", "label": "Monthly remaining", "unit": "USD", "direction": "decreasing"},
@@ -120,6 +129,64 @@ class OpenCodeGoAdapter(ProviderAdapter):
         supported=True,
         native_history=False,
         metrics={
+            "five_hour_used_percent": metric_spec(
+                type_="gauge",
+                unit="%",
+                direction="increasing",
+                maximum=100,
+                reset_metric="five_hour_reset_at",
+                window="5h",
+                utilization=True,
+                deltas=False,
+            ),
+            "weekly_used_percent": metric_spec(
+                type_="gauge",
+                unit="%",
+                direction="increasing",
+                maximum=100,
+                reset_metric="weekly_reset_at",
+                window="week",
+                utilization=True,
+                overview=True,
+                deltas=False,
+            ),
+            "monthly_used_percent": metric_spec(
+                type_="gauge",
+                unit="%",
+                direction="increasing",
+                maximum=100,
+                reset_metric="monthly_reset_at",
+                window="month",
+                utilization=True,
+                deltas=False,
+            ),
+            "five_hour_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="five_hour_reset_at",
+                window="5h",
+                utilization=True,
+            ),
+            "weekly_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="weekly_reset_at",
+                window="week",
+                utilization=True,
+            ),
+            "monthly_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="monthly_reset_at",
+                window="month",
+                utilization=True,
+            ),
             "five_hour_remaining": metric_spec(
                 type_="remaining",
                 unit="USD",
@@ -181,12 +248,27 @@ class OpenCodeGoAdapter(ProviderAdapter):
         balance_fallback = bool(payload.get("use_balance")) or bool(payload.get("balance_fallback_enabled"))
 
         windows = _extract_windows(payload)
+        percent_windows = _extract_percent_windows(payload)
         exhausted = bool(payload.get("exhausted")) or bool(payload.get("limit_reached"))
         for key, title in (
             ("five_hour", "5h"),
             ("weekly", "weekly"),
             ("monthly", "monthly"),
         ):
+            percent_window = percent_windows.get(key)
+            if percent_window is not None:
+                used_percent = percent_window.get("used_percent")
+                remaining_percent = percent_window.get("remaining_percent")
+                reset_at = percent_window.get("reset_at")
+                metrics.append(Metric(f"{key}_used_percent", used_percent, "%", 100))
+                metrics.append(Metric(f"{key}_remaining_percent", remaining_percent, "%", 100))
+                if reset_at:
+                    metrics.append(Metric(f"{key}_reset_at", reset_at))
+                summary_parts.append(f"{used_percent:g}% {title}")
+                if used_percent >= 100:
+                    exhausted = True
+                continue
+
             window = windows.get(key)
             if window is None:
                 continue
@@ -293,6 +375,16 @@ def _first_text(*values: Any) -> str | None:
     return None
 
 
+def _clamped_percent(value: Any) -> float | int | None:
+    percent = _number(value)
+    if percent is None:
+        return None
+    clamped = min(100, max(0, percent))
+    if isinstance(clamped, float) and clamped.is_integer():
+        return int(clamped)
+    return clamped
+
+
 def _normalize_reset_at(value: Any) -> str | None:
     if isinstance(value, str) and value.strip():
         return value.strip()
@@ -310,6 +402,37 @@ def _normalize_reset_at(value: Any) -> str | None:
         except (OverflowError, OSError, ValueError):
             return None
     return None
+
+
+def _extract_percent_windows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Extract current OpenCode Go percentage windows without inventing USD limits."""
+    usage = payload.get("usage")
+    if not isinstance(usage, dict):
+        return {}
+
+    windows: dict[str, dict[str, Any]] = {}
+    for canonical, source_key in (
+        ("five_hour", "rolling"),
+        ("weekly", "weekly"),
+        ("monthly", "monthly"),
+    ):
+        source = usage.get(source_key)
+        if not isinstance(source, dict):
+            continue
+        used_percent = _clamped_percent(source.get("percent"))
+        if used_percent is None:
+            continue
+        remaining_percent = round(100 - used_percent, 4)
+        if isinstance(remaining_percent, float) and remaining_percent.is_integer():
+            remaining_percent = int(remaining_percent)
+        windows[canonical] = {
+            "used_percent": used_percent,
+            "remaining_percent": remaining_percent,
+            "reset_at": _normalize_reset_at(
+                source.get("resetsAt") or source.get("resets_at") or source.get("reset_at") or source.get("reset")
+            ),
+        }
+    return windows
 
 
 def _extract_windows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:

@@ -8,16 +8,22 @@ export const PREFERRED_METRICS = {
   firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
-  'opencode-go': ['weekly_remaining', 'five_hour_remaining', 'monthly_remaining', 'exhausted'],
+  'opencode-go': ['five_hour_used_percent', 'weekly_used_percent', 'monthly_used_percent', 'exhausted'],
 }
 
 // OpenCode Go metric labels consumed by the limit-window sections rather than
 // the generic metric list. The 5-hour window is the provider's rolling session limit.
 export const OPENCODEGO_LIMIT_METRIC_LABELS = [
+  'five_hour_used_percent',
+  'five_hour_remaining_percent',
   'five_hour_remaining',
   'five_hour_reset_at',
+  'weekly_used_percent',
+  'weekly_remaining_percent',
   'weekly_remaining',
   'weekly_reset_at',
+  'monthly_used_percent',
+  'monthly_remaining_percent',
   'monthly_remaining',
   'monthly_reset_at',
 ]
@@ -32,9 +38,9 @@ export const CODEX_LIMIT_METRIC_LABELS = [
 ]
 
 const OPENCODEGO_LIMIT_WINDOWS = [
-  { prefix: 'five_hour', title: '5-hour usage limit', includeDate: false },
-  { prefix: 'weekly', title: 'Weekly usage limit', includeDate: true },
-  { prefix: 'monthly', title: 'Monthly usage limit', includeDate: true },
+  { prefix: 'five_hour', title: '5-hour Usage', includeDate: false },
+  { prefix: 'weekly', title: 'Weekly Usage', includeDate: true },
+  { prefix: 'monthly', title: 'Monthly Usage', includeDate: true },
 ]
 
 const CODEX_LIMIT_WINDOWS = [
@@ -137,35 +143,54 @@ export function codexLimitSections(metrics) {
 }
 
 // Build the OpenCode Go 5-hour, weekly, and monthly usage-window sections from
-// a snapshot metric list. Values are USD remaining; reset times are never fabricated.
+// a snapshot metric list. Current snapshots use provider-supplied used
+// percentages; older USD remaining/limit snapshots are still tolerated. Reset
+// times are never fabricated.
 export function opencodeGoLimitSections(metrics) {
   const byLabel = new Map((metrics || []).map((metric) => [metric.label, metric]))
   return OPENCODEGO_LIMIT_WINDOWS.map(({ prefix, title, includeDate }) => {
-    const remaining = byLabel.get(`${prefix}_remaining`)
+    const usedPercent = byLabel.get(`${prefix}_used_percent`)
+    const remainingPercent = byLabel.get(`${prefix}_remaining_percent`)
+    const remainingUsd = byLabel.get(`${prefix}_remaining`)
     const limit = byLabel.get(`${prefix}_limit`)
     const resetAt = byLabel.get(`${prefix}_reset_at`)
-    const remainingValue =
-      typeof remaining?.value === 'number'
-        ? Math.max(0, remaining.value)
+    const usedValue =
+      typeof usedPercent?.value === 'number'
+        ? Math.min(100, Math.max(0, usedPercent.value))
+        : null
+    const percentRemainingValue =
+      typeof remainingPercent?.value === 'number'
+        ? Math.min(100, Math.max(0, remainingPercent.value))
+        : usedValue === null
+          ? null
+          : Math.min(100, Math.max(0, 100 - usedValue))
+    const usdRemainingValue =
+      typeof remainingUsd?.value === 'number'
+        ? Math.max(0, remainingUsd.value)
         : null
     const limitValue =
       typeof limit?.value === 'number' && limit.value > 0 ? limit.value : null
     const resetValue =
       typeof resetAt?.value === 'string' && resetAt.value ? resetAt.value : null
-    if (remainingValue === null && limitValue === null && resetValue === null) return null
+    if (usedValue === null && percentRemainingValue === null && usdRemainingValue === null && limitValue === null && resetValue === null) return null
+    const fallbackPercent =
+      usdRemainingValue !== null && limitValue !== null && limitValue > 0
+        ? Math.min(100, Math.max(0, (usdRemainingValue / limitValue) * 100))
+        : null
+    const usageLabel =
+      usedValue !== null && percentRemainingValue !== null
+        ? `${formatPercent(usedValue)} used / ${formatPercent(percentRemainingValue)} remaining`
+        : usdRemainingValue === null
+          ? null
+          : `$${usdRemainingValue.toFixed(2)} remaining`
     return {
       key: prefix,
       title,
-      remaining: remainingValue,
+      remaining: percentRemainingValue ?? usdRemainingValue,
       limit: limitValue,
-      remainingLabel:
-        remainingValue === null
-          ? null
-          : `$${remainingValue.toFixed(2)} remaining`,
-      percent:
-        remainingValue !== null && limitValue !== null && limitValue > 0
-          ? Math.min(100, Math.max(0, (remainingValue / limitValue) * 100))
-          : null,
+      remainingLabel: usageLabel,
+      usageLabel,
+      percent: usedValue ?? fallbackPercent,
       resetAt: resetValue,
       resetLabel: resetValue ? formatResetTime(resetValue, { includeDate }) : null,
       relativeLabel: resetValue ? formatRelativeReset(resetValue) : null,
