@@ -99,7 +99,38 @@ class ThresholdRule(BaseModel):
             raise ValueError("At least one threshold (warning, critical, or exhausted) is required")
         return self
 
-class ProviderConfigCreate(BaseModel):
+PRICING_MODELS = {"subscription", "payg", "free"}
+BILLING_CADENCES = {"monthly", "yearly"}
+
+
+class ProviderBillingMixin(BaseModel):
+    pricing_model: Literal["subscription", "payg", "free"] = "payg"
+    subscription_amount: float | None = Field(default=None, ge=0)
+    subscription_currency: str = Field(default="USD", min_length=3, max_length=3)
+    billing_cadence: Literal["monthly", "yearly"] | None = None
+    billing_anchor: datetime | None = None
+
+    @field_validator("subscription_currency", mode="before")
+    @classmethod
+    def _normalize_currency(cls, value: str | None) -> str:
+        if not value:
+            return "USD"
+        return str(value).strip().upper()
+
+    @model_validator(mode="after")
+    def _validate_billing(self):
+        if self.pricing_model == "subscription":
+            if self.subscription_amount is None:
+                raise ValueError("subscription_amount is required for subscription pricing")
+            if not self.billing_cadence:
+                raise ValueError("billing_cadence is required for subscription pricing")
+        else:
+            if self.billing_cadence and self.pricing_model != "subscription":
+                raise ValueError("billing_cadence only applies to subscription pricing")
+        return self
+
+
+class ProviderConfigCreate(ProviderBillingMixin):
     provider: str = Field(..., examples=["firecrawl"])
     label: str | None = Field(default=None, max_length=120)
     api_key: str = Field(..., min_length=1)
@@ -118,7 +149,9 @@ class ProviderConfigCreate(BaseModel):
             return stripped or None
         return value
 
-class ProviderConfigUpdate(BaseModel):
+class ProviderConfigUpdate(ProviderBillingMixin):
+    pricing_model: Literal["subscription", "payg", "free"] | None = None
+    subscription_currency: str | None = Field(default=None, min_length=3, max_length=3)
     label: str | None = Field(default=None, min_length=1, max_length=120)
     api_key: str | None = Field(default=None, min_length=1)
     base_url: str | None = None
@@ -127,6 +160,14 @@ class ProviderConfigUpdate(BaseModel):
     is_visible: bool | None = None
     display_order: int | None = Field(default=None, ge=0)
     alert_thresholds: list[ThresholdRule] | None = None
+
+    @model_validator(mode="after")
+    def _validate_partial_billing(self):
+        # Full cross-field validation runs on create. Updates may patch one field
+        # at a time, so only reject combinations that are invalid by themselves.
+        if self.pricing_model in {"payg", "free"} and self.billing_cadence:
+            raise ValueError("billing_cadence only applies to subscription pricing")
+        return self
 
     def has_update_for(self, field_name: str) -> bool:
         return field_name in self.model_fields_set
@@ -141,6 +182,11 @@ class ProviderConfigRead(BaseModel):
     is_enabled: bool
     is_visible: bool
     display_order: int
+    pricing_model: str = "payg"
+    subscription_amount: float | None = None
+    subscription_currency: str = "USD"
+    billing_cadence: str | None = None
+    billing_anchor: datetime | None = None
     alert_thresholds: list[ThresholdRule] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

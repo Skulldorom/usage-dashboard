@@ -192,6 +192,8 @@ class OverviewComparisonSeries(BaseModel):
     provider: str
     label: str
     metric: str
+    window: str | None = None
+    display_name: str | None = None
     source: str | None = None
     confidence: str = "low"
     buckets: list[AnalyticsBucket]
@@ -222,6 +224,7 @@ class ProviderCapacity(BaseModel):
     provider: str
     label: str
     metric: str | None = None
+    window: str | None = None
     capacity_used_pct: float | None = None
     capacity_remaining_pct: float | None = None
     overage_pct: float | None = None
@@ -250,3 +253,69 @@ class AnalyticsOverview(BaseModel):
     providers: list[OverviewProvider]
     comparison: list[OverviewComparisonSeries]
     activity: list[OverviewActivityDimension] = Field(default_factory=list)
+
+
+class EconomicsMoney(BaseModel):
+    amount: float | None = None
+    currency: str = "USD"
+    kind: str
+    estimated: bool = False
+    allocation: str | None = None
+    source: str | None = None
+
+
+class EconomicsObserved(BaseModel):
+    tokens: float = 0.0
+    priced_tokens: float = 0.0
+    unpriced_tokens: float = 0.0
+    priced_token_pct: float | None = None
+    attribution_state: str = "insufficient"
+
+
+class EconomicsApiEquivalent(BaseModel):
+    value: float | None = None
+    currency: str = "USD"
+    pricing_version: str | None = None
+    partial: bool = False
+    groups: list[dict] = Field(default_factory=list)
+    unpriced: dict = Field(default_factory=dict)
+
+
+class EconomicsMetrics(BaseModel):
+    value_multiplier: float | None = None
+    savings_vs_api: float | None = None
+    savings_pct: float | None = None
+    effective_cost_per_1m_tokens: float | None = None
+    tokens_per_dollar: float | None = None
+    actual_cost_per_1m_tokens: float | None = None
+
+
+class EconomicsProvider(BaseModel):
+    config_id: int
+    provider: str
+    label: str
+    pricing_model: str
+    cost_basis: EconomicsMoney
+    actual_spend: EconomicsMoney | None = None
+    subscription_cost_basis: EconomicsMoney | None = None
+    observed: EconomicsObserved
+    api_equivalent: EconomicsApiEquivalent
+    economics: EconomicsMetrics
+    confidence: str = "insufficient"
+    comparison_eligible: bool = False
+    exclusion_reason: str | None = None
+    explanation: list[str] = Field(default_factory=list)
+
+
+class EconomicsSummary(BaseModel):
+    cost_basis: EconomicsMoney
+    api_equivalent_value: EconomicsMoney
+    savings_vs_api: EconomicsMoney
+    value_multiplier: float | None = None
+    eligible_provider_count: int = 0
+
+
+class EconomicsResponse(BaseModel):
+    period: dict
+    summary: EconomicsSummary
+    providers: list[EconomicsProvider]

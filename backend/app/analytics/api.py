@@ -15,6 +15,7 @@ from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
+from app.analytics.economics import provider_economics, summarize as summarize_economics
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
 from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
@@ -30,6 +31,7 @@ from app.analytics.schemas import (
     AnalyticsSummary,
     AnalyticsSummaryCard,
     AnalyticsTimeseries,
+    EconomicsResponse,
     CoverageInfo,
     HermesOverlay,
     OverviewActivityDimension,
@@ -50,7 +52,7 @@ from app.analytics.reconciliation import (
     degrade_confidence,
     reconcile,
 )
-from app.analytics.utilization import utilization_metric, utilization_observations
+from app.analytics.utilization import utilization_metric, utilization_metrics, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
 from app.models import DataSourceConfig, ProviderConfig, UsageObservation
@@ -172,6 +174,23 @@ def _spec_unit(spec: dict | None, observations: list[Observation]) -> str | None
 def _latest_reset_at(observations: list[Observation]) -> datetime | None:
     resets = [obs.reset_at for obs in observations if obs.reset_at is not None]
     return max(resets) if resets else None
+
+
+def _window_label(window: str | None, metric: str) -> str:
+    if window:
+        return {"5h": "5h", "week": "weekly", "month": "monthly"}.get(window, window)
+    normalized = metric.replace("_remaining_percent", "").replace("_used_percent", "")
+    return normalized.replace("five_hour", "session").replace("_", " ")
+
+
+def _utilization_series_for_metric(observations: list[Observation], metric_name: str, spec: dict) -> list[Observation]:
+    point_obs = [obs for obs in observations if obs.metric == metric_name]
+    capacity_obs = (
+        [obs for obs in observations if obs.metric == spec.get("capacity_metric")]
+        if spec.get("capacity_metric")
+        else None
+    )
+    return utilization_observations(point_obs, metric=metric_name, spec=spec, capacity_observations=capacity_obs)
 
 
 def _window_start(spec: dict | None, reset_at: datetime | None, now: datetime) -> datetime | None:
@@ -327,6 +346,7 @@ async def provider_capacity(
         provider=config.provider,
         label=config.label,
         metric=util_metric_name,
+        window=_window_label(util_spec.get("window"), util_metric_name),
         capacity_used_pct=used_pct,
         capacity_remaining_pct=remaining_pct,
         overage_pct=overage_pct,
@@ -985,22 +1005,17 @@ async def overview(
         previous_util_pct: float | None = None
         remaining_pct: float | None = None
         reset_at: datetime | None = None
-        util_buckets = None
         latest_util_source: str | None = None
         forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
+        all_utils = utilization_metrics(capabilities) if capabilities else []
         quota_impact = None
+        latest = None
+        point_obs: list[Observation] = []
         if util:
             util_metric_name, util_spec = util
             point_obs = [obs for obs in observations if obs.metric == util_metric_name]
-            capacity_obs = (
-                [obs for obs in observations if obs.metric == util_spec.get("capacity_metric")]
-                if util_spec.get("capacity_metric")
-                else None
-            )
-            util_obs = utilization_observations(
-                point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
-            )
+            util_obs = _utilization_series_for_metric(observations, util_metric_name, util_spec)
             if util_obs:
                 providers_with_forecasts += 1
                 latest = max(util_obs, key=lambda obs: obs.observed_at)
@@ -1014,10 +1029,6 @@ async def overview(
                 if previous_points:
                     previous_util_pct = max(previous_points, key=lambda obs: obs.observed_at).value
                     previous_utilizations.append(previous_util_pct)
-                util_buckets = fill_buckets(
-                    bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
-                    interval=interval, start=start, end=end, tz=timezone,
-                )
                 # Quota-impact correlation over long history (not the 30d range).
                 impact_hermes = await _load_mapped_hermes_observations(
                     session, config.provider, start=now - timedelta(days=365), end=now,
@@ -1153,16 +1164,27 @@ async def overview(
                     )
                 )
 
-        if util_buckets is not None and util_metric_name is not None:
+        for capacity_metric_name, capacity_spec in all_utils:
+            capacity_util_obs = _utilization_series_for_metric(observations, capacity_metric_name, capacity_spec)
+            if not capacity_util_obs:
+                continue
+            capacity_buckets = fill_buckets(
+                bucketize(capacity_util_obs, metric=capacity_metric_name, interval=interval, tz=timezone, start=start, end=end),
+                interval=interval, start=start, end=end, tz=timezone,
+            )
+            capacity_latest = max(capacity_util_obs, key=lambda obs: obs.observed_at)
+            window_label = _window_label(capacity_spec.get("window"), capacity_metric_name)
             comparison.append(
                 OverviewComparisonSeries(
                     config_id=config.id,
                     provider=config.provider,
                     label=config.label,
-                    metric=util_metric_name,
-                    source=latest_util_source,
+                    metric=capacity_metric_name,
+                    window=window_label,
+                    display_name=f"{config.provider} · {window_label}",
+                    source=capacity_latest.source,
                     confidence=conf,
-                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in util_buckets],
+                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in capacity_buckets],
                 )
             )
 
@@ -1260,6 +1282,40 @@ async def overview(
         providers=providers,
         comparison=comparison,
         activity=activity,
+    )
+
+
+@router.get(
+    "/economics",
+    response_model=EconomicsResponse,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def economics(
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    provider: str | None = None,
+    config_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ is not None else now
+    start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+    query = select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id))
+    if provider:
+        query = query.where(ProviderConfig.provider == provider)
+    if config_id:
+        query = query.where(ProviderConfig.id == config_id)
+    configs = (await session.execute(query)).scalars().all()
+
+    rows = []
+    for config in configs:
+        provider_observations = await _load_observations(session, config.id, start=start, end=end)
+        hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
+        rows.append(provider_economics(config, provider_observations, hermes_observations, start, end))
+    return EconomicsResponse(
+        period={"start": start.isoformat(), "end": end.isoformat()},
+        summary=summarize_economics(rows),
+        providers=rows,
     )
 
 

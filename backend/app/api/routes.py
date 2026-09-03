@@ -260,7 +260,22 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     if display_order is None:
         max_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
         display_order = int(max_order or 0) + 1 if max_order is not None else 0
-    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled, is_visible=payload.is_visible, display_order=display_order, alert_thresholds=[rule.model_dump() for rule in payload.alert_thresholds])
+    config = ProviderConfig(
+        provider=payload.provider,
+        label=label,
+        encrypted_api_key=encrypted,
+        base_url=payload.base_url,
+        extra=payload.extra,
+        is_enabled=payload.is_enabled,
+        is_visible=payload.is_visible,
+        display_order=display_order,
+        alert_thresholds=[rule.model_dump() for rule in payload.alert_thresholds],
+        pricing_model=payload.pricing_model,
+        subscription_amount=payload.subscription_amount,
+        subscription_currency=payload.subscription_currency,
+        billing_cadence=payload.billing_cadence,
+        billing_anchor=payload.billing_anchor,
+    )
     session.add(config)
     try:
         await session.commit()
@@ -401,6 +416,16 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.display_order = payload.display_order
     if payload.has_update_for("alert_thresholds") and payload.alert_thresholds is not None:
         config.alert_thresholds = [rule.model_dump() for rule in payload.alert_thresholds]
+    if payload.has_update_for("pricing_model") and payload.pricing_model is not None:
+        config.pricing_model = payload.pricing_model
+    if payload.has_update_for("subscription_amount"):
+        config.subscription_amount = payload.subscription_amount
+    if payload.has_update_for("subscription_currency") and payload.subscription_currency is not None:
+        config.subscription_currency = payload.subscription_currency
+    if payload.has_update_for("billing_cadence"):
+        config.billing_cadence = payload.billing_cadence
+    if payload.has_update_for("billing_anchor"):
+        config.billing_anchor = payload.billing_anchor
     await session.commit()
     await session.refresh(config)
     return _config_read(config)

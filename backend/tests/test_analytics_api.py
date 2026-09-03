@@ -696,6 +696,33 @@ async def test_overview_provider_pressure_excludes_unknown_utilization(sqlite_db
 
 
 @pytest.mark.asyncio
+async def test_overview_comparison_includes_each_capacity_window(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="opencode-go")
+    base = datetime.now(UTC) - timedelta(days=2)
+    await _seed_observations(Session, config, [
+        {"metric": "five_hour_used_percent", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "weekly_used_percent", "value": 40.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "five_hour_used_percent", "value": 25.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+        {"metric": "weekly_used_percent", "value": 45.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+        {"metric": "monthly_used_percent", "value": 65.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    metrics = {series["metric"] for series in payload["comparison"] if series["provider"] == "opencode-go"}
+    assert {"five_hour_used_percent", "weekly_used_percent", "monthly_used_percent"} <= metrics
+    labels = {series["display_name"] for series in payload["comparison"] if series["provider"] == "opencode-go"}
+    assert any("5h" in label for label in labels)
+    assert any("weekly" in label.lower() for label in labels)
+    assert any("monthly" in label.lower() for label in labels)
+
+
+@pytest.mark.asyncio
 async def test_overview_maps_hermes_activity_to_provider_without_double_counting(sqlite_db):
     Session = sqlite_db
     anthropic = await _create_config(Session, provider="anthropic")
