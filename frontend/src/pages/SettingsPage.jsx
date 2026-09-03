@@ -366,6 +366,11 @@ const initialForm = {
   custom_metric_path: "$.credits.remaining",
   custom_metric_unit: "credits",
   custom_metric_maximum_path: "",
+  pricing_model: "payg",
+  subscription_amount: "",
+  subscription_currency: "USD",
+  billing_cadence: "monthly",
+  billing_anchor: "",
 };
 
 export default function SettingsPage() {
@@ -425,6 +430,9 @@ export default function SettingsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [credentialTarget, setCredentialTarget] = useState(null);
+  const [billingTarget, setBillingTarget] = useState(null);
+  const [billingForm, setBillingForm] = useState(null);
+  const [billingSaving, setBillingSaving] = useState(false);
   const [credentialValue, setCredentialValue] = useState("");
   const [credentialSaving, setCredentialSaving] = useState(false);
   const [credentialStatus, setCredentialStatus] = useState("");
@@ -515,6 +523,11 @@ export default function SettingsPage() {
       base_url: form.base_url.trim() || null,
       is_enabled: true,
       extra: {},
+      pricing_model: form.pricing_model,
+      subscription_amount: form.pricing_model === "subscription" && form.subscription_amount !== "" ? Number(form.subscription_amount) : null,
+      subscription_currency: form.subscription_currency.trim().toUpperCase() || "USD",
+      billing_cadence: form.pricing_model === "subscription" ? form.billing_cadence : null,
+      billing_anchor: form.pricing_model === "subscription" && form.billing_anchor ? new Date(form.billing_anchor).toISOString() : null,
     };
     if (isCustom) {
       payload.extra = {
@@ -621,6 +634,45 @@ export default function SettingsPage() {
       setCredentialSaving(false);
     }
   }
+  function openBillingDialog(config) {
+    setBillingTarget(config);
+    setBillingForm({
+      pricing_model: config.pricing_model || "payg",
+      subscription_amount: config.subscription_amount ?? "",
+      subscription_currency: config.subscription_currency || "USD",
+      billing_cadence: config.billing_cadence || "monthly",
+      billing_anchor: config.billing_anchor ? String(config.billing_anchor).slice(0, 16) : "",
+    });
+  }
+
+  function closeBillingDialog() {
+    if (billingSaving) return;
+    setBillingTarget(null);
+    setBillingForm(null);
+  }
+
+  async function saveBilling() {
+    if (!billingTarget || !billingForm) return;
+    setError("");
+    setBillingSaving(true);
+    try {
+      await api.updateConfig(billingTarget.id, {
+        pricing_model: billingForm.pricing_model,
+        subscription_amount: billingForm.pricing_model === "subscription" && billingForm.subscription_amount !== "" ? Number(billingForm.subscription_amount) : null,
+        subscription_currency: billingForm.subscription_currency.trim().toUpperCase() || "USD",
+        billing_cadence: billingForm.pricing_model === "subscription" ? billingForm.billing_cadence : null,
+        billing_anchor: billingForm.pricing_model === "subscription" && billingForm.billing_anchor ? new Date(billingForm.billing_anchor).toISOString() : null,
+      });
+      setBillingTarget(null);
+      setBillingForm(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBillingSaving(false);
+    }
+  }
+
   function updateHomepageForm(patch) {
     setHomepageCopied(false);
     setHomepageTokenCopied(false);
@@ -1396,6 +1448,12 @@ export default function SettingsPage() {
                     <span>Endpoint</span>
                     {config.base_url || "Provider default"}
                   </div>
+                  <div className="config-detail">
+                    <span>Billing</span>
+                    {config.pricing_model === "subscription"
+                      ? `${config.subscription_amount ?? "-"} ${config.subscription_currency || "USD"} / ${config.billing_cadence || "period"}`
+                      : config.pricing_model || "payg"}
+                  </div>
                   <div className="config-actions">
                     <label className="config-switch">
                       <span>API</span>
@@ -1442,6 +1500,15 @@ export default function SettingsPage() {
                         aria-label={`Replace credential for ${config.label}`}
                       >
                         <KeyRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Billing configuration">
+                      <IconButton
+                        size="small"
+                        onClick={() => openBillingDialog(config)}
+                        aria-label={`Edit billing for ${config.label}`}
+                      >
+                        $
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Alert thresholds">
@@ -2239,6 +2306,34 @@ export default function SettingsPage() {
               }
               required={isCustom}
             />
+            <Typography className="dialog-section-label">Billing / value analytics</Typography>
+            <FormControl fullWidth>
+              <InputLabel>Pricing model</InputLabel>
+              <Select
+                label="Pricing model"
+                value={form.pricing_model}
+                onChange={(event) => setForm({ ...form, pricing_model: event.target.value })}
+              >
+                <MenuItem value="payg">PAYG / API billing</MenuItem>
+                <MenuItem value="subscription">Subscription</MenuItem>
+                <MenuItem value="free">Free</MenuItem>
+              </Select>
+              <FormHelperText>Used by Usage value analytics; prices are configured, not hard-coded.</FormHelperText>
+            </FormControl>
+            {form.pricing_model === "subscription" && (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField label="Subscription amount" type="number" value={form.subscription_amount} onChange={(event) => setForm({ ...form, subscription_amount: event.target.value })} />
+                <TextField label="Currency" value={form.subscription_currency} onChange={(event) => setForm({ ...form, subscription_currency: event.target.value.toUpperCase() })} inputProps={{ maxLength: 3 }} />
+                <FormControl sx={{ minWidth: 150 }}>
+                  <InputLabel>Cadence</InputLabel>
+                  <Select label="Cadence" value={form.billing_cadence} onChange={(event) => setForm({ ...form, billing_cadence: event.target.value })}>
+                    <MenuItem value="monthly">Monthly</MenuItem>
+                    <MenuItem value="yearly">Yearly</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField label="Billing anchor" type="datetime-local" value={form.billing_anchor} onChange={(event) => setForm({ ...form, billing_anchor: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} helperText="Optional; missing anchors are clearly estimated." />
+              </Stack>
+            )}
             {isCustom && (
               <Stack spacing={2.25}>
                 <Typography className="dialog-section-label">
@@ -2531,6 +2626,49 @@ export default function SettingsPage() {
             disabled={genericApiTokenSaving}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(billingTarget)} onClose={closeBillingDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          <Stack spacing={0.75}>
+            <Typography component="span" sx={{ display: "block" }} variant="overline" color="primary.main">Billing configuration</Typography>
+            <Typography component="span" sx={{ display: "block" }} variant="h5">{billingTarget?.label}</Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          {billingForm && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="info">These values drive Usage value analytics. API-equivalent value is an estimate, not an invoice or ROI calculation.</Alert>
+              <FormControl fullWidth>
+                <InputLabel>Pricing model</InputLabel>
+                <Select label="Pricing model" value={billingForm.pricing_model} onChange={(event) => setBillingForm({ ...billingForm, pricing_model: event.target.value })}>
+                  <MenuItem value="payg">PAYG / API billing</MenuItem>
+                  <MenuItem value="subscription">Subscription</MenuItem>
+                  <MenuItem value="free">Free</MenuItem>
+                </Select>
+              </FormControl>
+              {billingForm.pricing_model === "subscription" && (
+                <>
+                  <TextField label="Subscription amount" type="number" value={billingForm.subscription_amount} onChange={(event) => setBillingForm({ ...billingForm, subscription_amount: event.target.value })} />
+                  <TextField label="Currency" value={billingForm.subscription_currency} onChange={(event) => setBillingForm({ ...billingForm, subscription_currency: event.target.value.toUpperCase() })} inputProps={{ maxLength: 3 }} />
+                  <FormControl fullWidth>
+                    <InputLabel>Billing cadence</InputLabel>
+                    <Select label="Billing cadence" value={billingForm.billing_cadence} onChange={(event) => setBillingForm({ ...billingForm, billing_cadence: event.target.value })}>
+                      <MenuItem value="monthly">Monthly</MenuItem>
+                      <MenuItem value="yearly">Yearly</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField label="Billing anchor" type="datetime-local" value={billingForm.billing_anchor} onChange={(event) => setBillingForm({ ...billingForm, billing_anchor: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} helperText="Optional. If missing, analytics marks the allocation as estimated." />
+                </>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button color="inherit" onClick={closeBillingDialog} disabled={billingSaving}>Cancel</Button>
+          <Button variant="contained" onClick={saveBilling} disabled={billingSaving || (billingForm?.pricing_model === "subscription" && billingForm.subscription_amount === "")} startIcon={billingSaving ? <CircularProgress size={16} color="inherit" /> : null}>
+            {billingSaving ? "Saving…" : "Save billing"}
           </Button>
         </DialogActions>
       </Dialog>

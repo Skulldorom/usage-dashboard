@@ -102,6 +102,7 @@ Historical analytics live under `GET /api/v1/analytics/*` and require the
 ```
 GET /api/v1/analytics/summary
 GET /api/v1/analytics/overview?interval=&from=&to=&timezone=
+GET /api/v1/analytics/economics?from=&to=&provider=&config_id=
 GET /api/v1/analytics/providers/{config_id}
 GET /api/v1/analytics/providers/{config_id}/timeseries?metric=&interval=&from=&to=&timezone=
 GET /api/v1/analytics/providers/{config_id}/daily?metric=&from=&to=&timezone=
@@ -166,6 +167,34 @@ The estimate is intentionally distinct from provider-reported cost:
 - `requests` and provider-reported `cost` are never token-priced; the estimate
   is never added to provider-authoritative totals.
 
+## Value / cost efficiency
+
+Provider rows can store billing metadata in **Settings → Billing configuration**:
+
+- `pricing_model` - `payg`, `subscription`, or `free`.
+- `subscription_amount`, `subscription_currency`, `billing_cadence`, and an
+  optional `billing_anchor` for subscription providers.
+
+`GET /api/v1/analytics/economics` combines that billing configuration with
+Hermes-observed model/token telemetry and the pricing catalogue to report:
+
+- **cost basis** - actual provider-reported spend for PAYG rows, prorated
+  subscription cost for subscription rows, or zero for free rows;
+- **API-equivalent value** - what the observed model/token workload would cost at
+  the maintained list-price catalogue;
+- **value multiplier** - API-equivalent value per paid dollar; and
+- **coverage diagnostics** - priced vs. unpriced tokens, unknown models, and why
+  a provider is not eligible for comparison.
+
+Subscription cost is prorated by the real overlap between the selected analytics
+range and each billing period. Month lengths and leap years are respected. When a
+subscription has no anchor, the response marks the allocation as estimated rather
+than pretending the period boundary is known.
+
+The Usage page shows these values in a **Value / Cost Efficiency** panel. The
+panel labels them as consumption economics, not ROI, because it compares measured
+usage against API list prices - it does not infer business value.
+
 ### Pricing catalogue
 
 Prices live in `backend/app/analytics/pricing.py`. Entries are keyed by
@@ -180,9 +209,12 @@ pricing pages.
 Because providers report different units (tokens, USD, credits, percentages),
 the "All providers" view compares along two honest axes:
 
-- **Capacity** - each quota-tracking provider's fraction of its own quota
-  consumed (0–100%, and above 100% when over allowance), overlaid on one chart.
-  Providers without a declared quota simply don't appear on the overlay.
+- **Capacity** - every quota window that a provider declares as normalizable is
+  shown as its own line (for example, 5h, weekly, and monthly limits), so
+  overlapping capacity windows are not collapsed into a single misleading
+  series. Values are each provider/window's fraction of its own quota consumed
+  (0-100%, and above 100% when over allowance). Providers without a declared
+  quota simply don't appear on the overlay.
 - **Activity dimensions** - consumption grouped into compatible dimensions:
   `tokens`, `requests`, `cost`, and `credits`. Only providers exposing a
   compatible unit appear in a given dimension, and shares are always calculated

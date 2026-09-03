@@ -1,5 +1,6 @@
 // Pure formatting/metric helpers extracted from DashboardPage so they can be
 // unit-tested in isolation without rendering React components.
+import { providerNameWithLabel } from './analyticsFormat.js'
 
 export const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
@@ -203,9 +204,7 @@ function displaySnapshot(item) {
 }
 
 function displayProviderLabel(item) {
-  const provider = item?.config?.provider || 'Provider'
-  const label = item?.config?.label
-  return label && label !== 'main' && label !== provider ? `${provider} · ${label}` : provider
+  return providerNameWithLabel(item?.config?.provider, item?.config?.label)
 }
 
 function metricTooltip({ providerLabel, metricLabel, value }) {

@@ -1,6 +1,48 @@
 // Pure formatting/data-shaping helpers for the Usage analytics page, extracted
 // so filter/format logic is unit-testable without rendering React components.
 
+
+export const PROVIDER_DISPLAY_NAMES = {
+  anthropic: 'Anthropic',
+  codex: 'OpenAI Codex',
+  deepseek: 'DeepSeek',
+  firecrawl: 'Firecrawl',
+  openai: 'OpenAI',
+  openrouter: 'OpenRouter',
+  'opencode-go': 'OpenCode Go',
+  custom_http: 'Custom HTTP',
+}
+
+export function providerDisplayName(provider) {
+  return PROVIDER_DISPLAY_NAMES[provider] || String(provider || 'Provider').replaceAll('_', ' ')
+}
+
+export function providerNameWithLabel(provider, label, { disambiguate = false } = {}) {
+  const name = providerDisplayName(provider)
+  if (disambiguate && label && label !== 'main' && label !== provider && label !== name) return `${name} - ${label}`
+  return name
+}
+
+export function formatMoney(value, currency = 'USD') {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD', maximumFractionDigits: Math.abs(Number(value)) >= 100 ? 0 : 2 }).format(Number(value))
+}
+
+export function formatMultiplier(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '-'
+  return `${Number(value).toFixed(2).replace(/\.00$/, '')}×`
+}
+
+export function economicsSummaryCards(economics) {
+  const summary = economics?.summary || {}
+  return [
+    { key: 'cost', label: 'Cost basis', value: formatMoney(summary.cost_basis?.amount, summary.cost_basis?.currency), detail: `${summary.eligible_provider_count || 0} providers eligible` },
+    { key: 'value', label: 'API-equivalent value', value: formatMoney(summary.api_equivalent_value?.amount, summary.api_equivalent_value?.currency), detail: 'Consumption estimate, not ROI' },
+    { key: 'savings', label: 'Difference vs API', value: formatMoney(summary.savings_vs_api?.amount, summary.savings_vs_api?.currency), detail: 'Equivalent value minus cost basis' },
+    { key: 'multiplier', label: 'Value multiplier', value: formatMultiplier(summary.value_multiplier), detail: 'API-equivalent value per paid dollar' },
+  ]
+}
+
 export const RANGE_OPTIONS = [
   { value: '24h', label: '24 hours', days: 1 },
   { value: '7d', label: '7 days', days: 7 },
@@ -169,7 +211,7 @@ export function pressureSummaryCards(overview) {
     {
       key: 'highest',
       label: 'Highest Utilization',
-      value: highest ? `${highest.provider}${highest.label && highest.label !== 'main' ? ` · ${highest.label}` : ''}` : '-',
+      value: highest ? providerNameWithLabel(highest.provider, highest.label, { disambiguate: highest.disambiguate }) : '-',
       detail: highest ? `${formatPercent(highest.utilization_pct)} used${highest.reset_at ? ` · resets ${new Date(highest.reset_at).toLocaleString()}` : ''}` : 'No measurable providers',
     },
     {

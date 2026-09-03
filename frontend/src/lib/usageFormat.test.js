@@ -139,21 +139,21 @@ describe('overallUsageGroups', () => {
 
   it('separates percentage metrics from unit metrics', () => {
     const groups = overallUsageGroups(items)
-    expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['session remaining percent', 'usage percent'])
-    expect(groups.units.metrics.map((metric) => metric.label)).toEqual(['reset credits available', 'credits remaining', 'pages'])
+    expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['usage percent', 'session remaining percent'])
+    expect(groups.units.metrics.map((metric) => metric.label)).toEqual(['credits remaining', 'reset credits available', 'pages'])
   })
 
-  it('uses the provider type as label and drops the generic "main" label', () => {
+  it('uses canonical provider display names and drops generic row labels', () => {
     const groups = overallUsageGroups(items)
-    expect(groups.percent.metrics.find((metric) => metric.label === 'session remaining percent').providerLabel).toBe('codex')
-    expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('firecrawl · Firecrawl Prod')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'session remaining percent').providerLabel).toBe('OpenAI Codex')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('Firecrawl')
   })
 
   it('does not aggregate unit metrics across providers', () => {
     const groups = overallUsageGroups(items)
     const credits = groups.units.metrics.filter((metric) => metric.unit === 'credits')
     expect(credits).toHaveLength(2)
-    expect(credits.map((metric) => metric.numericValue)).toEqual([10, 50])
+    expect(credits.map((metric) => metric.numericValue)).toEqual([50, 10])
     expect(credits.every((metric) => metric.percent !== null)).toBe(true)
   })
 })

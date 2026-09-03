@@ -38,6 +38,10 @@ import {
   hermesActivityLabel,
   isDeltaMetric,
   overviewTotalCards,
+  economicsSummaryCards,
+  formatMoney,
+  formatMultiplier,
+  providerNameWithLabel,
   paceRatioLabel,
   paceStatus,
   peakLabel,
@@ -564,7 +568,7 @@ function CapacityBars({ providers }) {
       {measurable.map((row) => (
         <Box key={row.config_id}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
-            <Typography variant="body2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+            <Typography variant="body2">{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</Typography>
             <Typography variant="body2" color="text.secondary">{utilizationOverflowLabel(row)}</Typography>
           </Stack>
           <Box className={`capacity-bar capacity-bar-${row.utilization_pct >= 85 ? 'critical' : row.utilization_pct >= 70 ? 'warning' : 'normal'}`}>
@@ -630,7 +634,7 @@ function ProviderComparisonTable({ providers }) {
       <tbody>
         {providers.map((row) => (
           <tr key={row.config_id}>
-            <td>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</td>
+            <td>{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</td>
             <td>
               <Stack spacing={0.5}>
                 <span>{formatMetricValue(row.value, row.unit)}{row.share_pct !== null && row.share_pct !== undefined ? ` · ${row.share_pct}% of ${row.unit}` : ''}</span>
@@ -687,7 +691,7 @@ function UtilizationChart({ comparison }) {
     : comparison
       .map((series) => {
         const value = (series.buckets || [])[hoverIndex]?.value
-        return { provider: series.provider, label: series.label, value: typeof value === 'number' ? value : null }
+        return { id: `${series.config_id}:${series.metric}`, displayName: series.display_name || providerNameWithLabel(series.provider, series.label, { disambiguate: true }), value: typeof value === 'number' ? value : null }
       })
       .filter((row) => row.value !== null)
 
@@ -719,7 +723,7 @@ function UtilizationChart({ comparison }) {
           const hoveredValue = hoverIndex === null ? null : (series.buckets || [])[hoverIndex]?.value
           const showHoverDot = hoveredValue !== undefined && typeof hoveredValue === 'number' && points.some((point) => point.index === hoverIndex)
           return (
-            <g key={series.config_id}>
+            <g key={`${series.config_id}:${series.metric}`}>
               <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
               {showHoverDot && (
                 <circle cx={x(hoverIndex)} cy={y(hoveredValue)} r="4" fill={color} stroke="rgba(255,255,255,0.9)" strokeWidth="1.5" />
@@ -736,15 +740,15 @@ function UtilizationChart({ comparison }) {
       {hoverRows.length > 0 && (
         <div className="usage-chart-tooltip usage-chart-tooltip--multi" aria-live="polite">
           {hoverRows.map((row) => (
-            <div key={row.provider}>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}: {formatPercent(row.value)}</div>
+            <div key={row.id}>{row.displayName}: {formatPercent(row.value)}</div>
           ))}
         </div>
       )}
       <Stack direction="row" spacing={2} sx={{ flexWrap: 'wrap', mt: 1 }}>
         {comparison.map((series, seriesIndex) => (
-          <Stack key={series.config_id} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
+          <Stack key={`${series.config_id}:${series.metric}`} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
-            <Typography variant="caption" color="text.secondary">{series.provider}{series.label && series.label !== 'main' ? ` · ${series.label}` : ''}</Typography>
+            <Typography variant="caption" color="text.secondary">{series.display_name || providerNameWithLabel(series.provider, series.label, { disambiguate: true })}</Typography>
           </Stack>
         ))}
       </Stack>
@@ -858,7 +862,7 @@ function ActivityShare({ dimension }) {
       {rows.map((row) => (
         <Box key={row.config_id}>
           <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 2, mb: 0.5 }}>
-            <Typography variant="body2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+            <Typography variant="body2">{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</Typography>
             <Typography variant="body2" color="text.secondary">
               {formatMetricValue(row.value, row.unit)} · {formatPercent(row.share_pct)} of {row.unit}
             </Typography>
@@ -872,9 +876,86 @@ function ActivityShare({ dimension }) {
   )
 }
 
+function EconomicsPanel({ economics }) {
+  if (!economics) return null
+  const providers = economics.providers || []
+  const cards = economicsSummaryCards(economics)
+  const maxAmount = Math.max(1, ...providers.flatMap((row) => [row.cost_basis?.amount || 0, row.api_equivalent?.value || 0]))
+  return (
+    <Card variant="outlined" className="glass-panel">
+      <CardContent>
+        <Typography variant="overline" color="primary.main">Value / Cost Efficiency</Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+          API-equivalent value estimates what the observed model/token workload would cost at list API pricing. It is consumption economics, not business ROI.
+        </Typography>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          {cards.map((card) => (
+            <Grid key={card.key} size={{ xs: 12, sm: 6, lg: 3 }}>
+              <Box className="overview-stat-card">
+                <Typography variant="caption" color="text.secondary">{card.label}</Typography>
+                <Typography variant="h6">{card.value}</Typography>
+                <Typography variant="caption" color="text.secondary">{card.detail}</Typography>
+              </Box>
+            </Grid>
+          ))}
+        </Grid>
+        {providers.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">No provider billing data is configured yet.</Typography>
+        ) : (
+          <Stack spacing={2}>
+            {providers.map((row) => {
+              const cost = row.cost_basis?.amount
+              const value = row.api_equivalent?.value
+              return (
+                <Box key={row.config_id}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 0.75 }}>
+                    <Typography variant="body2">{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {row.pricing_model} · cost {formatMoney(cost, row.cost_basis?.currency)} · API-equivalent {formatMoney(value, row.api_equivalent?.currency)} · {formatMultiplier(row.economics?.value_multiplier)}
+                    </Typography>
+                  </Stack>
+                  <Stack spacing={0.5}>
+                    <Box className="capacity-bar capacity-bar-normal" title="Cost basis">
+                      <Box sx={{ width: `${Math.max(0, Math.min(100, ((cost || 0) / maxAmount) * 100))}%` }} />
+                    </Box>
+                    <Box className="capacity-bar capacity-bar-warning" title="API-equivalent value">
+                      <Box sx={{ width: `${Math.max(0, Math.min(100, ((value || 0) / maxAmount) * 100))}%` }} />
+                    </Box>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    {row.observed?.priced_token_pct ?? '-'}% priced coverage · {row.comparison_eligible ? 'eligible for comparison' : row.exclusion_reason}
+                  </Typography>
+                </Box>
+              )
+            })}
+            <Box className="usage-table" component="table">
+              <thead><tr><th>Provider</th><th>Type</th><th>Cost basis</th><th>Tokens</th><th>API-equivalent</th><th>Multiplier</th><th>Effective $/1M</th><th>Coverage</th></tr></thead>
+              <tbody>
+                {providers.map((row) => (
+                  <tr key={row.config_id}>
+                    <td>{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</td>
+                    <td>{row.pricing_model}</td>
+                    <td>{formatMoney(row.cost_basis?.amount, row.cost_basis?.currency)}</td>
+                    <td>{formatMetricValue(row.observed?.tokens, 'tokens')}</td>
+                    <td>{formatMoney(row.api_equivalent?.value, row.api_equivalent?.currency)}</td>
+                    <td>{formatMultiplier(row.economics?.value_multiplier)}</td>
+                    <td>{formatMoney(row.economics?.effective_cost_per_1m_tokens, row.cost_basis?.currency)}</td>
+                    <td>{row.observed?.priced_token_pct ?? '-'}% · {row.confidence}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </Box>
+          </Stack>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function UsagePage() {
   const [configs, setConfigs] = useState([])
   const [overview, setOverview] = useState(null)
+  const [economics, setEconomics] = useState(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedId = searchParams.get('provider') || 'all'
   const [providerInfo, setProviderInfo] = useState(null)
@@ -917,8 +998,14 @@ export default function UsagePage() {
     async function loadOverview() {
       setError('')
       try {
-        const data = await api.analyticsOverview({ interval, timezone: TIMEZONE, from, to })
-        if (!cancelled) setOverview(data)
+        const [data, economicsData] = await Promise.all([
+          api.analyticsOverview({ interval, timezone: TIMEZONE, from, to }),
+          api.analyticsEconomics({ from, to }),
+        ])
+        if (!cancelled) {
+          setOverview(data)
+          setEconomics(economicsData)
+        }
       } catch (err) {
         if (!cancelled) setError(err.message)
       }
@@ -1041,7 +1128,7 @@ export default function UsagePage() {
                   <Select value={selectedId} label="Provider" onChange={(event) => setSearchParams(event.target.value === 'all' ? {} : { provider: event.target.value })}>
                     <MenuItem value="all">All providers</MenuItem>
                     {configs.map((item) => (
-                      <MenuItem key={item.config.id} value={String(item.config.id)}>{item.config.provider} · {item.config.label}</MenuItem>
+                      <MenuItem key={item.config.id} value={String(item.config.id)}>{providerNameWithLabel(item.config.provider, item.config.label)}</MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -1078,6 +1165,7 @@ export default function UsagePage() {
           {selectedId === 'all' && overview && (
             <Stack id="usage-overview" spacing={2.5}>
               <OverviewSummaryCards overview={overview} />
+              <EconomicsPanel economics={economics} />
               <Card variant="outlined" className="glass-panel">
                 <CardContent>
                   <Typography variant="overline" color="primary.main">Current capacity across providers</Typography>
