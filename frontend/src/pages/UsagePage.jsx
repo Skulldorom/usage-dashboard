@@ -691,7 +691,8 @@ function UtilizationChart({ comparison }) {
     : comparison
       .map((series) => {
         const value = (series.buckets || [])[hoverIndex]?.value
-        return { id: `${series.config_id}:${series.metric}`, displayName: series.display_name || providerNameWithLabel(series.provider, series.label, { disambiguate: true }), value: typeof value === 'number' ? value : null }
+        const baseName = providerNameWithLabel(series.provider, series.label, { disambiguate: series.disambiguate })
+        return { id: `${series.config_id}:${series.metric}`, displayName: series.window ? `${baseName} · ${series.window}` : baseName, value: typeof value === 'number' ? value : null }
       })
       .filter((row) => row.value !== null)
 
@@ -748,7 +749,7 @@ function UtilizationChart({ comparison }) {
         {comparison.map((series, seriesIndex) => (
           <Stack key={`${series.config_id}:${series.metric}`} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
-            <Typography variant="caption" color="text.secondary">{series.display_name || providerNameWithLabel(series.provider, series.label, { disambiguate: true })}</Typography>
+            <Typography variant="caption" color="text.secondary">{series.window ? `${providerNameWithLabel(series.provider, series.label, { disambiguate: series.disambiguate })} · ${series.window}` : providerNameWithLabel(series.provider, series.label, { disambiguate: series.disambiguate })}</Typography>
           </Stack>
         ))}
       </Stack>
@@ -787,7 +788,7 @@ function ActivityChart({ dimension, unit }) {
     : providers
       .map((provider) => {
         const value = (provider.buckets || [])[hoverIndex]?.total
-        return { provider: provider.provider, label: provider.label, value: typeof value === 'number' ? value : null }
+        return { provider: provider.provider, label: provider.label, disambiguate: provider.disambiguate, value: typeof value === 'number' ? value : null }
       })
       .filter((row) => row.value !== null)
 
@@ -836,7 +837,7 @@ function ActivityChart({ dimension, unit }) {
       {hoverRows.length > 0 && (
         <div className="usage-chart-tooltip usage-chart-tooltip--multi" aria-live="polite">
           {hoverRows.map((row) => (
-            <div key={row.provider}>{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}: {formatMetricValue(row.value, unit)}</div>
+            <div key={`${row.provider}:${row.label}`}>{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}: {formatMetricValue(row.value, unit)}</div>
           ))}
         </div>
       )}
@@ -844,7 +845,7 @@ function ActivityChart({ dimension, unit }) {
         {providers.map((provider, seriesIndex) => (
           <Stack key={provider.config_id} direction="row" spacing={0.75} sx={{ alignItems: 'center' }}>
             <Box sx={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: SERIES_COLORS[seriesIndex % SERIES_COLORS.length] }} />
-            <Typography variant="caption" color="text.secondary">{provider.provider}{provider.label && provider.label !== 'main' ? ` · ${provider.label}` : ''}</Typography>
+            <Typography variant="caption" color="text.secondary">{providerNameWithLabel(provider.provider, provider.label, { disambiguate: provider.disambiguate })}</Typography>
           </Stack>
         ))}
       </Stack>
@@ -923,13 +924,13 @@ function EconomicsPanel({ economics }) {
                     </Box>
                   </Stack>
                   <Typography variant="caption" color="text.secondary">
-                    {row.observed?.priced_token_pct ?? '-'}% priced coverage · {row.comparison_eligible ? 'eligible for comparison' : row.exclusion_reason}
+                    Pricing coverage {row.observed?.pricing_coverage?.priced_token_pct ?? row.observed?.priced_token_pct ?? '-'}% ({row.observed?.pricing_coverage?.level || 'insufficient'}) · Attribution {row.observed?.attribution_confidence?.level || row.confidence || 'insufficient'} · {row.comparison_eligible ? 'eligible for comparison' : row.exclusion_reason}
                   </Typography>
                 </Box>
               )
             })}
             <Box className="usage-table" component="table">
-              <thead><tr><th>Provider</th><th>Type</th><th>Cost basis</th><th>Tokens</th><th>API-equivalent</th><th>Multiplier</th><th>Effective $/1M</th><th>Coverage</th></tr></thead>
+              <thead><tr><th>Provider</th><th>Type</th><th>Cost basis</th><th>Tokens</th><th>API-equivalent</th><th>Multiplier</th><th>Effective $/1M</th><th>Pricing coverage</th><th>Attribution</th></tr></thead>
               <tbody>
                 {providers.map((row) => (
                   <tr key={row.config_id}>
@@ -940,7 +941,8 @@ function EconomicsPanel({ economics }) {
                     <td>{formatMoney(row.api_equivalent?.value, row.api_equivalent?.currency)}</td>
                     <td>{formatMultiplier(row.economics?.value_multiplier)}</td>
                     <td>{formatMoney(row.economics?.effective_cost_per_1m_tokens, row.cost_basis?.currency)}</td>
-                    <td>{row.observed?.priced_token_pct ?? '-'}% · {row.confidence}</td>
+                    <td>{row.observed?.pricing_coverage?.priced_token_pct ?? row.observed?.priced_token_pct ?? '-'}% · {row.observed?.pricing_coverage?.level || 'insufficient'}</td>
+                    <td>{row.observed?.attribution_confidence?.level || row.confidence || 'insufficient'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -971,6 +973,11 @@ export default function UsagePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [overviewMode, setOverviewMode] = useState('capacity')
+  const providerCounts = useMemo(() => configs.reduce((counts, item) => {
+    const provider = item?.config?.provider
+    if (provider) counts[provider] = (counts[provider] || 0) + 1
+    return counts
+  }, {}), [configs])
 
   useEffect(() => {
     let cancelled = false
@@ -1051,12 +1058,13 @@ export default function UsagePage() {
       setError('')
       try {
         const comparisonWindow = range === '24h' ? 'day' : range === '7d' ? 'week' : 'month'
-        const [ts, hourlyData, dailyData, comparisonData, forecastData] = await Promise.all([
+        const [ts, hourlyData, dailyData, comparisonData, forecastData, economicsData] = await Promise.all([
           api.analyticsTimeseries(selectedId, { metric, interval, timezone: TIMEZONE, from, to }),
           api.analyticsTimeseries(selectedId, { metric, interval: 'hour', timezone: TIMEZONE, from, to }),
           api.analyticsDaily(selectedId, { metric, timezone: TIMEZONE, from, to }),
           api.analyticsComparison(selectedId, { metric, timezone: TIMEZONE, window: comparisonWindow }),
           api.analyticsForecast(selectedId, { metric, timezone: TIMEZONE }),
+          api.analyticsEconomics({ from, to, config_id: selectedId }),
         ])
         if (cancelled) return
         setTimeseries(ts)
@@ -1064,6 +1072,7 @@ export default function UsagePage() {
         setDaily(dailyData)
         setComparison(comparisonData)
         setForecast(forecastData)
+        setEconomics(economicsData)
       } catch (err) {
         if (!cancelled) setError(err.message)
       }
@@ -1128,7 +1137,7 @@ export default function UsagePage() {
                   <Select value={selectedId} label="Provider" onChange={(event) => setSearchParams(event.target.value === 'all' ? {} : { provider: event.target.value })}>
                     <MenuItem value="all">All providers</MenuItem>
                     {configs.map((item) => (
-                      <MenuItem key={item.config.id} value={String(item.config.id)}>{providerNameWithLabel(item.config.provider, item.config.label)}</MenuItem>
+                      <MenuItem key={item.config.id} value={String(item.config.id)}>{providerNameWithLabel(item.config.provider, item.config.label, { disambiguate: (providerCounts[item.config.provider] || 0) > 1 })}</MenuItem>
                     ))}
                   </Select>
                 </FormControl>
@@ -1235,6 +1244,8 @@ export default function UsagePage() {
           {providerInfo && !providerInfo.supported && (
             <Alert severity="info">This provider exposes generic point history only - advanced analytics (forecasts, pacing) are unavailable.</Alert>
           )}
+
+          {providerInfo && economics && <EconomicsPanel economics={economics} />}
 
           {providerInfo && capacity && (
             <Box id="usage-provider-capacity">

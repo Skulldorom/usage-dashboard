@@ -723,6 +723,118 @@ async def test_overview_comparison_includes_each_capacity_window(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_overview_comparison_includes_codex_session_and_weekly_windows(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="codex")
+    base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(Session, config, [
+        {"metric": "session_remaining_percent", "value": 80.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "session_remaining_percent", "value": 75.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+        {"metric": "weekly_remaining_percent", "value": 55.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    series = [item for item in response.json()["comparison"] if item["provider"] == "codex"]
+    assert {item["metric"] for item in series} == {"session_remaining_percent", "weekly_remaining_percent"}
+    assert all(item["window"] in {"session", "weekly"} for item in series)
+
+
+@pytest.mark.asyncio
+async def test_overview_comparison_supports_generic_multiple_capacity_windows(sqlite_db, monkeypatch):
+    class MultiWindowAdapter(ProviderAdapter):
+        id = "multiwindowfake"
+        name = "Multi Window Fake"
+        default_base_url = "https://fake.example"
+        metric_names = ["short_used", "long_used"]
+        analytics = analytics_spec(
+            supported=True,
+            metrics={
+                "short_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="short"),
+                "long_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="long", overview=True),
+            },
+        )
+
+        async def fetch_usage(self):  # pragma: no cover - not used by this test
+            return ProviderUsage(status="healthy", summary="fake", metrics=[Metric("short_used", 1)])
+
+    monkeypatch.setitem(ADAPTERS, "multiwindowfake", MultiWindowAdapter)
+    Session = sqlite_db
+    config = await _create_config(Session, provider="multiwindowfake")
+    base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(Session, config, [
+        {"metric": "short_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "long_used", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "short_used", "value": 15.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
+        {"metric": "long_used", "value": 25.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    series = [item for item in response.json()["comparison"] if item["provider"] == "multiwindowfake"]
+    assert {item["metric"] for item in series} == {"short_used", "long_used"}
+    assert {item["window"] for item in series} == {"short", "long"}
+
+
+@pytest.mark.asyncio
+async def test_overview_comparison_preserves_single_window_behavior(sqlite_db, monkeypatch):
+    class SingleWindowAdapter(ProviderAdapter):
+        id = "singlewindowfake"
+        name = "Single Window Fake"
+        default_base_url = "https://fake.example"
+        metric_names = ["quota_used"]
+        analytics = analytics_spec(
+            supported=True,
+            metrics={"quota_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="month", overview=True)},
+        )
+
+        async def fetch_usage(self):  # pragma: no cover - not used by this test
+            return ProviderUsage(status="healthy", summary="fake", metrics=[Metric("quota_used", 1)])
+
+    monkeypatch.setitem(ADAPTERS, "singlewindowfake", SingleWindowAdapter)
+    Session = sqlite_db
+    config = await _create_config(Session, provider="singlewindowfake")
+    base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(Session, config, [
+        {"metric": "quota_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "quota_used", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=2)).isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    series = [item for item in response.json()["comparison"] if item["provider"] == "singlewindowfake"]
+    assert len(series) == 1
+    assert series[0]["metric"] == "quota_used"
+    assert series[0]["window"] == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_overview_capacity_gaps_remain_null_not_zero(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="opencode-go")
+    base = (datetime.now(UTC) - timedelta(days=4)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(Session, config, [
+        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "monthly_used_percent", "value": 65.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    monthly = next(item for item in response.json()["comparison"] if item["provider"] == "opencode-go" and item["metric"] == "monthly_used_percent")
+    assert any(bucket["samples"] == 0 and bucket["value"] is None for bucket in monthly["buckets"])
+    assert not any(bucket["samples"] == 0 and bucket["value"] == 0 for bucket in monthly["buckets"])
+
+
+@pytest.mark.asyncio
 async def test_overview_maps_hermes_activity_to_provider_without_double_counting(sqlite_db):
     Session = sqlite_db
     anthropic = await _create_config(Session, provider="anthropic")

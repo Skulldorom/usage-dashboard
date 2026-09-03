@@ -203,8 +203,9 @@ function displaySnapshot(item) {
   return item?.last_good || item?.latest || null
 }
 
-function displayProviderLabel(item) {
-  return providerNameWithLabel(item?.config?.provider, item?.config?.label)
+function displayProviderLabel(item, providerCounts = {}) {
+  const provider = item?.config?.provider
+  return providerNameWithLabel(provider, item?.config?.label, { disambiguate: (providerCounts[provider] || 0) > 1 })
 }
 
 function metricTooltip({ providerLabel, metricLabel, value }) {
@@ -215,12 +216,18 @@ export function overallUsageGroups(items) {
   const percentMetrics = []
   const unitMetrics = []
 
-  items
-    .filter((item) => item?.config?.is_visible)
+  const visibleItems = items.filter((item) => item?.config?.is_visible)
+  const providerCounts = visibleItems.reduce((counts, item) => {
+    const provider = item.config.provider
+    counts[provider] = (counts[provider] || 0) + 1
+    return counts
+  }, {})
+
+  visibleItems
     .forEach((item) => {
       const snapshot = displaySnapshot(item)
       const provider = item.config.provider
-      const providerLabel = displayProviderLabel(item)
+      const providerLabel = displayProviderLabel(item, providerCounts)
 
       ;(snapshot?.metrics || []).forEach((metric) => {
         if (typeof metric.value !== 'number') return

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.analytics.economics import _periods, subscription_cost_basis
 from app.core.auth import _hash_secret
 from app.core.config import settings
 from app.core.crypto import CryptoService
@@ -62,10 +64,88 @@ async def _config(Session, provider="anthropic", **kwargs):
         return config
 
 
+async def _seed_tokens(Session, provider="anthropic", *, start: datetime, days: int, model="claude-sonnet-4", include_unknown: bool = False):
+    async with Session() as session:
+        rows = []
+        for index in range(days):
+            model_name = "mystery-model" if include_unknown and index == days - 1 else model
+            rows.append(
+                UsageObservation(
+                    provider=provider,
+                    provider_mapping=provider,
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=start + timedelta(days=index),
+                    model=model_name,
+                )
+            )
+        session.add_all(rows)
+        await session.commit()
+
+
+def _config_obj(**kwargs):
+    defaults = {
+        "subscription_amount": 31,
+        "subscription_currency": "USD",
+        "billing_cadence": "monthly",
+        "billing_anchor": datetime(2026, 9, 15, tzinfo=UTC),
+    }
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
+def test_periods_work_before_anchor_and_multiple_periods_after_anchor():
+    anchor = datetime(2026, 9, 15, tzinfo=UTC)
+    before = list(_periods(anchor, "monthly", datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)))
+    assert before == [
+        (datetime(2026, 7, 15, tzinfo=UTC), datetime(2026, 8, 15, tzinfo=UTC)),
+        (datetime(2026, 8, 15, tzinfo=UTC), datetime(2026, 9, 15, tzinfo=UTC)),
+    ]
+
+    after = list(_periods(anchor, "monthly", datetime(2027, 1, 1, tzinfo=UTC), datetime(2027, 3, 1, tzinfo=UTC)))
+    assert after[0] == (datetime(2026, 12, 15, tzinfo=UTC), datetime(2027, 1, 15, tzinfo=UTC))
+    assert after[-1] == (datetime(2027, 2, 15, tzinfo=UTC), datetime(2027, 3, 15, tzinfo=UTC))
+
+
+def test_periods_preserve_real_calendar_months_and_leap_years():
+    jan31 = datetime(2026, 1, 31, tzinfo=UTC)
+    periods = list(_periods(jan31, "monthly", datetime(2026, 2, 1, tzinfo=UTC), datetime(2026, 5, 1, tzinfo=UTC)))
+    assert periods == [
+        (datetime(2026, 1, 31, tzinfo=UTC), datetime(2026, 2, 28, tzinfo=UTC)),
+        (datetime(2026, 2, 28, tzinfo=UTC), datetime(2026, 3, 31, tzinfo=UTC)),
+        (datetime(2026, 3, 31, tzinfo=UTC), datetime(2026, 4, 30, tzinfo=UTC)),
+        (datetime(2026, 4, 30, tzinfo=UTC), datetime(2026, 5, 31, tzinfo=UTC)),
+    ]
+
+    leap = list(_periods(jan31, "monthly", datetime(2024, 2, 1, tzinfo=UTC), datetime(2024, 4, 1, tzinfo=UTC)))
+    assert leap[0][1] == datetime(2024, 2, 29, tzinfo=UTC)
+    assert leap[1] == (datetime(2024, 2, 29, tzinfo=UTC), datetime(2024, 3, 31, tzinfo=UTC))
+
+
+def test_yearly_periods_work_before_anchor_without_30_day_fallback():
+    anchor = datetime(2026, 9, 15, tzinfo=UTC)
+    periods = list(_periods(anchor, "yearly", datetime(2024, 8, 1, tzinfo=UTC), datetime(2026, 10, 1, tzinfo=UTC)))
+    assert periods == [
+        (datetime(2023, 9, 15, tzinfo=UTC), datetime(2024, 9, 15, tzinfo=UTC)),
+        (datetime(2024, 9, 15, tzinfo=UTC), datetime(2025, 9, 15, tzinfo=UTC)),
+        (datetime(2025, 9, 15, tzinfo=UTC), datetime(2026, 9, 15, tzinfo=UTC)),
+        (datetime(2026, 9, 15, tzinfo=UTC), datetime(2027, 9, 15, tzinfo=UTC)),
+    ]
+
+
+def test_subscription_cost_basis_prorates_range_before_anchor():
+    basis = subscription_cost_basis(_config_obj(), datetime(2026, 8, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC))
+    # 14/31 of Jul15-Aug15 plus 17/31 of Aug15-Sep15 for a $31 monthly subscription.
+    assert basis["amount"] == pytest.approx(31.0, abs=0.0001)
+
+
 @pytest.mark.asyncio
 async def test_economics_subscription_prorates_real_month_overlap(sqlite_db):
     Session = sqlite_db
-    config = await _config(
+    await _config(
         Session,
         provider="anthropic",
         pricing_model="subscription",
@@ -76,66 +156,165 @@ async def test_economics_subscription_prorates_real_month_overlap(sqlite_db):
     )
     start = datetime(2026, 2, 10, tzinfo=UTC)
     end = datetime(2026, 3, 10, tzinfo=UTC)
-    async with Session() as session:
-        session.add_all([
-            UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=start + timedelta(days=1), model="claude-sonnet-4"),
-            UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="output_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=start + timedelta(days=1), model="claude-sonnet-4"),
-        ])
-        await session.commit()
+    await _seed_tokens(Session, start=start, days=30)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
 
     assert response.status_code == 200, response.text
     row = response.json()["providers"][0]
-    # Jan31-Feb28 has 28 days and Feb28-Mar28 has 28 days. Selection overlaps 18 + 10 days.
-    assert row["subscription_cost_basis"]["amount"] == pytest.approx(31.0, abs=0.0001)
-    assert row["observed"]["priced_token_pct"] == 100.0
-    assert row["api_equivalent"]["value"] == 18.0
-    assert row["economics"]["value_multiplier"] == pytest.approx(18 / 31, abs=0.0001)
+    assert row["subscription_cost_basis"]["amount"] == pytest.approx(29.928571, abs=0.0001)
+    assert row["observed"]["pricing_coverage"]["level"] == "high"
+    assert row["observed"]["attribution_confidence"]["level"] in {"medium", "high"}
+    assert row["comparison_eligible"] is True
 
 
 @pytest.mark.asyncio
-async def test_economics_marks_unknown_models_unpriced_and_ineligible(sqlite_db):
+async def test_economics_mixed_currency_does_not_silently_aggregate_as_usd(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
-    now = datetime.now(UTC)
+    config = await _config(Session, provider="openai", pricing_model="payg", subscription_currency="EUR")
+    start = datetime.now(UTC) - timedelta(days=40)
     async with Session() as session:
-        session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=1), model="mystery-model"))
+        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=20, unit="EUR", kind="delta", source="native", observed_at=start + timedelta(days=30)))
         await session.commit()
+    await _seed_tokens(Session, provider="openai", start=start, days=30, model="gpt-4o")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
 
     assert response.status_code == 200, response.text
-    row = response.json()["providers"][0]
-    assert row["api_equivalent"]["value"] is None
-    assert row["observed"]["unpriced_tokens"] == 1_000_000
+    payload = response.json()
+    row = payload["providers"][0]
+    assert row["actual_spend"]["currency"] == "EUR"
+    assert row["cost_basis"]["currency"] == "EUR"
+    assert row["api_equivalent"]["currency"] == "USD"
+    assert row["economics"]["value_multiplier"] is None
+    assert row["economics"]["savings_vs_api"] is None
     assert row["comparison_eligible"] is False
-    assert "priced" in row["exclusion_reason"]
+    assert "currency" in row["exclusion_reason"]
+    assert payload["summary"]["eligible_provider_count"] == 0
+    assert payload["summary"]["cost_basis"]["amount"] is None
 
 
 @pytest.mark.asyncio
-async def test_economics_payg_actual_spend_is_distinct_from_api_equivalent(sqlite_db):
+async def test_economics_actual_spend_rejects_mixed_provider_spend_units(sqlite_db):
     Session = sqlite_db
     config = await _config(Session, provider="openai", pricing_model="payg")
     now = datetime.now(UTC)
     async with Session() as session:
         session.add_all([
-            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=2.5, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=1)),
-            UsageObservation(provider="openai", provider_mapping="openai", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=1), model="gpt-4o"),
+            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=10, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)),
+            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=10, unit="GBP", kind="delta", source="native", observed_at=now - timedelta(days=1)),
         ])
+        await session.commit()
+    await _seed_tokens(Session, provider="openai", start=now - timedelta(days=30), days=30, model="gpt-4o")
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["actual_spend"]["currency"] == "MIXED"
+    assert row["actual_spend"]["comparable"] is False
+    assert row["cost_basis"]["amount"] is None
+    assert row["comparison_eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_pricing_coverage_and_attribution_confidence_are_separate(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=1), days=1)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["observed"]["pricing_coverage"]["level"] == "high"
+    assert row["observed"]["attribution_confidence"]["level"] == "low"
+    assert row["confidence"] == "low"
+    assert row["comparison_eligible"] is False
+    assert "attribution confidence" in row["exclusion_reason"]
+
+
+@pytest.mark.asyncio
+async def test_partial_pricing_coverage_can_still_have_strong_attribution(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=20), days=10, include_unknown=True)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["observed"]["pricing_coverage"]["level"] == "partial"
+    assert row["observed"]["attribution_confidence"]["level"] in {"medium", "high"}
+    assert row["comparison_eligible"] is True
+
+
+@pytest.mark.asyncio
+async def test_insufficient_pricing_coverage_with_strong_attribution_is_ineligible(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=20), days=10, include_unknown=True)
+    async with Session() as session:
+        # Add enough unknown tokens to drop coverage below the 80% comparison floor while preserving observation history quality.
+        for index in range(10):
+            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="output_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=20 - index), model="unknown-output-model"))
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
 
-    assert response.status_code == 200, response.text
     row = response.json()["providers"][0]
-    assert row["actual_spend"]["amount"] == 2.5
-    assert row["cost_basis"]["kind"] == "actual_spend"
-    assert row["api_equivalent"]["value"] == 2.5
-    assert row["actual_spend"]["amount"] == row["api_equivalent"]["value"]
+    assert row["observed"]["pricing_coverage"]["level"] == "insufficient"
+    assert row["observed"]["attribution_confidence"]["level"] in {"medium", "high"}
+    assert row["comparison_eligible"] is False
+    assert "pricing coverage" in row["exclusion_reason"]
+
+
+@pytest.mark.asyncio
+async def test_high_pricing_coverage_and_strong_attribution_are_eligible(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=40), days=30)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["observed"]["pricing_coverage"]["level"] == "high"
+    assert row["observed"]["attribution_confidence"]["level"] in {"medium", "high"}
+    assert row["comparison_eligible"] is True
+
+
+@pytest.mark.asyncio
+async def test_economics_filters_by_config_id(sqlite_db):
+    Session = sqlite_db
+    first = await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(Session, provider="openai", label="Personal", pricing_model="payg")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=30), days=30)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"config_id": first.id}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [row["config_id"] for row in payload["providers"]] == [first.id]
+
+
+@pytest.mark.asyncio
+async def test_economics_rejects_invalid_date_ranges(sqlite_db):
+    await _config(sqlite_db, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": now.isoformat(), "to": (now - timedelta(days=1)).isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio

@@ -155,6 +155,7 @@ class OverviewProvider(BaseModel):
     audit: dict = Field(default_factory=dict)
     estimated_cost: float | None = None
     estimated_cost_source: str | None = None
+    disambiguate: bool = False
 
 
 class OverviewCoverage(BaseModel):
@@ -185,6 +186,7 @@ class OverviewRisk(BaseModel):
     confidence: str = "low"
     state: str = "normal"
     reason: str
+    disambiguate: bool = False
 
 
 class OverviewComparisonSeries(BaseModel):
@@ -197,6 +199,7 @@ class OverviewComparisonSeries(BaseModel):
     source: str | None = None
     confidence: str = "low"
     buckets: list[AnalyticsBucket]
+    disambiguate: bool = False
 
 
 class OverviewActivityProvider(BaseModel):
@@ -210,6 +213,7 @@ class OverviewActivityProvider(BaseModel):
     source: str | None = None
     confidence: str = "low"
     buckets: list[AnalyticsBucket] = Field(default_factory=list)
+    disambiguate: bool = False
 
 
 class OverviewActivityDimension(BaseModel):
@@ -262,6 +266,8 @@ class EconomicsMoney(BaseModel):
     estimated: bool = False
     allocation: str | None = None
     source: str | None = None
+    comparable: bool = True
+    reason: str | None = None
 
 
 class EconomicsObserved(BaseModel):
@@ -270,6 +276,8 @@ class EconomicsObserved(BaseModel):
     unpriced_tokens: float = 0.0
     priced_token_pct: float | None = None
     attribution_state: str = "insufficient"
+    pricing_coverage: dict = Field(default_factory=dict)
+    attribution_confidence: dict = Field(default_factory=dict)
 
 
 class EconomicsApiEquivalent(BaseModel):
@@ -302,6 +310,9 @@ class EconomicsProvider(BaseModel):
     api_equivalent: EconomicsApiEquivalent
     economics: EconomicsMetrics
     confidence: str = "insufficient"
+    pricing_coverage: dict = Field(default_factory=dict)
+    attribution_confidence: dict = Field(default_factory=dict)
+    disambiguate: bool = False
     comparison_eligible: bool = False
     exclusion_reason: str | None = None
     explanation: list[str] = Field(default_factory=list)

@@ -183,6 +183,22 @@ def _window_label(window: str | None, metric: str) -> str:
     return normalized.replace("five_hour", "session").replace("_", " ")
 
 
+_PROVIDER_DISPLAY_NAMES = {
+    "anthropic": "Anthropic",
+    "codex": "OpenAI Codex",
+    "deepseek": "DeepSeek",
+    "firecrawl": "Firecrawl",
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+    "opencode-go": "OpenCode Go",
+    "custom_http": "Custom HTTP",
+}
+
+
+def _provider_display_name(provider: str | None) -> str:
+    return _PROVIDER_DISPLAY_NAMES.get(provider or "", str(provider or "Provider").replace("_", " "))
+
+
 def _utilization_series_for_metric(observations: list[Observation], metric_name: str, spec: dict) -> list[Observation]:
     point_obs = [obs for obs in observations if obs.metric == metric_name]
     capacity_obs = (
@@ -947,6 +963,10 @@ async def overview(
     configs = (
         await session.execute(select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id)))
     ).scalars().all()
+    provider_config_counts = {
+        provider: sum(1 for config in configs if config.provider == provider)
+        for provider in {config.provider for config in configs}
+    }
 
     now = datetime.now(UTC)
     end = _as_aware(to_) if to_ is not None else now
@@ -1137,6 +1157,7 @@ async def overview(
             },
             estimated_cost=estimated_cost,
             estimated_cost_source=estimated_cost_source,
+            disambiguate=provider_config_counts.get(config.provider, 0) > 1,
         )
         providers.append(provider)
 
@@ -1161,6 +1182,7 @@ async def overview(
                         confidence=conf,
                         state=state,
                         reason=reason,
+                        disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                     )
                 )
 
@@ -1174,6 +1196,9 @@ async def overview(
             )
             capacity_latest = max(capacity_util_obs, key=lambda obs: obs.observed_at)
             window_label = _window_label(capacity_spec.get("window"), capacity_metric_name)
+            display_label = _provider_display_name(config.provider)
+            if provider_config_counts.get(config.provider, 0) > 1 and config.label and config.label != "main":
+                display_label = f"{display_label} - {config.label}"
             comparison.append(
                 OverviewComparisonSeries(
                     config_id=config.id,
@@ -1181,10 +1206,11 @@ async def overview(
                     label=config.label,
                     metric=capacity_metric_name,
                     window=window_label,
-                    display_name=f"{config.provider} · {window_label}",
+                    display_name=f"{display_label} · {window_label}",
                     source=capacity_latest.source,
                     confidence=conf,
                     buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in capacity_buckets],
+                    disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
 
@@ -1251,6 +1277,7 @@ async def overview(
                     buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in _activity_series(
                         observations, labels_in_dimension, interval=interval, tz=timezone, start=start, end=end,
                     )],
+                    disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
         if not entries:
@@ -1300,18 +1327,26 @@ async def economics(
     now = datetime.now(UTC)
     end = _as_aware(to_) if to_ is not None else now
     start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="'to' must be after 'from'")
     query = select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id))
     if provider:
         query = query.where(ProviderConfig.provider == provider)
     if config_id:
         query = query.where(ProviderConfig.id == config_id)
     configs = (await session.execute(query)).scalars().all()
+    provider_config_counts = {
+        provider: sum(1 for config in configs if config.provider == provider)
+        for provider in {config.provider for config in configs}
+    }
 
     rows = []
     for config in configs:
         provider_observations = await _load_observations(session, config.id, start=start, end=end)
         hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
-        rows.append(provider_economics(config, provider_observations, hermes_observations, start, end))
+        row = provider_economics(config, provider_observations, hermes_observations, start, end)
+        row["disambiguate"] = provider_config_counts.get(config.provider, 0) > 1
+        rows.append(row)
     return EconomicsResponse(
         period={"start": start.isoformat(), "end": end.isoformat()},
         summary=summarize_economics(rows),

@@ -149,6 +149,20 @@ describe('overallUsageGroups', () => {
     expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('Firecrawl')
   })
 
+  it('adds labels only when multiple visible configs share a provider', () => {
+    const groups = overallUsageGroups([
+      ...items,
+      {
+        config: { id: 4, provider: 'codex', label: 'Work', is_visible: true },
+        latest: { metrics: [{ label: 'session_used_percent', value: 40, unit: '%' }] },
+      },
+    ])
+    expect(groups.percent.metrics.map((metric) => metric.providerLabel).filter((label) => label.startsWith('OpenAI Codex'))).toEqual([
+      'OpenAI Codex',
+      'OpenAI Codex - Work',
+    ])
+  })
+
   it('does not aggregate unit metrics across providers', () => {
     const groups = overallUsageGroups(items)
     const credits = groups.units.metrics.filter((metric) => metric.unit === 'credits')

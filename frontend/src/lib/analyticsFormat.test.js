@@ -20,6 +20,7 @@ import {
   peakLabel,
   pressureSummaryCards,
   primaryValue,
+  providerNameWithLabel,
   qualityLabel,
   quotaImpactLabel,
   rangeToParams,
@@ -33,6 +34,19 @@ import {
   utilizationChartScale,
   utilizationOverflowLabel,
 } from './analyticsFormat.js'
+
+describe('providerNameWithLabel', () => {
+  it('keeps canonical provider name primary for a single config', () => {
+    expect(providerNameWithLabel('codex', 'Work')).toBe('OpenAI Codex')
+    expect(providerNameWithLabel('opencode-go', 'main')).toBe('OpenCode Go')
+  })
+
+  it('uses labels only as secondary disambiguation for duplicate provider configs', () => {
+    expect(providerNameWithLabel('codex', 'Work', { disambiguate: true })).toBe('OpenAI Codex - Work')
+    expect(providerNameWithLabel('codex', 'Personal', { disambiguate: true })).toBe('OpenAI Codex - Personal')
+    expect(providerNameWithLabel('codex', 'main', { disambiguate: true })).toBe('OpenAI Codex')
+  })
+})
 
 describe('compactNumber', () => {
   it('formats integers, thousands, and millions', () => {
