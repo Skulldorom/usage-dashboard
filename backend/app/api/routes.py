@@ -109,6 +109,10 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
 
 def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
     provider_rows = []
+    provider_counts = {
+        provider: sum(row["config"].provider == provider for row in rows)
+        for provider in {row["config"].provider for row in rows}
+    }
     for row in rows:
         cfg = row["config"]
         if not cfg.is_enabled:
@@ -126,7 +130,11 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
             HomepageProviderRow(
                 provider=cfg.provider,
                 config_id=cfg.id,
-                label=f"{cfg.provider} ({cfg.label})",
+                label=(
+                    get_adapter_class(cfg.provider).name
+                    if provider_counts[cfg.provider] == 1
+                    else f"{get_adapter_class(cfg.provider).name} ({cfg.label})"
+                ),
                 value=_homepage_usage_text(display.metrics, display.summary) if display else "No usage snapshot yet",
                 status=status,
             )
