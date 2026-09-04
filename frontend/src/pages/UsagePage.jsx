@@ -3,10 +3,12 @@ import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
+  Button,
   Card,
   CardContent,
   Chip,
   CircularProgress,
+  Collapse,
   FormControl,
   Grid,
   InputLabel,
@@ -57,6 +59,7 @@ import {
   usageMetricLabel,
   utilizationChartScale,
   utilizationOverflowLabel,
+  valueTrendPoints,
 } from '../lib/analyticsFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -878,6 +881,7 @@ function ActivityShare({ dimension }) {
 }
 
 function EconomicsPanel({ economics }) {
+  const [expanded, setExpanded] = useState({})
   if (!economics) return null
   const providers = economics.providers || []
   const cards = economicsSummaryCards(economics)
@@ -907,6 +911,8 @@ function EconomicsPanel({ economics }) {
             {providers.map((row) => {
               const cost = row.cost_basis?.amount
               const value = row.api_equivalent?.value
+              const trend = valueTrendPoints(row)
+              const isExpanded = Boolean(expanded[row.config_id])
               return (
                 <Box key={row.config_id}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 0.75 }}>
@@ -926,6 +932,32 @@ function EconomicsPanel({ economics }) {
                   <Typography variant="caption" color="text.secondary">
                     Pricing coverage {row.observed?.pricing_coverage?.priced_token_pct ?? row.observed?.priced_token_pct ?? '-'}% ({row.observed?.pricing_coverage?.level || 'insufficient'}) · Attribution {row.observed?.attribution_confidence?.level || row.confidence || 'insufficient'} · {row.comparison_eligible ? 'eligible for comparison' : row.exclusion_reason}
                   </Typography>
+                  {trend.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                        Value multiplier by billing period
+                      </Typography>
+                      <Stack spacing={0.25}>
+                        {trend.map((point, index) => (
+                          <Typography key={`${point.periodStart}-${index}`} variant="caption" color="text.secondary">
+                            {point.periodStart ? formatAxis(point.periodStart) : 'Period'} → {formatMultiplier(point.multiplier)} · cost {formatMoney(point.allocatedCost, point.allocatedCurrency)} · API-equivalent {formatMoney(point.apiValue, point.allocatedCurrency)}
+                          </Typography>
+                        ))}
+                      </Stack>
+                    </Box>
+                  )}
+                  <Box sx={{ mt: 0.5 }}>
+                    <Button size="small" variant="text" onClick={() => setExpanded((current) => ({ ...current, [row.config_id]: !current[row.config_id] }))}>
+                      {isExpanded ? 'Hide' : 'Why this number?'}
+                    </Button>
+                    <Collapse in={isExpanded}>
+                      <Stack spacing={0.25} sx={{ mt: 0.5 }}>
+                        {(row.explanation || []).map((line, index) => (
+                          <Typography key={index} variant="caption" color="text.secondary">{line}</Typography>
+                        ))}
+                      </Stack>
+                    </Collapse>
+                  </Box>
                 </Box>
               )
             })}

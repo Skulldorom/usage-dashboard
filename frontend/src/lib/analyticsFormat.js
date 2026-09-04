@@ -43,6 +43,19 @@ export function economicsSummaryCards(economics) {
   ]
 }
 
+export function valueTrendPoints(row) {
+  // Per-billing-period allocated cost + API-equivalent value + multiplier for a
+  // subscription provider. Complete billing periods only (no daily proration noise).
+  return (row?.trend || []).map((point) => ({
+    periodStart: point.period_start ?? null,
+    periodEnd: point.period_end ?? null,
+    allocatedCost: point.allocated_cost?.amount ?? null,
+    allocatedCurrency: point.allocated_cost?.currency ?? 'USD',
+    apiValue: point.api_equivalent_value ?? null,
+    multiplier: point.value_multiplier ?? null,
+  }))
+}
+
 export const RANGE_OPTIONS = [
   { value: '24h', label: '24 hours', days: 1 },
   { value: '7d', label: '7 days', days: 7 },

@@ -33,6 +33,7 @@ import {
   usageMetricLabel,
   utilizationChartScale,
   utilizationOverflowLabel,
+  valueTrendPoints,
 } from './analyticsFormat.js'
 
 describe('providerNameWithLabel', () => {
@@ -334,5 +335,33 @@ describe('overview pressure helpers', () => {
     expect(quotaImpactLabel(impact)).toContain('0% unexplained')
     expect(quotaImpactLabel(null)).toBe(null)
     expect(quotaImpactLabel({})).toBe(null)
+  })
+})
+
+describe('valueTrendPoints', () => {
+  it('maps billing-period trend entries to flat points', () => {
+    const row = {
+      trend: [
+        {
+          period_start: '2026-01-31T00:00:00Z',
+          period_end: '2026-02-28T00:00:00Z',
+          allocated_cost: { amount: 31, currency: 'USD' },
+          api_equivalent_value: 48,
+          value_multiplier: 1.5484,
+        },
+      ],
+    }
+    const points = valueTrendPoints(row)
+    expect(points).toHaveLength(1)
+    expect(points[0].periodStart).toBe('2026-01-31T00:00:00Z')
+    expect(points[0].allocatedCost).toBe(31)
+    expect(points[0].apiValue).toBe(48)
+    expect(points[0].multiplier).toBe(1.5484)
+  })
+
+  it('returns an empty list when there is no trend', () => {
+    expect(valueTrendPoints(null)).toEqual([])
+    expect(valueTrendPoints({})).toEqual([])
+    expect(valueTrendPoints({ trend: [] })).toEqual([])
   })
 })
