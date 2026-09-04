@@ -292,6 +292,7 @@ class ProviderHealth(BaseModel):
     last_failure_at: datetime | None = None
     consecutive_failures: int = 0
     latest_error: str | None = None
+    latest_error_details: dict | None = None
     age_seconds: float | None = None
     is_stale: bool = False
 

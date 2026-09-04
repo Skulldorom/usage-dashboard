@@ -8,6 +8,7 @@ import httpx
 
 from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
+from app.providers.errors import ProviderError, SCHEMA_CHANGED
 
 OPENAI_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
@@ -121,9 +122,37 @@ class CodexAdapter(ProviderAdapter):
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             response = await client.get(f"{self.base_url}/backend-api/wham/usage", headers=headers)
             if response.status_code in (401, 403):
-                raise ValueError("Codex token expired or was rejected - re-authorize the Codex provider")
-            response.raise_for_status()
-            data = response.json()
+                raise ProviderError.from_response(
+                    response,
+                    message="Codex access token rejected - re-authorize the Codex provider",
+                    stage="fetch_usage",
+                    retryable=False,
+                )
+            if response.status_code == 429:
+                raise ProviderError.from_response(response, message="Codex rate limited", stage="fetch_usage", retryable=True)
+            if response.status_code == 404:
+                raise ProviderError.from_response(response, message="Codex usage endpoint not found or changed", stage="fetch_usage", retryable=False)
+            if response.status_code >= 500:
+                raise ProviderError.from_response(response, message="OpenAI upstream error", stage="fetch_usage", retryable=True)
+            if response.status_code >= 400:
+                raise ProviderError.from_response(response, message="Codex request failed", stage="fetch_usage", retryable=False)
+            try:
+                data = response.json()
+            except json.JSONDecodeError as exc:
+                raise ProviderError.from_response(
+                    response,
+                    category="invalid_response",
+                    message="Codex returned a non-JSON response",
+                    stage="parse_response",
+                    retryable=False,
+                ) from exc
+        if not _looks_like_usage_payload(data):
+            raise ProviderError(
+                category=SCHEMA_CHANGED,
+                message="OpenAI returned Codex usage data in an unsupported format.",
+                stage="parse_response",
+                retryable=False,
+            )
         return self.parse_usage(data)
 
     async def refresh_access_token(self) -> None:
@@ -131,12 +160,22 @@ class CodexAdapter(ProviderAdapter):
         async with httpx.AsyncClient(timeout=self.timeout, transport=self._transport) as client:
             response = await client.post(OPENAI_OAUTH_TOKEN_URL, data=payload, headers={"Accept": "application/json"})
             if response.status_code in (400, 401, 403):
-                raise ValueError("Codex refresh token expired or was rejected - re-authorize the Codex provider")
+                raise ProviderError.from_response(
+                    response,
+                    message="Codex refresh token rejected - re-authorize the Codex provider",
+                    stage="oauth_refresh",
+                    retryable=False,
+                )
             response.raise_for_status()
             data = response.json()
         access_token = _clean_string(data.get("access_token"))
         if not access_token:
-            raise ValueError("Codex token refresh response did not include an access_token")
+            raise ProviderError(
+                category=SCHEMA_CHANGED,
+                message="Codex token refresh response did not include an access_token",
+                stage="oauth_refresh",
+                retryable=False,
+            )
         refresh_token = _clean_string(data.get("refresh_token")) or self.credentials.refresh_token
         expires_at = _expires_at_from_response(data) or self.credentials.expires_at
         self.credentials = CodexCredentials(
@@ -232,6 +271,28 @@ def _deep_get(data: dict[str, Any], *keys: str) -> Any:
             return None
         value = value.get(key)
     return value
+
+
+def _looks_like_usage_payload(data: Any) -> bool:
+    """Whether a response has any recognizable Codex usage structure.
+
+    A totally unexpected shape (HTML, an unrelated JSON envelope, or an empty
+    non-dict) is treated as an unsupported schema so the caller can report a
+    user-safe message instead of silently producing an empty snapshot.
+    """
+    if not isinstance(data, dict):
+        return False
+    recognized = {
+        "plan_type",
+        "rate_limit",
+        "rate_limits",
+        "rate_limits_by_limit_id",
+        "rate_limit_reset_credits",
+        "additional_rate_limits",
+        "code_review_rate_limit",
+        "summary",
+    }
+    return any(key in data for key in recognized)
 
 
 def _find_limit(data: dict[str, Any], limit_id: str) -> dict[str, Any] | None:

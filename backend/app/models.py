@@ -68,6 +68,10 @@ class UsageSnapshot(Base):
     metrics: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
     raw: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Normalized, sanitized error diagnostics (category, message, http_status,
+    # stage, retryable, occurred_at) for the Settings/health UI. Never holds raw
+    # upstream payloads or credentials.
+    error_details: Mapped[dict | None] = mapped_column(MutableDict.as_mutable(json_type()), nullable=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     config: Mapped[ProviderConfig] = relationship(back_populates="snapshots")
 

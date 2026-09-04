@@ -17,6 +17,7 @@ from app.database import engine, get_session
 from app.health import default_max_stale_age, derive_health
 from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
+from app.providers.errors import classify_exception, log_provider_failure
 from app.providers.registry import get_adapter_class, list_providers
 from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
@@ -501,10 +502,21 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
         updated_secret = getattr(adapter, "updated_secret", None)
         if updated_secret:
             config.encrypted_api_key = crypto.encrypt(updated_secret)
-        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
+        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None, error_details=None)
         native = adapter.native_observations(usage.raw)
-    except Exception as exc:
-        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status="error", summary=f"{config.label}: polling failed", metrics=[], raw={}, error=str(exc))
+    except Exception as exc:  # noqa: BLE001 - classify + record, never leak secrets
+        error = classify_exception(exc, stage="fetch_usage")
+        snapshot = UsageSnapshot(
+            provider_config_id=config.id,
+            provider=config.provider,
+            status="error",
+            summary=f"{config.label}: polling failed",
+            metrics=[],
+            raw={},
+            error=error.message,
+            error_details=error.to_dict(),
+        )
+        log_provider_failure(provider=config.provider, config_id=config.id, error=error)
         native = []
     return snapshot, native
 
@@ -759,13 +771,18 @@ async def _health_for_config(session: AsyncSession, config: ProviderConfig) -> t
             )
         )).scalar_one()
 
+    # Only surface error details when the *latest* attempt failed; a later
+    # success clears stale error state so a healthy provider never shows an old
+    # error from before its most recent good sync.
+    latest_is_error = latest is not None and latest.status == "error"
     health = derive_health(
         latest_status=latest.status if latest is not None else None,
         last_attempt_at=latest.checked_at if latest is not None else None,
         last_success_at=last_success_at,
         last_failure_at=last_failure.checked_at if last_failure is not None else None,
         consecutive_failures=int(consecutive or 0),
-        latest_error=last_failure.error if last_failure is not None else None,
+        latest_error=last_failure.error if (latest_is_error and last_failure is not None) else None,
+        latest_error_details=last_failure.error_details if (latest_is_error and last_failure is not None) else None,
         now=datetime.now(UTC),
         max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
     )

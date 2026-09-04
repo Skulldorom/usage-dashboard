@@ -50,6 +50,7 @@ def derive_health(
     last_failure_at: datetime | None,
     consecutive_failures: int = 0,
     latest_error: str | None = None,
+    latest_error_details: dict | None = None,
     now: datetime | None = None,
     max_stale_age: timedelta | None = None,
 ) -> dict:
@@ -63,7 +64,7 @@ def derive_health(
 
     Returns a dict with keys: ``status``, ``last_attempt_at``,
     ``last_success_at``, ``last_failure_at``, ``consecutive_failures``,
-    ``latest_error``, ``age_seconds``, ``is_stale``.
+    ``latest_error``, ``latest_error_details``, ``age_seconds``, ``is_stale``.
     """
     current = _as_utc(now) or datetime.now(UTC)
     if max_stale_age is None:
@@ -100,6 +101,7 @@ def derive_health(
         "last_failure_at": last_failure_at,
         "consecutive_failures": consecutive_failures,
         "latest_error": latest_error,
+        "latest_error_details": latest_error_details,
         "age_seconds": age_seconds,
         "is_stale": is_stale,
     }
