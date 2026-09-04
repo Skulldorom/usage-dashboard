@@ -35,17 +35,21 @@ def confidence_level(
     observations: list[Observation],
     *,
     coverage: float | None = None,
+    now: datetime | None = None,
 ) -> dict:
     """Score forecast confidence as high/medium/low from available history.
 
     Factors: observation count, time span, data coverage, whether any
     provider-native history is present, and variance of the consumption signal.
+
+    ``now`` defaults to the current time but can be injected so tests and
+    historical-range callers stay deterministic.
     """
     if not observations:
         return {"level": "low", "score": 0, "reason": "No observations available"}
 
     count = len(observations)
-    span_days = _span_days(observations)
+    span_days = _span_days(observations, now=now)
     native = any(obs.source == "native" for obs in observations)
     deltas = [obs.value for obs in observations if obs.kind == "delta"]
     cv = _coefficient_of_variation(deltas)
