@@ -15,7 +15,7 @@ from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
-from app.analytics.economics import provider_economics, summarize as summarize_economics
+from app.analytics.economics import provider_economics, provider_level_economics, summarize as summarize_economics
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
 from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
@@ -1340,17 +1340,42 @@ async def economics(
         for provider in {config.provider for config in configs}
     }
 
+    # Load provider-level Hermes observations once per provider. Multiple configs
+    # of the same provider share the same provider-level observations, so copying
+    # them into every config row would double-count observed tokens/value in the
+    # aggregate economics summary.
+    hermes_by_provider: dict[str, list] = {}
+    for provider in provider_config_counts:
+        hermes_by_provider[provider] = await _load_mapped_hermes_observations(session, provider, start=start, end=end)
+
     rows = []
+    provider_level = []
     for config in configs:
         provider_observations = await _load_observations(session, config.id, start=start, end=end)
-        hermes_observations = await _load_mapped_hermes_observations(session, config.provider, start=start, end=end)
-        row = provider_economics(config, provider_observations, hermes_observations, start, end)
-        row["disambiguate"] = provider_config_counts.get(config.provider, 0) > 1
+        config_count = provider_config_counts.get(config.provider, 1)
+        ambiguous = config_count > 1
+        hermes_observations = hermes_by_provider.get(config.provider, [])
+        row = provider_economics(
+            config, provider_observations, hermes_observations, start, end,
+            attribution_ambiguous=ambiguous,
+        )
+        row["disambiguate"] = ambiguous
         rows.append(row)
+
+    # Surface shared provider-level workload once for providers with multiple
+    # configs, so it is not silently dropped while remaining non-duplicated.
+    for provider, count in sorted(provider_config_counts.items()):
+        if count <= 1:
+            continue
+        rollup = provider_level_economics(provider, hermes_by_provider.get(provider, []), count)
+        if rollup is not None:
+            provider_level.append(rollup)
+
     return EconomicsResponse(
         period={"start": start.isoformat(), "end": end.isoformat()},
         summary=summarize_economics(rows),
         providers=rows,
+        provider_level=provider_level,
     )
 
 

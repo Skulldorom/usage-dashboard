@@ -198,9 +198,8 @@ def _cost_basis(config: Any, provider_observations: list[Any], start: datetime, 
     return {**actual, "kind": "actual_spend"}, actual
 
 
-def provider_economics(config: Any, provider_observations: list[Any], hermes_observations: list[Any], start: datetime, end: datetime) -> dict:
-    pricing_model = config.pricing_model or "payg"
-    cost_basis, actual = _cost_basis(config, provider_observations, start, end)
+def _api_equivalent(hermes_observations: list[Any]) -> tuple[dict, dict, float]:
+    """Price Hermes token observations once, returning (api_equivalent, pricing_coverage, tokens)."""
     priced = estimate_cost(hermes_observations)
     tokens = _token_total(hermes_observations)
     priced_tokens = float(priced["total_tokens"] or 0)
@@ -216,7 +215,59 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         "groups": priced.get("groups", []),
         "unpriced": priced.get("unpriced", {}),
     }
-    pricing_coverage = _pricing_coverage(priced_tokens, tokens)
+    coverage = _pricing_coverage(priced_tokens, tokens)
+    return api_equivalent, coverage, tokens
+
+
+def provider_level_economics(provider: str, hermes_observations: list[Any], config_count: int) -> dict | None:
+    """Represent provider-level Hermes workload once when it cannot be attributed
+    to a single config.
+
+    Multiple configs sharing one provider receive the same provider-level Hermes
+    observations, so we must never copy that workload into each config row. This
+    rollup prices the workload exactly once and marks it provider-level (not
+    config-attributed), so aggregate economics cannot double-count it.
+    """
+    if config_count <= 1:
+        return None
+    api_equivalent, coverage, tokens = _api_equivalent(hermes_observations)
+    confidence = _attribution_confidence(hermes_observations)
+    if tokens <= 0:
+        return None
+    return {
+        "provider": provider,
+        "config_count": config_count,
+        "attribution": "provider_level",
+        "observed": {
+            "tokens": round(tokens, 2),
+            "priced_tokens": coverage["priced_tokens"],
+            "unpriced_tokens": coverage["unpriced_tokens"],
+            "priced_token_pct": coverage["priced_token_pct"],
+            "attribution_state": confidence["level"],
+            "pricing_coverage": coverage,
+            "attribution_confidence": confidence,
+        },
+        "api_equivalent": api_equivalent,
+        "note": (
+            f"Hermes workload for provider '{provider}' is shared by {config_count} configs and "
+            "cannot be uniquely attributed to any single config; it is reported once at provider level."
+        ),
+    }
+
+
+def provider_economics(config: Any, provider_observations: list[Any], hermes_observations: list[Any], start: datetime, end: datetime, *, attribution_ambiguous: bool = False) -> dict:
+    pricing_model = config.pricing_model or "payg"
+    cost_basis, actual = _cost_basis(config, provider_observations, start, end)
+    if attribution_ambiguous:
+        # The Hermes workload for this provider is shared by multiple configs and
+        # cannot be attributed to this specific config. Do not price it here (it
+        # is reported once at provider level) so aggregate economics can't
+        # double-count the same observations across configs.
+        hermes_observations = []
+    api_equivalent, pricing_coverage, tokens = _api_equivalent(hermes_observations)
+    api_value = api_equivalent["value"]
+    priced_tokens = pricing_coverage["priced_tokens"]
+    unpriced_tokens = pricing_coverage["unpriced_tokens"]
     attribution_confidence = _attribution_confidence(hermes_observations)
 
     compatible_money = _same_currency(cost_basis, api_equivalent)
@@ -241,7 +292,9 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
     )
     exclusion = None
     if not eligible:
-        if not compatible_money:
+        if attribution_ambiguous:
+            exclusion = f"Hermes workload for provider '{config.provider}' cannot be uniquely attributed to this config because multiple configs share the provider"
+        elif not compatible_money:
             exclusion = f"cost basis currency {cost_basis.get('currency')} cannot be compared with API-equivalent {api_equivalent.get('currency')}"
         elif tokens <= 0:
             exclusion = "no attributed token workload in selected range"
@@ -258,6 +311,8 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         f"Pricing model: {pricing_model}.",
         "API-equivalent value uses the maintained model/token-class pricing catalogue.",
     ]
+    if attribution_ambiguous:
+        explanation.append("Hermes workload is reported at provider level, not attributed to this config, to avoid double-counting.")
     if pricing_model == "subscription":
         explanation.append("Subscription cost basis is prorated by real billing-period overlap." + (" Billing anchor is estimated from the selected range." if cost_basis.get("estimated") else ""))
     if unpriced_tokens:
@@ -289,6 +344,7 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         "confidence": attribution_confidence["level"],
         "pricing_coverage": pricing_coverage,
         "attribution_confidence": attribution_confidence,
+        "attribution_ambiguous": attribution_ambiguous,
         "comparison_eligible": eligible,
         "exclusion_reason": exclusion,
         "explanation": explanation,

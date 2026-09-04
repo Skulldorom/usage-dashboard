@@ -308,6 +308,62 @@ async def test_economics_filters_by_config_id(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_economics_single_config_attributes_hermes_workload(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", label="main", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, start=now - timedelta(days=30), days=30)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    row = payload["providers"][0]
+    assert row["attribution_ambiguous"] is False
+    assert row["api_equivalent"]["value"] is not None
+    assert row["api_equivalent"]["value"] > 0
+    assert payload["provider_level"] == []
+
+
+@pytest.mark.asyncio
+async def test_economics_two_configs_same_provider_do_not_double_count(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, provider="anthropic", start=now - timedelta(days=30), days=30)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    rows = payload["providers"]
+    assert len(rows) == 2
+
+    # Neither config claims the shared Hermes workload.
+    for row in rows:
+        assert row["attribution_ambiguous"] is True
+        assert row["comparison_eligible"] is False
+        assert row["observed"]["tokens"] == 0
+        assert row["api_equivalent"]["value"] is None
+        assert "cannot be uniquely attributed" in row["exclusion_reason"]
+
+    # The provider-level workload is reported exactly once, not doubled.
+    assert len(payload["provider_level"]) == 1
+    rollup = payload["provider_level"][0]
+    assert rollup["provider"] == "anthropic"
+    assert rollup["config_count"] == 2
+    assert rollup["api_equivalent"]["value"] is not None
+    assert rollup["api_equivalent"]["value"] > 0
+
+    # Aggregate economics must not double-count the workload.
+    assert payload["summary"]["eligible_provider_count"] == 0
+    assert payload["summary"]["api_equivalent_value"]["amount"] is None
+
+
+@pytest.mark.asyncio
 async def test_economics_rejects_invalid_date_ranges(sqlite_db):
     await _config(sqlite_db, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
     now = datetime.now(UTC)

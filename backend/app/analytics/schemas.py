@@ -313,9 +313,23 @@ class EconomicsProvider(BaseModel):
     pricing_coverage: dict = Field(default_factory=dict)
     attribution_confidence: dict = Field(default_factory=dict)
     disambiguate: bool = False
+    attribution_ambiguous: bool = False
     comparison_eligible: bool = False
     exclusion_reason: str | None = None
     explanation: list[str] = Field(default_factory=list)
+
+
+class EconomicsProviderLevel(BaseModel):
+    """Provider-level economics for shared Hermes workload that cannot be
+    attributed to a single config. Reported once so aggregate economics never
+    double-counts the same observations."""
+
+    provider: str
+    config_count: int
+    attribution: str = "provider_level"
+    observed: EconomicsObserved
+    api_equivalent: EconomicsApiEquivalent
+    note: str = ""
 
 
 class EconomicsSummary(BaseModel):
@@ -330,3 +344,4 @@ class EconomicsResponse(BaseModel):
     period: dict
     summary: EconomicsSummary
     providers: list[EconomicsProvider]
+    provider_level: list[EconomicsProviderLevel] = Field(default_factory=list)
