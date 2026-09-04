@@ -107,8 +107,24 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
     return summary or "No usage snapshot yet"
 
 
+def _provider_display_name(provider: str) -> str:
+    try:
+        return get_adapter_class(provider).name
+    except ValueError:
+        return provider.replace("_", " ").replace("-", " ").title() or "Provider"
+
+
 def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
     provider_rows = []
+    provider_counts = {
+        provider: sum(
+            row["config"].provider == provider and row["config"].is_enabled
+            for row in rows
+        )
+        for provider in {
+            row["config"].provider for row in rows if row["config"].is_enabled
+        }
+    }
     for row in rows:
         cfg = row["config"]
         if not cfg.is_enabled:
@@ -122,11 +138,16 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
         if status == "healthy" and latest is not None and latest.status == "degraded":
             status = "degraded"
         display = last_good if last_good is not None else latest
+        provider_name = _provider_display_name(cfg.provider)
         provider_rows.append(
             HomepageProviderRow(
                 provider=cfg.provider,
                 config_id=cfg.id,
-                label=f"{cfg.provider} ({cfg.label})",
+                label=(
+                    provider_name
+                    if provider_counts[cfg.provider] == 1
+                    else f"{provider_name} ({cfg.label})"
+                ),
                 value=_homepage_usage_text(display.metrics, display.summary) if display else "No usage snapshot yet",
                 status=status,
             )
