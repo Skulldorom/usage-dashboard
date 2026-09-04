@@ -18,7 +18,7 @@ from app.health import default_max_stale_age, derive_health
 from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -276,6 +276,7 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
         billing_cadence=payload.billing_cadence,
         billing_anchor=payload.billing_anchor,
     )
+    _normalize_and_validate_billing(config)
     session.add(config)
     try:
         await session.commit()
@@ -395,6 +396,43 @@ async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSess
     return [_config_read(row) for row in rows]
 
 
+def _normalize_and_validate_billing(config: ProviderConfig) -> None:
+    """Validate the *resulting persisted* billing combination, not just the PATCH.
+
+    A partial PATCH can leave a persisted state that is invalid on its own (e.g.
+    subscription without a cadence, or a stale anchor left behind after switching
+    to payg). This normalizes currency/model and enforces the invariants on the
+    final merged row, clearing subscription-only fields when they no longer apply.
+    """
+    model = (config.pricing_model or "payg").strip().lower()
+    if model not in PRICING_MODELS:
+        raise HTTPException(status_code=422, detail=f"Unsupported pricing model: {config.pricing_model}")
+    config.pricing_model = model
+
+    currency = (config.subscription_currency or "USD").strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise HTTPException(status_code=422, detail=f"Invalid subscription currency: {currency!r}")
+    config.subscription_currency = currency
+
+    if model == "subscription":
+        if config.subscription_amount is None:
+            raise HTTPException(status_code=422, detail="subscription_amount is required for subscription pricing")
+        if config.subscription_amount < 0:
+            raise HTTPException(status_code=422, detail="subscription_amount cannot be negative")
+        cadence = (config.billing_cadence or "").strip().lower()
+        if not cadence:
+            raise HTTPException(status_code=422, detail="billing_cadence is required for subscription pricing")
+        if cadence not in BILLING_CADENCES:
+            raise HTTPException(status_code=422, detail=f"Unsupported billing cadence: {config.billing_cadence}")
+        config.billing_cadence = cadence
+    else:
+        # payg/free: subscription-only fields are cleared so stale cadence/anchor/
+        # amount never linger in an inconsistent persisted combination.
+        config.subscription_amount = None
+        config.billing_cadence = None
+        config.billing_anchor = None
+
+
 @router.patch("/configs/{config_id}", response_model=ProviderConfigRead, dependencies=[Depends(require_admin_auth)])
 async def update_config(config_id: int, payload: ProviderConfigUpdate, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
@@ -426,6 +464,7 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.billing_cadence = payload.billing_cadence
     if payload.has_update_for("billing_anchor"):
         config.billing_anchor = payload.billing_anchor
+    _normalize_and_validate_billing(config)
     await session.commit()
     await session.refresh(config)
     return _config_read(config)

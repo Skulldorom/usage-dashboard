@@ -404,3 +404,145 @@ async def test_config_api_persists_billing_fields(sqlite_db):
         assert updated.status_code == 200, updated.text
         assert updated.json()["pricing_model"] == "payg"
         assert updated.json()["billing_cadence"] is None
+
+
+async def _create_subscription_config(client):
+    created = await client.post(
+        "/api/v1/configs",
+        json={
+            "provider": "deepseek",
+            "label": "Sub config",
+            "api_key": "sk-test",
+            "pricing_model": "subscription",
+            "subscription_amount": 20,
+            "subscription_currency": "usd",
+            "billing_cadence": "monthly",
+            "billing_anchor": "2026-01-15T00:00:00Z",
+        },
+        headers=ADMIN_AUTH,
+    )
+    assert created.status_code == 201, created.text
+    return created.json()
+
+
+@pytest.mark.asyncio
+async def test_billing_payg_to_subscription_transition(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={"provider": "deepseek", "label": "Payg config", "api_key": "sk-test", "pricing_model": "payg"},
+            headers=ADMIN_AUTH,
+        )
+        assert created.status_code == 201, created.text
+        config_id = created.json()["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"pricing_model": "subscription", "subscription_amount": 25, "billing_cadence": "monthly"},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["pricing_model"] == "subscription"
+        assert body["subscription_amount"] == 25
+        assert body["billing_cadence"] == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_to_payg_clears_subscription_fields(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"pricing_model": "payg"},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["pricing_model"] == "payg"
+        assert body["subscription_amount"] is None
+        assert body["billing_cadence"] is None
+        assert body["billing_anchor"] is None
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_to_free_clears_subscription_fields(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"pricing_model": "free"},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["pricing_model"] == "free"
+        assert body["subscription_amount"] is None
+        assert body["billing_cadence"] is None
+        assert body["billing_anchor"] is None
+
+
+@pytest.mark.asyncio
+async def test_billing_update_amount_only_keeps_subscription_valid(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"subscription_amount": 99},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 200, updated.text
+        body = updated.json()
+        assert body["pricing_model"] == "subscription"
+        assert body["subscription_amount"] == 99
+        assert body["billing_cadence"] == "monthly"
+
+
+@pytest.mark.asyncio
+async def test_billing_subscription_without_cadence_is_rejected(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        # Switch to subscription semantics while clearing the cadence -> invalid persisted state.
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"billing_cadence": None},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 422
+        assert "billing_cadence" in updated.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_billing_negative_amount_is_rejected(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"subscription_amount": -5},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_billing_unsupported_model_is_rejected(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        payload = await _create_subscription_config(client)
+        config_id = payload["id"]
+
+        updated = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"pricing_model": "enterprise"},
+            headers=ADMIN_AUTH,
+        )
+        assert updated.status_code == 422
