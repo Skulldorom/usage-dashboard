@@ -25,7 +25,9 @@ provider list because it matches the dashboard provider rows.
 
 Recommended default. Requires Homepage >= 1.1.0. Set `display: dynamic-list` and
 use the object-style `mappings` below. Each enabled provider config becomes a row
-with its label on the left and usage-left text on the right.
+with its canonical provider name on the left and usage-left text on the right.
+When more than one enabled configuration exists for the same provider, the
+custom configuration label is added in parentheses to distinguish the rows.
 
 ```yaml
 - API Usage:
@@ -51,7 +53,9 @@ object-style mappings as a block-display array.
 
 The `list` array contains one flat object per enabled provider config:
 
-- `label` → left side (e.g. `deepseek (main)`)
+- `label` → left side (for example `DeepSeek` for one configuration, or
+  `DeepSeek (work)` and `DeepSeek (personal)` when duplicate configurations
+  need disambiguation)
 - `value` → right side (prefers remaining credits/usage, then percent-used, then
   summary fallback)
 
@@ -87,6 +91,9 @@ compact summary tile:
 
 Flattened `metrics` keys (e.g. `firecrawl_main_credits_remaining`,
 `deepseek_main_total_balance`) are also available as extra `field` mappings.
+These keys continue to include the configuration label for backward
+compatibility, even when the visible dynamic-list row only shows the canonical
+provider name.
 
 ## Public homepage behind reverse-proxy auth
 
