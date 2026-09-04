@@ -18,6 +18,7 @@ import RefreshRoundedIcon from "@mui/icons-material/RefreshRounded";
 import { api } from "../api.js";
 import { HermesDataSourcesCards } from "../components/HermesPanels.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
+import { providerNameWithLabel } from "../lib/analyticsFormat.js";
 import {
   CODEX_LIMIT_METRIC_LABELS,
   OPENCODEGO_LIMIT_METRIC_LABELS,
@@ -426,10 +427,11 @@ function OverallUsagePanel({ groups }) {
   );
 }
 
-function UsageCard({ item, icon }) {
+function UsageCard({ item, icon, disambiguate }) {
   const { config, latest, last_good, health, alerts, alert_state } = item;
   const healthState = healthMeta(health);
   const display = last_good || latest;
+  const displayName = providerNameWithLabel(config.provider, config.label, { disambiguate });
   const isStale = health?.is_stale;
   const alertClass =
     alert_state && alert_state !== "normal"
@@ -471,10 +473,7 @@ function UsageCard({ item, icon }) {
               <ProviderIcon icon={icon} />
             </div>
             <Box sx={{ minWidth: 0 }}>
-              <div className="provider-name">{config.provider}</div>
-              <Typography variant="h6" noWrap>
-                {config.label}
-              </Typography>
+              <div className="provider-name">{displayName}</div>
             </Box>
           </Stack>
           <div className="provider-actions">
@@ -484,7 +483,7 @@ function UsageCard({ item, icon }) {
                 href={providerUsageUrl}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={`Open ${config.provider} usage page`}
+                aria-label={`Open ${displayName} usage page`}
               >
                 Usage <span aria-hidden="true">↗</span>
               </a>
@@ -543,7 +542,7 @@ function UsageCard({ item, icon }) {
               </Stack>
               <GraphProgress
                 value={firecrawlComposite.percent}
-                title={`${config.label} · ${firecrawlComposite.label}: ${firecrawlComposite.value}`}
+                title={`${displayName} · ${firecrawlComposite.label}: ${firecrawlComposite.value}`}
                 sx={{ mt: 1 }}
               />
             </Box>
@@ -569,7 +568,7 @@ function UsageCard({ item, icon }) {
                   {section.remaining !== null && (
                     <GraphProgress
                       value={section.remaining}
-                      title={`${config.label} · ${section.title}: ${section.remainingLabel}`}
+                      title={`${displayName} · ${section.title}: ${section.remainingLabel}`}
                       sx={{ mt: 1 }}
                     />
                   )}
@@ -605,7 +604,7 @@ function UsageCard({ item, icon }) {
                   {section.percent !== null && (
                     <GraphProgress
                       value={section.percent}
-                      title={`${config.label} · ${section.title}: ${section.remainingLabel}`}
+                      title={`${displayName} · ${section.title}: ${section.remainingLabel}`}
                       sx={{ mt: 1 }}
                     />
                   )}
@@ -641,7 +640,7 @@ function UsageCard({ item, icon }) {
                     {percent !== null && (
                       <GraphProgress
                         value={percent}
-                        title={`${config.label} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`}
+                        title={`${displayName} · ${formatMetricLabel(metric.label, config.provider)}: ${formatMetricValue(metric, config.provider, percent)}`}
                         sx={{ mt: 1 }}
                       />
                     )}
@@ -706,6 +705,14 @@ export default function DashboardPage() {
   ).length;
   const visibleDegraded = visibleItems.length - visibleHealthy;
   const overallGroups = useMemo(() => overallUsageGroups(items), [items]);
+  const providerCounts = useMemo(() => {
+    const counts = {};
+    items.forEach((item) => {
+      const provider = item.config.provider;
+      counts[provider] = (counts[provider] || 0) + 1;
+    });
+    return counts;
+  }, [items]);
 
   return (
     <>
@@ -811,6 +818,7 @@ export default function DashboardPage() {
             <UsageCard
               item={item}
               icon={providerIcons.get(item.config.provider)}
+              disambiguate={(providerCounts[item.config.provider] || 0) > 1}
             />
           </Grid>
         ))}

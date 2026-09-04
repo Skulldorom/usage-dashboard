@@ -20,6 +20,8 @@ import {
   peakLabel,
   pressureSummaryCards,
   primaryValue,
+  providerLevelRows,
+  providerNameWithLabel,
   qualityLabel,
   quotaImpactLabel,
   rangeToParams,
@@ -32,7 +34,21 @@ import {
   usageMetricLabel,
   utilizationChartScale,
   utilizationOverflowLabel,
+  valueTrendPoints,
 } from './analyticsFormat.js'
+
+describe('providerNameWithLabel', () => {
+  it('keeps canonical provider name primary for a single config', () => {
+    expect(providerNameWithLabel('codex', 'Work')).toBe('OpenAI Codex')
+    expect(providerNameWithLabel('opencode-go', 'main')).toBe('OpenCode Go')
+  })
+
+  it('uses labels only as secondary disambiguation for duplicate provider configs', () => {
+    expect(providerNameWithLabel('codex', 'Work', { disambiguate: true })).toBe('OpenAI Codex - Work')
+    expect(providerNameWithLabel('codex', 'Personal', { disambiguate: true })).toBe('OpenAI Codex - Personal')
+    expect(providerNameWithLabel('codex', 'main', { disambiguate: true })).toBe('OpenAI Codex')
+  })
+})
 
 describe('compactNumber', () => {
   it('formats integers, thousands, and millions', () => {
@@ -320,5 +336,69 @@ describe('overview pressure helpers', () => {
     expect(quotaImpactLabel(impact)).toContain('0% unexplained')
     expect(quotaImpactLabel(null)).toBe(null)
     expect(quotaImpactLabel({})).toBe(null)
+  })
+})
+
+describe('valueTrendPoints', () => {
+  it('maps billing-period trend entries to flat points', () => {
+    const row = {
+      trend: [
+        {
+          period_start: '2026-01-31T00:00:00Z',
+          period_end: '2026-02-28T00:00:00Z',
+          allocated_cost: { amount: 31, currency: 'USD' },
+          api_equivalent_value: 48,
+          value_multiplier: 1.5484,
+        },
+      ],
+    }
+    const points = valueTrendPoints(row)
+    expect(points).toHaveLength(1)
+    expect(points[0].periodStart).toBe('2026-01-31T00:00:00Z')
+    expect(points[0].allocatedCost).toBe(31)
+    expect(points[0].apiValue).toBe(48)
+    expect(points[0].multiplier).toBe(1.5484)
+  })
+
+  it('returns an empty list when there is no trend', () => {
+    expect(valueTrendPoints(null)).toEqual([])
+    expect(valueTrendPoints({})).toEqual([])
+    expect(valueTrendPoints({ trend: [] })).toEqual([])
+  })
+})
+
+describe('providerLevelRows', () => {
+  it('maps provider-level rollups to display rows', () => {
+    const economics = {
+      provider_level: [
+        {
+          provider: 'anthropic',
+          config_count: 2,
+          attribution: 'provider_level',
+          observed: {
+            tokens: 30_000_000,
+            priced_tokens: 30_000_000,
+            pricing_coverage: { priced_token_pct: 100, level: 'high' },
+            attribution_state: 'high',
+          },
+          api_equivalent: { value: 90, currency: 'USD' },
+          note: 'shared workload',
+        },
+      ],
+    }
+    const rows = providerLevelRows(economics)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].displayName).toBe('Anthropic')
+    expect(rows[0].configCount).toBe(2)
+    expect(rows[0].tokens).toBe(30_000_000)
+    expect(rows[0].apiValue).toBe(90)
+    expect(rows[0].coverageLevel).toBe('high')
+    expect(rows[0].attributionState).toBe('high')
+  })
+
+  it('returns an empty list when there is no provider_level', () => {
+    expect(providerLevelRows(null)).toEqual([])
+    expect(providerLevelRows({})).toEqual([])
+    expect(providerLevelRows({ provider_level: [] })).toEqual([])
   })
 })

@@ -38,7 +38,14 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import { api } from "../api.js";
 import DataSourcesSection from "../components/DataSourcesSection.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
-import { formatThresholdRule } from "../lib/usageFormat.js";
+import {
+  formatDateTime,
+  formatThresholdRule,
+  healthText,
+  providerErrorActionLabel,
+  providerErrorSummary,
+  stageLabel,
+} from "../lib/usageFormat.js";
 import {
   extensionBridge,
   extensionSupportsOneClickSetup,
@@ -366,11 +373,18 @@ const initialForm = {
   custom_metric_path: "$.credits.remaining",
   custom_metric_unit: "credits",
   custom_metric_maximum_path: "",
+  pricing_model: "payg",
+  subscription_amount: "",
+  subscription_currency: "USD",
+  billing_cadence: "monthly",
+  billing_anchor: "",
 };
 
 export default function SettingsPage() {
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState([]);
+  const [healthByConfigId, setHealthByConfigId] = useState({});
+  const [retryingConfigId, setRetryingConfigId] = useState(null);
   const [apiTokens, setApiTokens] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
@@ -425,6 +439,9 @@ export default function SettingsPage() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [credentialTarget, setCredentialTarget] = useState(null);
+  const [billingTarget, setBillingTarget] = useState(null);
+  const [billingForm, setBillingForm] = useState(null);
+  const [billingSaving, setBillingSaving] = useState(false);
   const [credentialValue, setCredentialValue] = useState("");
   const [credentialSaving, setCredentialSaving] = useState(false);
   const [credentialStatus, setCredentialStatus] = useState("");
@@ -496,6 +513,17 @@ export default function SettingsPage() {
       ]);
       setConfigs(configRows);
       setApiTokens(tokenRows);
+      // Fetch provider health so Settings can show latest error/retry state.
+      try {
+        const usageRows = await api.usage();
+        const health = {};
+        usageRows.forEach((row) => {
+          if (row?.config?.id != null) health[row.config.id] = row.health;
+        });
+        setHealthByConfigId(health);
+      } catch {
+        setHealthByConfigId({});
+      }
     } catch (err) {
       setConfigs([]);
       setApiTokens([]);
@@ -515,6 +543,11 @@ export default function SettingsPage() {
       base_url: form.base_url.trim() || null,
       is_enabled: true,
       extra: {},
+      pricing_model: form.pricing_model,
+      subscription_amount: form.pricing_model === "subscription" && form.subscription_amount !== "" ? Number(form.subscription_amount) : null,
+      subscription_currency: form.subscription_currency.trim().toUpperCase() || "USD",
+      billing_cadence: form.pricing_model === "subscription" ? form.billing_cadence : null,
+      billing_anchor: form.pricing_model === "subscription" && form.billing_anchor ? new Date(form.billing_anchor).toISOString() : null,
     };
     if (isCustom) {
       payload.extra = {
@@ -621,6 +654,62 @@ export default function SettingsPage() {
       setCredentialSaving(false);
     }
   }
+  function openBillingDialog(config) {
+    setBillingTarget(config);
+    setBillingForm({
+      pricing_model: config.pricing_model || "payg",
+      subscription_amount: config.subscription_amount ?? "",
+      subscription_currency: config.subscription_currency || "USD",
+      billing_cadence: config.billing_cadence || "monthly",
+      billing_anchor: config.billing_anchor ? String(config.billing_anchor).slice(0, 16) : "",
+    });
+  }
+
+  function closeBillingDialog() {
+    if (billingSaving) return;
+    setBillingTarget(null);
+    setBillingForm(null);
+  }
+
+  async function saveBilling() {
+    if (!billingTarget || !billingForm) return;
+    setError("");
+    setBillingSaving(true);
+    try {
+      await api.updateConfig(billingTarget.id, {
+        pricing_model: billingForm.pricing_model,
+        subscription_amount: billingForm.pricing_model === "subscription" && billingForm.subscription_amount !== "" ? Number(billingForm.subscription_amount) : null,
+        subscription_currency: billingForm.subscription_currency.trim().toUpperCase() || "USD",
+        billing_cadence: billingForm.pricing_model === "subscription" ? billingForm.billing_cadence : null,
+        billing_anchor: billingForm.pricing_model === "subscription" && billingForm.billing_anchor ? new Date(billingForm.billing_anchor).toISOString() : null,
+      });
+      setBillingTarget(null);
+      setBillingForm(null);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBillingSaving(false);
+    }
+  }
+
+  async function retryConfig(config) {
+    // Reuse the existing single-provider poll; guard against duplicate clicks so
+    // a retry can't spawn a concurrent storm. Refresh health after completion.
+    if (!config || retryingConfigId === config.id) return;
+    setError("");
+    setRetryingConfigId(config.id);
+    try {
+      await api.pollConfig(config.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+      await load();
+    } finally {
+      setRetryingConfigId(null);
+    }
+  }
+
   function updateHomepageForm(patch) {
     setHomepageCopied(false);
     setHomepageTokenCopied(false);
@@ -1388,6 +1477,81 @@ export default function SettingsPage() {
                       )}
                     </div>
                   </div>
+                  {(() => {
+                    const health = healthByConfigId[config.id];
+                    const errSummary = providerErrorSummary(health);
+                    if (!health || health.status === "healthy") return null;
+                    return (
+                      <div
+                        className="config-health"
+                        style={{ gridColumn: "1 / -1" }}
+                      >
+                        <Alert
+                          severity={
+                            errSummary?.category === "authentication"
+                              ? "error"
+                              : "warning"
+                          }
+                          action={
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => retryConfig(config)}
+                              disabled={retryingConfigId === config.id}
+                            >
+                              {retryingConfigId === config.id
+                                ? "Retrying…"
+                                : "Retry"}
+                            </Button>
+                          }
+                        >
+                          <Typography variant="body2">
+                            {errSummary
+                              ? providerErrorActionLabel(errSummary)
+                              : healthText(health)}
+                          </Typography>
+                          {errSummary?.httpStatus != null && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              HTTP status: {errSummary.httpStatus}
+                            </Typography>
+                          )}
+                          {errSummary?.stage && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Stage: {stageLabel(errSummary.stage)}
+                            </Typography>
+                          )}
+                          {health.last_success_at && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Last successful sync:{" "}
+                              {formatDateTime(health.last_success_at)}
+                            </Typography>
+                          )}
+                          {health.last_attempt_at && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Last attempt:{" "}
+                              {formatDateTime(health.last_attempt_at)}
+                            </Typography>
+                          )}
+                        </Alert>
+                      </div>
+                    );
+                  })()}
                   <div className="config-detail">
                     <span>Credential</span>
                     {config.api_key_masked}
@@ -1395,6 +1559,12 @@ export default function SettingsPage() {
                   <div className="config-detail">
                     <span>Endpoint</span>
                     {config.base_url || "Provider default"}
+                  </div>
+                  <div className="config-detail">
+                    <span>Billing</span>
+                    {config.pricing_model === "subscription"
+                      ? `${config.subscription_amount ?? "-"} ${config.subscription_currency || "USD"} / ${config.billing_cadence || "period"}`
+                      : config.pricing_model || "payg"}
                   </div>
                   <div className="config-actions">
                     <label className="config-switch">
@@ -1442,6 +1612,15 @@ export default function SettingsPage() {
                         aria-label={`Replace credential for ${config.label}`}
                       >
                         <KeyRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Billing configuration">
+                      <IconButton
+                        size="small"
+                        onClick={() => openBillingDialog(config)}
+                        aria-label={`Edit billing for ${config.label}`}
+                      >
+                        $
                       </IconButton>
                     </Tooltip>
                     <Tooltip title="Alert thresholds">
@@ -2239,6 +2418,34 @@ export default function SettingsPage() {
               }
               required={isCustom}
             />
+            <Typography className="dialog-section-label">Billing / value analytics</Typography>
+            <FormControl fullWidth>
+              <InputLabel>Pricing model</InputLabel>
+              <Select
+                label="Pricing model"
+                value={form.pricing_model}
+                onChange={(event) => setForm({ ...form, pricing_model: event.target.value })}
+              >
+                <MenuItem value="payg">PAYG / API billing</MenuItem>
+                <MenuItem value="subscription">Subscription</MenuItem>
+                <MenuItem value="free">Free</MenuItem>
+              </Select>
+              <FormHelperText>Used by Usage value analytics; prices are configured, not hard-coded.</FormHelperText>
+            </FormControl>
+            {form.pricing_model === "subscription" && (
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <TextField label="Subscription amount" type="number" value={form.subscription_amount} onChange={(event) => setForm({ ...form, subscription_amount: event.target.value })} />
+                <TextField label="Currency" value={form.subscription_currency} onChange={(event) => setForm({ ...form, subscription_currency: event.target.value.toUpperCase() })} inputProps={{ maxLength: 3 }} />
+                <FormControl sx={{ minWidth: 150 }}>
+                  <InputLabel>Cadence</InputLabel>
+                  <Select label="Cadence" value={form.billing_cadence} onChange={(event) => setForm({ ...form, billing_cadence: event.target.value })}>
+                    <MenuItem value="monthly">Monthly</MenuItem>
+                    <MenuItem value="yearly">Yearly</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField label="Billing anchor" type="datetime-local" value={form.billing_anchor} onChange={(event) => setForm({ ...form, billing_anchor: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} helperText="Optional; missing anchors are clearly estimated." />
+              </Stack>
+            )}
             {isCustom && (
               <Stack spacing={2.25}>
                 <Typography className="dialog-section-label">
@@ -2531,6 +2738,49 @@ export default function SettingsPage() {
             disabled={genericApiTokenSaving}
           >
             Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={Boolean(billingTarget)} onClose={closeBillingDialog} fullWidth maxWidth="sm">
+        <DialogTitle>
+          <Stack spacing={0.75}>
+            <Typography component="span" sx={{ display: "block" }} variant="overline" color="primary.main">Billing configuration</Typography>
+            <Typography component="span" sx={{ display: "block" }} variant="h5">{billingTarget?.label}</Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          {billingForm && (
+            <Stack spacing={2} sx={{ mt: 1 }}>
+              <Alert severity="info">These values drive Usage value analytics. API-equivalent value is an estimate, not an invoice or ROI calculation.</Alert>
+              <FormControl fullWidth>
+                <InputLabel>Pricing model</InputLabel>
+                <Select label="Pricing model" value={billingForm.pricing_model} onChange={(event) => setBillingForm({ ...billingForm, pricing_model: event.target.value })}>
+                  <MenuItem value="payg">PAYG / API billing</MenuItem>
+                  <MenuItem value="subscription">Subscription</MenuItem>
+                  <MenuItem value="free">Free</MenuItem>
+                </Select>
+              </FormControl>
+              {billingForm.pricing_model === "subscription" && (
+                <>
+                  <TextField label="Subscription amount" type="number" value={billingForm.subscription_amount} onChange={(event) => setBillingForm({ ...billingForm, subscription_amount: event.target.value })} />
+                  <TextField label="Currency" value={billingForm.subscription_currency} onChange={(event) => setBillingForm({ ...billingForm, subscription_currency: event.target.value.toUpperCase() })} inputProps={{ maxLength: 3 }} />
+                  <FormControl fullWidth>
+                    <InputLabel>Billing cadence</InputLabel>
+                    <Select label="Billing cadence" value={billingForm.billing_cadence} onChange={(event) => setBillingForm({ ...billingForm, billing_cadence: event.target.value })}>
+                      <MenuItem value="monthly">Monthly</MenuItem>
+                      <MenuItem value="yearly">Yearly</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField label="Billing anchor" type="datetime-local" value={billingForm.billing_anchor} onChange={(event) => setBillingForm({ ...billingForm, billing_anchor: event.target.value })} slotProps={{ inputLabel: { shrink: true } }} helperText="Optional. If missing, analytics marks the allocation as estimated." />
+                </>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button color="inherit" onClick={closeBillingDialog} disabled={billingSaving}>Cancel</Button>
+          <Button variant="contained" onClick={saveBilling} disabled={billingSaving || (billingForm?.pricing_model === "subscription" && billingForm.subscription_amount === "")} startIcon={billingSaving ? <CircularProgress size={16} color="inherit" /> : null}>
+            {billingSaving ? "Saving…" : "Save billing"}
           </Button>
         </DialogActions>
       </Dialog>

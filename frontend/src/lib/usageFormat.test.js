@@ -20,7 +20,10 @@ import {
   opencodeGoLimitSections,
   overallUsageGroups,
   PREFERRED_METRICS,
+  providerErrorActionLabel,
+  providerErrorSummary,
   selectHistoryMetric,
+  stageLabel,
 } from './usageFormat.js'
 
 describe('codexRemainingValue', () => {
@@ -139,21 +142,35 @@ describe('overallUsageGroups', () => {
 
   it('separates percentage metrics from unit metrics', () => {
     const groups = overallUsageGroups(items)
-    expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['session remaining percent', 'usage percent'])
-    expect(groups.units.metrics.map((metric) => metric.label)).toEqual(['reset credits available', 'credits remaining', 'pages'])
+    expect(groups.percent.metrics.map((metric) => metric.label)).toEqual(['usage percent', 'session remaining percent'])
+    expect(groups.units.metrics.map((metric) => metric.label)).toEqual(['credits remaining', 'reset credits available', 'pages'])
   })
 
-  it('uses the provider type as label and drops the generic "main" label', () => {
+  it('uses canonical provider display names and drops generic row labels', () => {
     const groups = overallUsageGroups(items)
-    expect(groups.percent.metrics.find((metric) => metric.label === 'session remaining percent').providerLabel).toBe('codex')
-    expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('firecrawl · Firecrawl Prod')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'session remaining percent').providerLabel).toBe('OpenAI Codex')
+    expect(groups.percent.metrics.find((metric) => metric.label === 'usage percent').providerLabel).toBe('Firecrawl')
+  })
+
+  it('adds labels only when multiple visible configs share a provider', () => {
+    const groups = overallUsageGroups([
+      ...items,
+      {
+        config: { id: 4, provider: 'codex', label: 'Work', is_visible: true },
+        latest: { metrics: [{ label: 'session_used_percent', value: 40, unit: '%' }] },
+      },
+    ])
+    expect(groups.percent.metrics.map((metric) => metric.providerLabel).filter((label) => label.startsWith('OpenAI Codex'))).toEqual([
+      'OpenAI Codex',
+      'OpenAI Codex - Work',
+    ])
   })
 
   it('does not aggregate unit metrics across providers', () => {
     const groups = overallUsageGroups(items)
     const credits = groups.units.metrics.filter((metric) => metric.unit === 'credits')
     expect(credits).toHaveLength(2)
-    expect(credits.map((metric) => metric.numericValue)).toEqual([10, 50])
+    expect(credits.map((metric) => metric.numericValue)).toEqual([50, 10])
     expect(credits.every((metric) => metric.percent !== null)).toBe(true)
   })
 })
@@ -480,5 +497,68 @@ describe('opencodeGoLimitSections', () => {
     ].filter((metric) => !OPENCODEGO_LIMIT_METRIC_LABELS.includes(metric.label))
 
     expect(genericRows.map((metric) => metric.label)).toEqual(['balance_fallback_enabled', 'exhausted'])
+  })
+})
+
+describe('providerErrorSummary', () => {
+  it('returns null for a healthy provider with no error details', () => {
+    expect(providerErrorSummary({ status: 'healthy' })).toBeNull()
+    expect(providerErrorSummary({ status: 'healthy', latest_error_details: null })).toBeNull()
+  })
+
+  it('surfaces normalized error fields from health', () => {
+    const summary = providerErrorSummary({
+      latest_error_details: {
+        category: 'rate_limit',
+        message: 'Too Many Requests',
+        http_status: 429,
+        stage: 'fetch_usage',
+        retryable: true,
+        occurred_at: '2026-09-03T15:03:00Z',
+      },
+    })
+    expect(summary.category).toBe('rate_limit')
+    expect(summary.httpStatus).toBe(429)
+    expect(summary.stage).toBe('fetch_usage')
+    expect(summary.retryable).toBe(true)
+    expect(summary.occurredAt).toBe('2026-09-03T15:03:00Z')
+  })
+
+  it('falls back to latest_error for the message', () => {
+    const summary = providerErrorSummary({
+      latest_error_details: { category: 'authentication', message: null, http_status: 401, stage: 'fetch_usage', retryable: false, occurred_at: '2026-09-03T15:03:00Z' },
+      latest_error: 'Authentication rejected',
+    })
+    expect(summary.message).toBe('Authentication rejected')
+  })
+})
+
+describe('providerErrorActionLabel', () => {
+  it('gives actionable reconnect wording for authentication failures', () => {
+    expect(providerErrorActionLabel({ category: 'authentication' })).toBe('Authentication rejected - reconnect provider.')
+  })
+
+  it('gives schema/upstream wording for schema_changed', () => {
+    expect(providerErrorActionLabel({ category: 'schema_changed' })).toBe('Provider returned an unsupported response. Check server logs for diagnostic details.')
+  })
+
+  it('falls back to the message otherwise', () => {
+    expect(providerErrorActionLabel({ category: 'rate_limit', message: 'Too Many Requests' })).toBe('Too Many Requests')
+  })
+})
+
+describe('stageLabel', () => {
+  it('humanizes known stages', () => {
+    expect(stageLabel('fetch_usage')).toBe('Fetch usage')
+    expect(stageLabel('oauth_refresh')).toBe('OAuth refresh')
+  })
+
+  it('falls back to spaced raw stage', () => {
+    expect(stageLabel('custom_stage')).toBe('custom stage')
+  })
+
+  it('returns null for missing stage', () => {
+    expect(stageLabel(null)).toBeNull()
+    expect(stageLabel(undefined)).toBeNull()
   })
 })

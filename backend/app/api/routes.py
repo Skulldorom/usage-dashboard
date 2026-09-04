@@ -17,8 +17,9 @@ from app.database import engine, get_session
 from app.health import default_max_stale_age, derive_health
 from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
+from app.providers.errors import classify_exception, log_provider_failure
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -260,7 +261,23 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
     if display_order is None:
         max_order = await session.scalar(select(func.max(ProviderConfig.display_order)))
         display_order = int(max_order or 0) + 1 if max_order is not None else 0
-    config = ProviderConfig(provider=payload.provider, label=label, encrypted_api_key=encrypted, base_url=payload.base_url, extra=payload.extra, is_enabled=payload.is_enabled, is_visible=payload.is_visible, display_order=display_order, alert_thresholds=[rule.model_dump() for rule in payload.alert_thresholds])
+    config = ProviderConfig(
+        provider=payload.provider,
+        label=label,
+        encrypted_api_key=encrypted,
+        base_url=payload.base_url,
+        extra=payload.extra,
+        is_enabled=payload.is_enabled,
+        is_visible=payload.is_visible,
+        display_order=display_order,
+        alert_thresholds=[rule.model_dump() for rule in payload.alert_thresholds],
+        pricing_model=payload.pricing_model,
+        subscription_amount=payload.subscription_amount,
+        subscription_currency=payload.subscription_currency,
+        billing_cadence=payload.billing_cadence,
+        billing_anchor=payload.billing_anchor,
+    )
+    _normalize_and_validate_billing(config)
     session.add(config)
     try:
         await session.commit()
@@ -380,6 +397,43 @@ async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSess
     return [_config_read(row) for row in rows]
 
 
+def _normalize_and_validate_billing(config: ProviderConfig) -> None:
+    """Validate the *resulting persisted* billing combination, not just the PATCH.
+
+    A partial PATCH can leave a persisted state that is invalid on its own (e.g.
+    subscription without a cadence, or a stale anchor left behind after switching
+    to payg). This normalizes currency/model and enforces the invariants on the
+    final merged row, clearing subscription-only fields when they no longer apply.
+    """
+    model = (config.pricing_model or "payg").strip().lower()
+    if model not in PRICING_MODELS:
+        raise HTTPException(status_code=422, detail=f"Unsupported pricing model: {config.pricing_model}")
+    config.pricing_model = model
+
+    currency = (config.subscription_currency or "USD").strip().upper()
+    if len(currency) != 3 or not currency.isalpha():
+        raise HTTPException(status_code=422, detail=f"Invalid subscription currency: {currency!r}")
+    config.subscription_currency = currency
+
+    if model == "subscription":
+        if config.subscription_amount is None:
+            raise HTTPException(status_code=422, detail="subscription_amount is required for subscription pricing")
+        if config.subscription_amount < 0:
+            raise HTTPException(status_code=422, detail="subscription_amount cannot be negative")
+        cadence = (config.billing_cadence or "").strip().lower()
+        if not cadence:
+            raise HTTPException(status_code=422, detail="billing_cadence is required for subscription pricing")
+        if cadence not in BILLING_CADENCES:
+            raise HTTPException(status_code=422, detail=f"Unsupported billing cadence: {config.billing_cadence}")
+        config.billing_cadence = cadence
+    else:
+        # payg/free: subscription-only fields are cleared so stale cadence/anchor/
+        # amount never linger in an inconsistent persisted combination.
+        config.subscription_amount = None
+        config.billing_cadence = None
+        config.billing_anchor = None
+
+
 @router.patch("/configs/{config_id}", response_model=ProviderConfigRead, dependencies=[Depends(require_admin_auth)])
 async def update_config(config_id: int, payload: ProviderConfigUpdate, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
@@ -401,6 +455,17 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.display_order = payload.display_order
     if payload.has_update_for("alert_thresholds") and payload.alert_thresholds is not None:
         config.alert_thresholds = [rule.model_dump() for rule in payload.alert_thresholds]
+    if payload.has_update_for("pricing_model") and payload.pricing_model is not None:
+        config.pricing_model = payload.pricing_model
+    if payload.has_update_for("subscription_amount"):
+        config.subscription_amount = payload.subscription_amount
+    if payload.has_update_for("subscription_currency") and payload.subscription_currency is not None:
+        config.subscription_currency = payload.subscription_currency
+    if payload.has_update_for("billing_cadence"):
+        config.billing_cadence = payload.billing_cadence
+    if payload.has_update_for("billing_anchor"):
+        config.billing_anchor = payload.billing_anchor
+    _normalize_and_validate_billing(config)
     await session.commit()
     await session.refresh(config)
     return _config_read(config)
@@ -437,10 +502,21 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
         updated_secret = getattr(adapter, "updated_secret", None)
         if updated_secret:
             config.encrypted_api_key = crypto.encrypt(updated_secret)
-        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None)
+        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None, error_details=None)
         native = adapter.native_observations(usage.raw)
-    except Exception as exc:
-        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status="error", summary=f"{config.label}: polling failed", metrics=[], raw={}, error=str(exc))
+    except Exception as exc:  # noqa: BLE001 - classify + record, never leak secrets
+        error = classify_exception(exc, stage="fetch_usage")
+        snapshot = UsageSnapshot(
+            provider_config_id=config.id,
+            provider=config.provider,
+            status="error",
+            summary=f"{config.label}: polling failed",
+            metrics=[],
+            raw={},
+            error=error.message,
+            error_details=error.to_dict(),
+        )
+        log_provider_failure(provider=config.provider, config_id=config.id, error=error)
         native = []
     return snapshot, native
 
@@ -695,13 +771,18 @@ async def _health_for_config(session: AsyncSession, config: ProviderConfig) -> t
             )
         )).scalar_one()
 
+    # Only surface error details when the *latest* attempt failed; a later
+    # success clears stale error state so a healthy provider never shows an old
+    # error from before its most recent good sync.
+    latest_is_error = latest is not None and latest.status == "error"
     health = derive_health(
         latest_status=latest.status if latest is not None else None,
         last_attempt_at=latest.checked_at if latest is not None else None,
         last_success_at=last_success_at,
         last_failure_at=last_failure.checked_at if last_failure is not None else None,
         consecutive_failures=int(consecutive or 0),
-        latest_error=last_failure.error if last_failure is not None else None,
+        latest_error=last_failure.error if (latest_is_error and last_failure is not None) else None,
+        latest_error_details=last_failure.error_details if (latest_is_error and last_failure is not None) else None,
         now=datetime.now(UTC),
         max_stale_age=default_max_stale_age(settings.auto_poll_interval_minutes),
     )

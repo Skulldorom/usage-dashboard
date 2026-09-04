@@ -17,18 +17,27 @@ def floor_zero(value: float) -> float:
     return max(0.0, value)
 
 
-def utilization_metric(capabilities: dict) -> tuple[str, dict] | None:
-    """Return the metric (label, spec) that best expresses quota utilization."""
+def utilization_metrics(capabilities: dict) -> list[tuple[str, dict]]:
+    """Return every metric that can produce quota utilization, preserving windows."""
     metrics = (capabilities or {}).get("metrics") or {}
-    for label, spec in metrics.items():
-        if spec.get("utilization"):
-            return label, spec
-    for label, spec in metrics.items():
-        if spec.get("type") in ("remaining", "counter") and (
-            spec.get("maximum") is not None or spec.get("capacity_metric")
-        ):
-            return label, spec
-    return None
+    explicit = [(label, spec) for label, spec in metrics.items() if spec.get("utilization")]
+    if explicit:
+        return explicit
+    return [
+        (label, spec)
+        for label, spec in metrics.items()
+        if spec.get("type") in ("remaining", "counter")
+        and (spec.get("maximum") is not None or spec.get("capacity_metric"))
+    ]
+
+
+def utilization_metric(capabilities: dict) -> tuple[str, dict] | None:
+    """Return the preferred metric for headline quota utilization."""
+    metrics = utilization_metrics(capabilities)
+    if not metrics:
+        return None
+    overview = next((entry for entry in metrics if entry[1].get("overview")), None)
+    return overview or metrics[0]
 
 
 def utilization_value(value: float | None, *, spec: dict, capacity: float | None = None) -> float | None:
@@ -41,6 +50,8 @@ def utilization_value(value: float | None, *, spec: dict, capacity: float | None
         return None
     metric_type = spec.get("type")
     maximum = spec.get("maximum")
+    if spec.get("utilization") and spec.get("unit") == "%" and metric_type == "gauge":
+        return floor_zero(value)
     if metric_type == "counter":
         if maximum is not None and maximum > 0:
             return floor_zero(value / maximum * 100)

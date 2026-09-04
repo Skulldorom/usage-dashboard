@@ -15,6 +15,7 @@ import {
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import { auditRows, confidenceLabel, hasAuditData, reconciliationWarnings } from '../lib/auditFormat.js'
+import { providerNameWithLabel } from '../lib/analyticsFormat.js'
 
 function AuditRows({ rows }) {
   if (!rows.length) {
@@ -51,6 +52,7 @@ export default function ProviderAuditPanel({ provider }) {
   const rows = auditRows(provider)
   const warnings = reconciliationWarnings(provider)
   const confidence = provider.confidence || provider.audit?.capacity?.confidence
+  const displayName = providerNameWithLabel(provider.provider, provider.label, { disambiguate: provider.disambiguate })
 
   return (
     <>
@@ -59,7 +61,7 @@ export default function ProviderAuditPanel({ provider }) {
         variant="text"
         startIcon={<InfoOutlinedIcon />}
         onClick={() => setOpen(true)}
-        aria-label={`Why this number for ${provider.provider}`}
+        aria-label={`Why this number for ${displayName}`}
       >
         Why this number?
       </Button>
@@ -68,7 +70,7 @@ export default function ProviderAuditPanel({ provider }) {
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <InfoOutlinedIcon color="primary" />
-            <span>Why this number? - {provider.provider}{provider.label && provider.label !== 'main' ? ` · ${provider.label}` : ''}</span>
+            <span>Why this number? - {displayName}</span>
           </Stack>
           <IconButton onClick={() => setOpen(false)} aria-label="Close">
             <CloseRoundedIcon />

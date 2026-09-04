@@ -15,6 +15,7 @@ from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
+from app.analytics.economics import provider_economics, provider_level_economics, summarize as summarize_economics, value_trend
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
 from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
@@ -30,6 +31,7 @@ from app.analytics.schemas import (
     AnalyticsSummary,
     AnalyticsSummaryCard,
     AnalyticsTimeseries,
+    EconomicsResponse,
     CoverageInfo,
     HermesOverlay,
     OverviewActivityDimension,
@@ -50,7 +52,7 @@ from app.analytics.reconciliation import (
     degrade_confidence,
     reconcile,
 )
-from app.analytics.utilization import utilization_metric, utilization_observations
+from app.analytics.utilization import utilization_metric, utilization_metrics, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
 from app.models import DataSourceConfig, ProviderConfig, UsageObservation
@@ -172,6 +174,39 @@ def _spec_unit(spec: dict | None, observations: list[Observation]) -> str | None
 def _latest_reset_at(observations: list[Observation]) -> datetime | None:
     resets = [obs.reset_at for obs in observations if obs.reset_at is not None]
     return max(resets) if resets else None
+
+
+def _window_label(window: str | None, metric: str) -> str:
+    if window:
+        return {"5h": "5h", "week": "weekly", "month": "monthly"}.get(window, window)
+    normalized = metric.replace("_remaining_percent", "").replace("_used_percent", "")
+    return normalized.replace("five_hour", "session").replace("_", " ")
+
+
+_PROVIDER_DISPLAY_NAMES = {
+    "anthropic": "Anthropic",
+    "codex": "OpenAI Codex",
+    "deepseek": "DeepSeek",
+    "firecrawl": "Firecrawl",
+    "openai": "OpenAI",
+    "openrouter": "OpenRouter",
+    "opencode-go": "OpenCode Go",
+    "custom_http": "Custom HTTP",
+}
+
+
+def _provider_display_name(provider: str | None) -> str:
+    return _PROVIDER_DISPLAY_NAMES.get(provider or "", str(provider or "Provider").replace("_", " "))
+
+
+def _utilization_series_for_metric(observations: list[Observation], metric_name: str, spec: dict) -> list[Observation]:
+    point_obs = [obs for obs in observations if obs.metric == metric_name]
+    capacity_obs = (
+        [obs for obs in observations if obs.metric == spec.get("capacity_metric")]
+        if spec.get("capacity_metric")
+        else None
+    )
+    return utilization_observations(point_obs, metric=metric_name, spec=spec, capacity_observations=capacity_obs)
 
 
 def _window_start(spec: dict | None, reset_at: datetime | None, now: datetime) -> datetime | None:
@@ -327,6 +362,7 @@ async def provider_capacity(
         provider=config.provider,
         label=config.label,
         metric=util_metric_name,
+        window=_window_label(util_spec.get("window"), util_metric_name),
         capacity_used_pct=used_pct,
         capacity_remaining_pct=remaining_pct,
         overage_pct=overage_pct,
@@ -927,6 +963,10 @@ async def overview(
     configs = (
         await session.execute(select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id)))
     ).scalars().all()
+    provider_config_counts = {
+        provider: sum(1 for config in configs if config.provider == provider)
+        for provider in {config.provider for config in configs}
+    }
 
     now = datetime.now(UTC)
     end = _as_aware(to_) if to_ is not None else now
@@ -985,22 +1025,17 @@ async def overview(
         previous_util_pct: float | None = None
         remaining_pct: float | None = None
         reset_at: datetime | None = None
-        util_buckets = None
         latest_util_source: str | None = None
         forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
+        all_utils = utilization_metrics(capabilities) if capabilities else []
         quota_impact = None
+        latest = None
+        point_obs: list[Observation] = []
         if util:
             util_metric_name, util_spec = util
             point_obs = [obs for obs in observations if obs.metric == util_metric_name]
-            capacity_obs = (
-                [obs for obs in observations if obs.metric == util_spec.get("capacity_metric")]
-                if util_spec.get("capacity_metric")
-                else None
-            )
-            util_obs = utilization_observations(
-                point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
-            )
+            util_obs = _utilization_series_for_metric(observations, util_metric_name, util_spec)
             if util_obs:
                 providers_with_forecasts += 1
                 latest = max(util_obs, key=lambda obs: obs.observed_at)
@@ -1014,10 +1049,6 @@ async def overview(
                 if previous_points:
                     previous_util_pct = max(previous_points, key=lambda obs: obs.observed_at).value
                     previous_utilizations.append(previous_util_pct)
-                util_buckets = fill_buckets(
-                    bucketize(util_obs, metric=util_metric_name, interval=interval, tz=timezone, start=start, end=end),
-                    interval=interval, start=start, end=end, tz=timezone,
-                )
                 # Quota-impact correlation over long history (not the 30d range).
                 impact_hermes = await _load_mapped_hermes_observations(
                     session, config.provider, start=now - timedelta(days=365), end=now,
@@ -1126,6 +1157,7 @@ async def overview(
             },
             estimated_cost=estimated_cost,
             estimated_cost_source=estimated_cost_source,
+            disambiguate=provider_config_counts.get(config.provider, 0) > 1,
         )
         providers.append(provider)
 
@@ -1150,19 +1182,35 @@ async def overview(
                         confidence=conf,
                         state=state,
                         reason=reason,
+                        disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                     )
                 )
 
-        if util_buckets is not None and util_metric_name is not None:
+        for capacity_metric_name, capacity_spec in all_utils:
+            capacity_util_obs = _utilization_series_for_metric(observations, capacity_metric_name, capacity_spec)
+            if not capacity_util_obs:
+                continue
+            capacity_buckets = fill_buckets(
+                bucketize(capacity_util_obs, metric=capacity_metric_name, interval=interval, tz=timezone, start=start, end=end),
+                interval=interval, start=start, end=end, tz=timezone,
+            )
+            capacity_latest = max(capacity_util_obs, key=lambda obs: obs.observed_at)
+            window_label = _window_label(capacity_spec.get("window"), capacity_metric_name)
+            display_label = _provider_display_name(config.provider)
+            if provider_config_counts.get(config.provider, 0) > 1 and config.label and config.label != "main":
+                display_label = f"{display_label} - {config.label}"
             comparison.append(
                 OverviewComparisonSeries(
                     config_id=config.id,
                     provider=config.provider,
                     label=config.label,
-                    metric=util_metric_name,
-                    source=latest_util_source,
+                    metric=capacity_metric_name,
+                    window=window_label,
+                    display_name=f"{display_label} · {window_label}",
+                    source=capacity_latest.source,
                     confidence=conf,
-                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in util_buckets],
+                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in capacity_buckets],
+                    disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
 
@@ -1229,6 +1277,7 @@ async def overview(
                     buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in _activity_series(
                         observations, labels_in_dimension, interval=interval, tz=timezone, start=start, end=end,
                     )],
+                    disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
         if not entries:
@@ -1260,6 +1309,90 @@ async def overview(
         providers=providers,
         comparison=comparison,
         activity=activity,
+    )
+
+
+@router.get(
+    "/economics",
+    response_model=EconomicsResponse,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def economics(
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    provider: str | None = None,
+    config_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ is not None else now
+    start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="'to' must be after 'from'")
+    query = select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id))
+    if provider:
+        query = query.where(ProviderConfig.provider == provider)
+    if config_id:
+        query = query.where(ProviderConfig.id == config_id)
+    configs = (await session.execute(query)).scalars().all()
+
+    # Multiplicity is a *global* property of persisted configs, independent of
+    # the response filter. Filtering to a single config_id (or provider) must
+    # not make a shared provider's Hermes workload look uniquely attributable:
+    # if two configs exist for a provider, the workload stays ambiguous even when
+    # the caller only asked for one of them.
+    providers_of_interest = {config.provider for config in configs}
+    provider_config_counts: dict[str, int] = {}
+    if providers_of_interest:
+        count_rows = (
+            await session.execute(
+                select(ProviderConfig.provider, func.count(ProviderConfig.id))
+                .where(ProviderConfig.provider.in_(providers_of_interest))
+                .group_by(ProviderConfig.provider)
+            )
+        ).all()
+        provider_config_counts = {provider: int(count) for provider, count in count_rows}
+
+    # Load provider-level Hermes observations once per provider. Multiple configs
+    # of the same provider share the same provider-level observations, so copying
+    # them into every config row would double-count observed tokens/value in the
+    # aggregate economics summary.
+    hermes_by_provider: dict[str, list] = {}
+    for provider in provider_config_counts:
+        hermes_by_provider[provider] = await _load_mapped_hermes_observations(session, provider, start=start, end=end)
+
+    rows = []
+    provider_level = []
+    for config in configs:
+        provider_observations = await _load_observations(session, config.id, start=start, end=end)
+        config_count = provider_config_counts.get(config.provider, 1)
+        ambiguous = config_count > 1
+        # Ambiguous configs get no config-level Hermes workload — neither in their
+        # core economics nor their per-billing-period value trend — so a shared
+        # provider's workload is never double-attributed to two configs.
+        effective_hermes = [] if ambiguous else hermes_by_provider.get(config.provider, [])
+        row = provider_economics(
+            config, provider_observations, effective_hermes, start, end,
+            attribution_ambiguous=ambiguous,
+        )
+        row["disambiguate"] = ambiguous
+        row["trend"] = [] if ambiguous else value_trend(config, effective_hermes, start, end)
+        rows.append(row)
+
+    # Surface shared provider-level workload once for providers with multiple
+    # configs, so it is not silently dropped while remaining non-duplicated.
+    for provider, count in sorted(provider_config_counts.items()):
+        if count <= 1:
+            continue
+        rollup = provider_level_economics(provider, hermes_by_provider.get(provider, []), count)
+        if rollup is not None:
+            provider_level.append(rollup)
+
+    return EconomicsResponse(
+        period={"start": start.isoformat(), "end": end.isoformat()},
+        summary=summarize_economics(rows),
+        providers=rows,
+        provider_level=provider_level,
     )
 
 

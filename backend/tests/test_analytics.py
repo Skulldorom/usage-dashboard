@@ -281,7 +281,9 @@ def test_sustainable_pacing():
 def test_confidence_low_with_few_observations():
     base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
     observations = [_obs("tokens", 1.0, base), _obs("tokens", 1.0, base + timedelta(hours=1))]
-    assert confidence_level(observations)["level"] == "low"
+    # Inject a fixed "now" so the short-history result is deterministic regardless
+    # of the wall-clock date the suite runs on.
+    assert confidence_level(observations, now=base + timedelta(days=2))["level"] == "low"
 
 
 def test_confidence_high_with_rich_native_history():

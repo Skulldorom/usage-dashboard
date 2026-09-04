@@ -1,5 +1,6 @@
 // Pure formatting/metric helpers extracted from DashboardPage so they can be
 // unit-tested in isolation without rendering React components.
+import { providerNameWithLabel } from './analyticsFormat.js'
 
 export const PREFERRED_METRICS = {
   anthropic: ['input_tokens', 'output_tokens', 'num_requests'],
@@ -202,10 +203,9 @@ function displaySnapshot(item) {
   return item?.last_good || item?.latest || null
 }
 
-function displayProviderLabel(item) {
-  const provider = item?.config?.provider || 'Provider'
-  const label = item?.config?.label
-  return label && label !== 'main' && label !== provider ? `${provider} · ${label}` : provider
+function displayProviderLabel(item, providerCounts = {}) {
+  const provider = item?.config?.provider
+  return providerNameWithLabel(provider, item?.config?.label, { disambiguate: (providerCounts[provider] || 0) > 1 })
 }
 
 function metricTooltip({ providerLabel, metricLabel, value }) {
@@ -216,12 +216,18 @@ export function overallUsageGroups(items) {
   const percentMetrics = []
   const unitMetrics = []
 
-  items
-    .filter((item) => item?.config?.is_visible)
+  const visibleItems = items.filter((item) => item?.config?.is_visible)
+  const providerCounts = visibleItems.reduce((counts, item) => {
+    const provider = item.config.provider
+    counts[provider] = (counts[provider] || 0) + 1
+    return counts
+  }, {})
+
+  visibleItems
     .forEach((item) => {
       const snapshot = displaySnapshot(item)
       const provider = item.config.provider
-      const providerLabel = displayProviderLabel(item)
+      const providerLabel = displayProviderLabel(item, providerCounts)
 
       ;(snapshot?.metrics || []).forEach((metric) => {
         if (typeof metric.value !== 'number') return
@@ -363,4 +369,42 @@ export function healthText(health) {
   if (status === 'stale') return `Last successful update ${age || 'unknown'} · using last-known data`
   if (status === 'error') return health?.last_success_at ? `Unavailable · last successful update ${age || 'unknown'}` : 'Provider unavailable'
   return 'No successful connection yet'
+}
+
+export function stageLabel(stage) {
+  if (!stage) return null
+  return {
+    fetch_usage: 'Fetch usage',
+    oauth_refresh: 'OAuth refresh',
+    config_test: 'Test connection',
+    parse_response: 'Parse response',
+  }[stage] || String(stage).replaceAll('_', ' ')
+}
+
+export function providerErrorSummary(health) {
+  // Normalized, sanitized error info from the /usage health payload. Returns
+  // null for healthy/unknown providers so callers never render stale errors.
+  const details = health?.latest_error_details
+  if (!details) return null
+  return {
+    category: details.category ?? null,
+    message: details.message || health?.latest_error || null,
+    httpStatus: details.http_status ?? null,
+    stage: details.stage ?? null,
+    retryable: details.retryable ?? null,
+    occurredAt: details.occurred_at ?? null,
+  }
+}
+
+export function isAuthenticationError(errorSummary) {
+  return errorSummary?.category === 'authentication'
+}
+
+export function providerErrorActionLabel(errorSummary) {
+  // Actionable wording for authentication failures (reconnect) vs schema/upstream.
+  if (isAuthenticationError(errorSummary)) return 'Authentication rejected - reconnect provider.'
+  if (errorSummary?.category === 'schema_changed' || errorSummary?.category === 'parse_error') {
+    return 'Provider returned an unsupported response. Check server logs for diagnostic details.'
+  }
+  return errorSummary?.message || 'Provider request failed'
 }

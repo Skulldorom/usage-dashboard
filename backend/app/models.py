@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -49,6 +49,11 @@ class ProviderConfig(Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
     display_order: Mapped[int] = mapped_column(Integer, default=0)
+    pricing_model: Mapped[str] = mapped_column(String(16), default="payg", server_default="payg")
+    subscription_amount: Mapped[float | None] = mapped_column(Numeric(12, 4), nullable=True)
+    subscription_currency: Mapped[str] = mapped_column(String(3), default="USD", server_default="USD")
+    billing_cadence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    billing_anchor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     snapshots: Mapped[list["UsageSnapshot"]] = relationship(back_populates="config", cascade="all, delete-orphan")
@@ -63,6 +68,10 @@ class UsageSnapshot(Base):
     metrics: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
     raw: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Normalized, sanitized error diagnostics (category, message, http_status,
+    # stage, retryable, occurred_at) for the Settings/health UI. Never holds raw
+    # upstream payloads or credentials.
+    error_details: Mapped[dict | None] = mapped_column(MutableDict.as_mutable(json_type()), nullable=True)
     checked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     config: Mapped[ProviderConfig] = relationship(back_populates="snapshots")
 

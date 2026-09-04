@@ -203,3 +203,117 @@ def test_estimate_version_is_present():
     result = estimate_cost([Obs("input_tokens", 1_000_000, model="claude-sonnet-4", provider_mapping="anthropic", observed_at=_t())])
     assert result["pricing_version"] == PRICING_VERSION
     assert result["currency"] == "USD"
+
+
+# ---------------------------------------------------------------------------
+# Time-window pricing (peak/off-peak) — the resolver must pick different rates
+# by observation hour while non-windowed entries keep working unchanged.
+# ---------------------------------------------------------------------------
+
+
+def _windowed_catalogue() -> list[PriceEntry]:
+    return [
+        PriceEntry(
+            provider="deepseek",
+            model="deepseek-chat",
+            effective_from=date(2025, 9, 5),
+            rates={"input_tokens": 0.14, "output_tokens": 0.28},  # off-peak
+            source="off-peak",
+            time_window=(0, 8),
+        ),
+        PriceEntry(
+            provider="deepseek",
+            model="deepseek-chat",
+            effective_from=date(2025, 9, 5),
+            rates={"input_tokens": 0.56, "output_tokens": 1.12},  # peak
+            source="peak",
+            time_window=(8, 21),
+        ),
+        PriceEntry(
+            provider="deepseek",
+            model="deepseek-chat",
+            effective_from=date(2025, 9, 5),
+            rates={"input_tokens": 0.28, "output_tokens": 0.56},  # default
+            source="default",
+            time_window=None,
+        ),
+    ]
+
+
+def test_lookup_selects_time_windowed_rate_by_hour():
+    cat = PricingCatalogue(_windowed_catalogue())
+    off_peak = cat.lookup("deepseek", "deepseek-chat", datetime(2025, 9, 6, 3, 0, tzinfo=UTC))
+    peak = cat.lookup("deepseek", "deepseek-chat", datetime(2025, 9, 6, 13, 0, tzinfo=UTC))
+    assert off_peak.rates["input_tokens"] == 0.14
+    assert peak.rates["input_tokens"] == 0.56
+
+
+def test_lookup_falls_back_to_default_rate_outside_window():
+    cat = PricingCatalogue(_windowed_catalogue())
+    late = cat.lookup("deepseek", "deepseek-chat", datetime(2025, 9, 6, 23, 0, tzinfo=UTC))
+    assert late.rates["input_tokens"] == 0.28  # default, not peak or off-peak
+
+
+def test_lookup_window_wrapping_midnight():
+    cat = PricingCatalogue([
+        PriceEntry(provider="p", model="m", effective_from=date(2025, 1, 1), rates={"input_tokens": 9.0}, source="late-night", time_window=(21, 27)),
+        PriceEntry(provider="p", model="m", effective_from=date(2025, 1, 1), rates={"input_tokens": 1.0}, source="default", time_window=None),
+    ])
+    assert cat.lookup("p", "m", datetime(2025, 2, 1, 23, 0, tzinfo=UTC)).rates["input_tokens"] == 9.0
+    assert cat.lookup("p", "m", datetime(2025, 2, 1, 2, 0, tzinfo=UTC)).rates["input_tokens"] == 9.0
+    assert cat.lookup("p", "m", datetime(2025, 2, 1, 12, 0, tzinfo=UTC)).rates["input_tokens"] == 1.0
+
+
+def test_lookup_non_windowed_entries_unchanged():
+    cat = PricingCatalogue(_catalogue_with_history())
+    old = cat.lookup("openai", "gpt-4o", datetime(2024, 6, 1, 12, 0, tzinfo=UTC))
+    new = cat.lookup("openai", "gpt-4o", datetime(2025, 6, 1, 12, 0, tzinfo=UTC))
+    assert old.rates["input_tokens"] == 5.0
+    assert new.rates["input_tokens"] == 2.5
+
+
+# ---------------------------------------------------------------------------
+# Historical pricing across a price change, and per-token-class pricing.
+# ---------------------------------------------------------------------------
+
+
+def test_estimate_prices_observations_on_opposite_sides_of_price_change():
+    # gpt-4o input drops from $5.00 to $2.50 per 1M on 2025-01-01.
+    observations = [
+        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2024, 12, 31, 23, 0, tzinfo=UTC)),
+        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2025, 1, 1, 1, 0, tzinfo=UTC)),
+    ]
+    result = estimate_cost(observations, catalogue=PricingCatalogue(_catalogue_with_history()))
+    assert result["total_cost"] == 7.5  # 5.00 + 2.50
+
+
+def test_estimate_prices_cache_read_and_write_separately():
+    # anthropic claude-sonnet-4: cache_write $3.75, cache_read $0.30 per 1M.
+    observations = [
+        Obs("cache_write_tokens", 1_000_000, model="claude-sonnet-4", provider_mapping="anthropic", observed_at=_t()),
+        Obs("cache_read_tokens", 1_000_000, model="claude-sonnet-4", provider_mapping="anthropic", observed_at=_t()),
+    ]
+    result = estimate_cost(observations)
+    assert result["total_cost"] == 4.05  # 3.75 + 0.30
+    group = result["groups"][0]
+    classes = {c["metric"]: c["cost"] for c in group["token_classes"]}
+    assert classes["cache_write_tokens"] == 3.75
+    assert classes["cache_read_tokens"] == 0.30
+
+
+def test_estimate_prices_input_output_cache_read_write_separately():
+    observations = [
+        Obs("input_tokens", 1_000_000, model="claude-opus-4", provider_mapping="anthropic", observed_at=_t()),
+        Obs("output_tokens", 1_000_000, model="claude-opus-4", provider_mapping="anthropic", observed_at=_t()),
+        Obs("cache_write_tokens", 1_000_000, model="claude-opus-4", provider_mapping="anthropic", observed_at=_t()),
+        Obs("cache_read_tokens", 1_000_000, model="claude-opus-4", provider_mapping="anthropic", observed_at=_t()),
+    ]
+    result = estimate_cost(observations)
+    # opus-4: input $15, output $75, cache_write $18.75, cache_read $1.50.
+    assert result["total_cost"] == 110.25
+    group = result["groups"][0]
+    classes = {c["metric"]: c["cost"] for c in group["token_classes"]}
+    assert classes["input_tokens"] == 15.0
+    assert classes["output_tokens"] == 75.0
+    assert classes["cache_write_tokens"] == 18.75
+    assert classes["cache_read_tokens"] == 1.50
