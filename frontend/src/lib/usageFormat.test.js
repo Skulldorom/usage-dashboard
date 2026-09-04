@@ -22,8 +22,10 @@ import {
   PREFERRED_METRICS,
   providerErrorActionLabel,
   providerErrorSummary,
+  providerNeedsAttention,
   selectHistoryMetric,
   stageLabel,
+  visibleProviderAttentionCount,
 } from './usageFormat.js'
 
 describe('codexRemainingValue', () => {
@@ -297,6 +299,82 @@ describe('healthMeta', () => {
     expect(healthMeta(null).status).toBe('never_connected')
     expect(healthMeta({}).status).toBe('never_connected')
     expect(healthMeta({ status: 'bogus' }).status).toBe('never_connected')
+  })
+})
+
+describe('provider attention helpers', () => {
+  const visibleProvider = (health, overrides = {}) => ({
+    config: { id: Math.random().toString(36), is_visible: true, provider: 'openrouter', ...overrides.config },
+    latest: overrides.latest,
+    last_good: overrides.last_good,
+    health,
+  })
+
+  it('does not count five visible providers that render Healthy', () => {
+    const providers = Array.from({ length: 5 }, (_, index) => visibleProvider(
+      { status: 'healthy', age_seconds: index * 60 },
+      { latest: index === 0 ? null : { status: 'unknown' } },
+    ))
+
+    expect(providers.map((provider) => healthMeta(provider.health).label)).toEqual([
+      'Healthy',
+      'Healthy',
+      'Healthy',
+      'Healthy',
+      'Healthy',
+    ])
+    expect(visibleProviderAttentionCount(providers)).toBe(0)
+  })
+
+  it('counts one genuinely unavailable visible provider among five', () => {
+    const providers = [
+      visibleProvider({ status: 'healthy' }),
+      visibleProvider({ status: 'healthy' }),
+      visibleProvider({ status: 'error', latest_error: 'upstream exploded' }),
+      visibleProvider({ status: 'healthy' }),
+      visibleProvider({ status: 'healthy' }),
+    ]
+
+    expect(healthMeta(providers[2].health)).toEqual({ status: 'error', severity: 'error', label: 'Unavailable' })
+    expect(providerNeedsAttention(providers[2].health)).toBe(true)
+    expect(visibleProviderAttentionCount(providers)).toBe(1)
+  })
+
+  it('ignores hidden degraded providers', () => {
+    const providers = [
+      visibleProvider({ status: 'healthy' }),
+      visibleProvider({ status: 'error' }, { config: { is_visible: false } }),
+      visibleProvider({ status: 'healthy' }),
+    ]
+
+    expect(visibleProviderAttentionCount(providers)).toBe(0)
+  })
+
+  it('matches card health for missing/no-snapshot providers', () => {
+    const missingSnapshot = visibleProvider(null, { latest: null, last_good: null })
+
+    expect(healthMeta(missingSnapshot.health)).toEqual({
+      status: 'never_connected',
+      severity: 'default',
+      label: 'Not connected',
+    })
+    expect(providerNeedsAttention(missingSnapshot.health)).toBe(true)
+    expect(visibleProviderAttentionCount([missingSnapshot])).toBe(1)
+  })
+
+  it('matches card health for stale last-known-good providers after a failed refresh', () => {
+    const staleProvider = visibleProvider(
+      { status: 'stale', is_stale: true, age_seconds: 8040, latest_error: 'refresh failed' },
+      {
+        latest: { status: 'error', summary: 'Refresh failed' },
+        last_good: { status: 'healthy', summary: 'Previous balance' },
+      },
+    )
+
+    expect(healthMeta(staleProvider.health)).toEqual({ status: 'stale', severity: 'warning', label: 'Stale' })
+    expect(healthText(staleProvider.health)).toBe('Last successful update 2h 14m ago · using last-known data')
+    expect(providerNeedsAttention(staleProvider.health)).toBe(true)
+    expect(visibleProviderAttentionCount([staleProvider])).toBe(1)
   })
 })
 

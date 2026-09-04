@@ -37,6 +37,7 @@ import {
   opencodeGoLimitSections,
   overallUsageGroups,
   selectHistoryMetric,
+  visibleProviderAttentionCount,
 } from "../lib/usageFormat.js";
 
 function GraphProgress({ value, title, className = "", sx = {} }) {
@@ -700,10 +701,7 @@ export default function DashboardPage() {
   }, []);
 
   const visibleItems = items.filter((item) => item.config.is_visible);
-  const visibleHealthy = visibleItems.filter(
-    (item) => item.latest?.status === "healthy",
-  ).length;
-  const visibleDegraded = visibleItems.length - visibleHealthy;
+  const visibleDegraded = visibleProviderAttentionCount(items);
   const overallGroups = useMemo(() => overallUsageGroups(items), [items]);
   const providerCounts = useMemo(() => {
     const counts = {};

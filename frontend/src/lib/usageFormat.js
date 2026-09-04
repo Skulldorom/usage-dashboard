@@ -347,6 +347,17 @@ export function healthMeta(health) {
   return { status, severity: meta.severity, label: meta.label }
 }
 
+export function providerNeedsAttention(health) {
+  return healthMeta(health).status !== 'healthy'
+}
+
+export function visibleProviderAttentionCount(items) {
+  return (items || [])
+    .filter((item) => item?.config?.is_visible)
+    .filter((item) => providerNeedsAttention(item?.health))
+    .length
+}
+
 export function formatAge(seconds) {
   if (seconds === null || seconds === undefined || Number.isNaN(Number(seconds))) return null
   const total = Math.max(0, Math.floor(Number(seconds)))
