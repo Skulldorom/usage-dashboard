@@ -317,6 +317,9 @@ class EconomicsProvider(BaseModel):
     comparison_eligible: bool = False
     exclusion_reason: str | None = None
     explanation: list[str] = Field(default_factory=list)
+    audit: dict = Field(default_factory=dict)
+    payg_reconciliation: dict | None = None
+    trend: list[dict] = Field(default_factory=list)
 
 
 class EconomicsProviderLevel(BaseModel):

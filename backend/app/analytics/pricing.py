@@ -54,6 +54,13 @@ class PriceEntry:
 
     ``rates`` maps a token-class metric name to USD per 1M tokens. Classes not
     present in ``rates`` are treated as unpriced for that model.
+
+    ``time_window`` optionally constrains a rate to a UTC hour-of-day window as a
+    half-open ``(start_hour, end_hour)`` tuple (``end_hour`` may exceed 24 for
+    windows that wrap midnight, e.g. ``(21, 27)`` = 21:00-03:00). Providers whose
+    API pricing varies by time-of-day (peak/off-peak) model that with multiple
+    entries sharing the same ``effective_from`` but different ``time_window``; a
+    ``None`` window is the default rate for hours not covered by a windowed entry.
     """
 
     provider: str
@@ -62,6 +69,7 @@ class PriceEntry:
     rates: dict[str, float]
     source: str | None = None
     note: str | None = None
+    time_window: tuple[int, int] | None = None
 
 
 # Canonical aliases: Hermes/model strings that differ from the catalogue key.
@@ -138,13 +146,36 @@ class PricingCatalogue:
         if not entries:
             return None
         day = _observation_date(observed_at)
-        effective: PriceEntry | None = None
-        for entry in entries:
-            if entry.effective_from <= day:
-                effective = entry
-            else:
-                break
-        return effective
+        hour = _observation_hour(observed_at)
+        effective: list[PriceEntry] = [entry for entry in entries if entry.effective_from <= day]
+        if not effective:
+            return None
+        # Prefer a time-windowed rate whose window contains the observation hour;
+        # otherwise fall back to the latest default (non-windowed) rate. Rates
+        # without a time_window continue to behave exactly as before.
+        for entry in reversed(effective):
+            if entry.time_window is not None and _in_time_window(entry.time_window, hour):
+                return entry
+        for entry in reversed(effective):
+            if entry.time_window is None:
+                return entry
+        # Only windowed entries exist and none covers this hour: unpriced.
+        return None
+
+
+def _observation_hour(observed_at: datetime) -> int:
+    value = observed_at
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).hour
+
+
+def _in_time_window(window: tuple[int, int], hour: int) -> bool:
+    start, end = window
+    if end <= 24:
+        return start <= hour < end
+    # Wraps midnight when end_hour exceeds 24 (e.g. (21, 27) = 21:00 -> 03:00).
+    return hour >= start or hour < (end - 24)
 
 
 def _observation_date(observed_at: datetime) -> date:

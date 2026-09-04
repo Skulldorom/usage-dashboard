@@ -15,7 +15,7 @@ from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
-from app.analytics.economics import provider_economics, provider_level_economics, summarize as summarize_economics
+from app.analytics.economics import provider_economics, provider_level_economics, summarize as summarize_economics, value_trend
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
 from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
@@ -1360,6 +1360,7 @@ async def economics(
             attribution_ambiguous=ambiguous,
         )
         row["disambiguate"] = ambiguous
+        row["trend"] = value_trend(config, hermes_observations, start, end)
         rows.append(row)
 
     # Surface shared provider-level workload once for providers with multiple

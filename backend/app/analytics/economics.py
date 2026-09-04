@@ -19,6 +19,11 @@ from app.analytics.pricing import PRICING_VERSION, estimate_cost
 
 MIN_PRICING_COVERAGE_PCT = 80.0
 MIN_ATTRIBUTION_CONFIDENCE = {"medium", "high"}
+# PAYG reconciliation: provider-reported actual spend is authoritative and the
+# reconstructed token value is corroborating. They are never summed or averaged;
+# if they materially disagree (relative difference beyond this fraction) the
+# disagreement is surfaced rather than silently reconciled.
+PAYG_RECONCILIATION_TOLERANCE = 0.5
 _TOKEN_METRICS = {"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
 _SPEND_WORDS = ("cost", "spend", "charge")
 _MONEY_UNITS = {"USD", "EUR", "GBP"}
@@ -307,20 +312,82 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         else:
             exclusion = "attribution confidence below comparison threshold"
 
+    payg_reconciliation = None
+    if pricing_model == "payg" and actual and actual.get("amount") is not None and api_value is not None:
+        actual_amount = float(actual["amount"])
+        disagreement = _payg_disagrees(actual_amount, api_value)
+        payg_reconciliation = {
+            "authoritative": "actual_spend",
+            "actual_spend": actual_amount,
+            "reconstructed_value": api_value,
+            "currency": actual.get("currency"),
+            "disagreement": disagreement,
+            "tolerance": PAYG_RECONCILIATION_TOLERANCE,
+            "note": (
+                "Provider-reported actual spend is authoritative; reconstructed token value is "
+                "corroborating and is never summed or averaged with it."
+                + (" They materially disagree." if disagreement else "")
+            ),
+        }
+
     explanation = [
         f"Pricing model: {pricing_model}.",
+        f"Selected range: {_iso(start)} to {_iso(end)}.",
         "API-equivalent value uses the maintained model/token-class pricing catalogue.",
+        f"Pricing catalogue version: {api_equivalent.get('pricing_version', PRICING_VERSION)}.",
     ]
     if attribution_ambiguous:
         explanation.append("Hermes workload is reported at provider level, not attributed to this config, to avoid double-counting.")
     if pricing_model == "subscription":
-        explanation.append("Subscription cost basis is prorated by real billing-period overlap." + (" Billing anchor is estimated from the selected range." if cost_basis.get("estimated") else ""))
+        amount = float(cost_basis.get("amount") or 0) if cost_basis.get("amount") is not None else None
+        explanation.append(
+            f"Configured subscription: {amount} {cost_basis.get('currency')} per "
+            f"{config.billing_cadence or 'period'}"
+            + (f" anchored {_iso(config.billing_anchor)}." if config.billing_anchor else " (billing anchor unknown, prorated from selected range).")
+        )
+        explanation.append("Subscription cost basis is allocated by real billing-period overlap." + (" Billing anchor is estimated from the selected range." if cost_basis.get("estimated") else ""))
+    explanation.append(f"Attributed token workload: {round(tokens, 2)} tokens.")
     if unpriced_tokens:
         explanation.append(f"{round(unpriced_tokens, 2)} tokens were unpriced and reduce pricing coverage.")
+    explanation.append(f"Attribution confidence: {attribution_confidence.get('level', 'unknown')}.")
+    group_models = sorted({g.get('model') for g in api_equivalent.get("groups", []) if g.get('model')})
+    if group_models:
+        explanation.append(f"Priced models: {', '.join(group_models)}.")
     if actual is not None:
         explanation.append("Provider-reported PAYG spend keeps its original currency and is not averaged with reconstructed token value.")
+    if payg_reconciliation and payg_reconciliation.get("disagreement"):
+        explanation.append("Actual provider spend materially disagrees with reconstructed token value; see reconciliation.")
     if not compatible_money:
         explanation.append("Currency mismatch prevents multiplier and savings calculations; no FX conversion is performed.")
+    if exclusion:
+        explanation.append(f"Excluded from comparison: {exclusion}.")
+
+    audit = {
+        "pricing_model": pricing_model,
+        "range": {"from": _iso(start), "to": _iso(end)},
+        "cost_basis": cost_basis,
+        "actual_spend": actual,
+        "subscription": (
+            {
+                "amount": config.subscription_amount,
+                "currency": config.subscription_currency,
+                "cadence": config.billing_cadence,
+                "anchor": _iso(config.billing_anchor),
+            }
+            if pricing_model == "subscription"
+            else None
+        ),
+        "attributed_tokens": round(tokens, 2),
+        "priced_tokens": round(priced_tokens, 2),
+        "unpriced_tokens": round(unpriced_tokens, 2),
+        "pricing_coverage": pricing_coverage,
+        "attribution_confidence": attribution_confidence,
+        "pricing_version": api_equivalent.get("pricing_version", PRICING_VERSION),
+        "pricing_groups": group_models,
+        "comparison_excluded": not eligible,
+        "exclusion_reason": exclusion,
+        "payg_reconciliation": payg_reconciliation,
+    }
 
     return {
         "config_id": config.id,
@@ -348,7 +415,56 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         "comparison_eligible": eligible,
         "exclusion_reason": exclusion,
         "explanation": explanation,
+        "audit": audit,
+        "payg_reconciliation": payg_reconciliation,
     }
+
+
+def _iso(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    return _aware(value).isoformat()
+
+
+def _payg_disagrees(actual: float, reconstructed: float) -> bool:
+    denominator = max(abs(actual), abs(reconstructed), 1e-9)
+    return abs(actual - reconstructed) / denominator > PAYG_RECONCILIATION_TOLERANCE
+
+
+def value_trend(config: Any, hermes_observations: list[Any], start: datetime, end: datetime) -> list[dict]:
+    """Per-billing-period allocated cost basis and API-equivalent value.
+
+    Points cover complete billing periods overlapping the selected range, so a
+    fixed subscription produces a stable per-period multiplier rather than
+    misleading daily proration volatility.
+    """
+    if config.pricing_model != "subscription" or not config.billing_anchor:
+        return []
+    trend = []
+    for period_start, period_end in _periods(config.billing_anchor, config.billing_cadence or "monthly", start, end):
+        basis = subscription_cost_basis(config, period_start, period_end)
+        in_period = [
+            obs for obs in hermes_observations
+            if _aware(getattr(obs, "observed_at", period_start)) >= period_start
+            and _aware(getattr(obs, "observed_at", period_start)) < period_end
+        ]
+        api_equivalent, _coverage, tokens = _api_equivalent(in_period)
+        api_value = api_equivalent.get("value")
+        basis_amount = basis.get("amount")
+        multiplier = None
+        if basis_amount is not None and basis_amount > 0 and api_value is not None and api_value > 0:
+            multiplier = _round(api_value / basis_amount, 4)
+        trend.append(
+            {
+                "period_start": _iso(period_start),
+                "period_end": _iso(period_end),
+                "allocated_cost": basis,
+                "api_equivalent_value": api_value,
+                "observed_tokens": round(tokens, 2),
+                "value_multiplier": multiplier,
+            }
+        )
+    return trend
 
 
 def _aggregate_money(values: list[dict], kind: str, *, estimated: bool = True) -> dict:

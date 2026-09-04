@@ -546,3 +546,81 @@ async def test_billing_unsupported_model_is_rejected(sqlite_db):
             headers=ADMIN_AUTH,
         )
         assert updated.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_economics_payg_reconciliation_surfaces_disagreement(sqlite_db):
+    Session = sqlite_db
+    config = await _config(Session, provider="openai", pricing_model="payg")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        # Provider-reported actual spend far above the reconstructed token value.
+        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=100, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)))
+        # 1M gpt-4o input tokens reconstructs to $2.50.
+        session.add(UsageObservation(provider="openai", provider_mapping="openai", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=5), model="gpt-4o"))
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["pricing_model"] == "payg"
+    assert row["payg_reconciliation"]["authoritative"] == "actual_spend"
+    assert row["payg_reconciliation"]["actual_spend"] == 100
+    assert row["payg_reconciliation"]["disagreement"] is True
+    # Actual spend is authoritative; reconstructed value is not summed/averaged into cost basis.
+    assert row["actual_spend"]["amount"] == 100
+
+
+@pytest.mark.asyncio
+async def test_economics_payg_reconciliation_agrees_when_close(sqlite_db):
+    Session = sqlite_db
+    config = await _config(Session, provider="openai", pricing_model="payg")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        # Actual spend close to the reconstructed $2.50 for 1M gpt-4o input tokens.
+        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=2.4, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)))
+        session.add(UsageObservation(provider="openai", provider_mapping="openai", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=5), model="gpt-4o"))
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert row["payg_reconciliation"]["disagreement"] is False
+
+
+@pytest.mark.asyncio
+async def test_economics_subscription_value_trend_by_billing_period(sqlite_db):
+    Session = sqlite_db
+    await _config(
+        Session,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=31,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+        billing_anchor=datetime(2026, 1, 31, tzinfo=UTC),
+    )
+    start = datetime(2026, 2, 10, tzinfo=UTC)
+    end = datetime(2026, 3, 10, tzinfo=UTC)
+    async with Session() as session:
+        for observed_at in (
+            datetime(2026, 2, 12, tzinfo=UTC),
+            datetime(2026, 2, 20, tzinfo=UTC),
+            datetime(2026, 2, 27, tzinfo=UTC),
+            datetime(2026, 3, 5, tzinfo=UTC),
+        ):
+            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed_at, model="claude-sonnet-4"))
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
+
+    row = response.json()["providers"][0]
+    assert len(row["trend"]) == 2
+    # Two complete billing periods (Jan 31-Feb 28, Feb 28-Mar 31) overlap the range.
+    assert row["trend"][0]["period_start"].startswith("2026-01-31")
+    assert row["trend"][0]["value_multiplier"] is not None
+    assert row["trend"][0]["allocated_cost"]["amount"] > 0
+    assert row["trend"][1]["value_multiplier"] is not None
