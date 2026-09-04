@@ -594,9 +594,57 @@ async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlit
         assert homepage_response.status_code == 200, homepage_response.text
         homepage_rows = homepage_response.json()["list"]
         assert [row["label"] for row in homepage_rows] == [
-            "fake (first)",
-            "fake (second)",
+            "Fake (first)",
+            "Fake (second)",
         ]
+
+
+@pytest.mark.asyncio
+async def test_homepage_uses_canonical_name_without_repeating_single_config_label(
+    sqlite_db,
+):
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="fake",
+            label="main",
+            encrypted_api_key="encrypted",
+            is_enabled=True,
+            is_visible=True,
+            display_order=0,
+        )
+        disabled = ProviderConfig(
+            provider="fake",
+            label="disabled",
+            encrypted_api_key="encrypted",
+            is_enabled=False,
+            is_visible=True,
+            display_order=1,
+        )
+        session.add_all([config, disabled])
+        await session.flush()
+        session.add(
+            UsageSnapshot(
+                provider_config_id=config.id,
+                provider="fake",
+                status="healthy",
+                summary="42 credits",
+                metrics=[{"label": "remaining", "value": 42, "unit": "credits"}],
+                raw={},
+                checked_at=datetime.now(UTC),
+            )
+        )
+        await session.commit()
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.get("/api/v1/homepage", headers=auth)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [row["label"] for row in payload["list"]] == ["Fake"]
+    assert "fake_main_remaining" in payload["metrics"]
 
 
 @pytest.mark.asyncio
