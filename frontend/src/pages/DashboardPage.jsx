@@ -483,7 +483,7 @@ function UsageCard({ item, icon, disambiguate }) {
                 href={providerUsageUrl}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={`Open ${config.provider} usage page`}
+                aria-label={`Open ${displayName} usage page`}
               >
                 Usage <span aria-hidden="true">↗</span>
               </a>
