@@ -49,6 +49,7 @@ import {
   peakLabel,
   pressureSummaryCards,
   primaryValue,
+  providerLevelRows,
   qualityLabel,
   quotaImpactLabel,
   rangeToParams,
@@ -885,6 +886,7 @@ function EconomicsPanel({ economics }) {
   if (!economics) return null
   const providers = economics.providers || []
   const cards = economicsSummaryCards(economics)
+  const providerLevel = providerLevelRows(economics)
   const maxAmount = Math.max(1, ...providers.flatMap((row) => [row.cost_basis?.amount || 0, row.api_equivalent?.value || 0]))
   return (
     <Card variant="outlined" className="glass-panel">
@@ -980,6 +982,32 @@ function EconomicsPanel({ economics }) {
               </tbody>
             </Box>
           </Stack>
+        )}
+        {providerLevel.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="overline" color="primary.main">Shared provider workload</Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
+              Workload attributed at the provider level (not to a single config) because multiple configs share this provider. It is reported once and never mixed into per-config cost or multiplier.
+            </Typography>
+            <Stack spacing={1}>
+              {providerLevel.map((entry) => (
+                <Box key={entry.provider} className="glass-panel" sx={{ p: 1.5 }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between' }}>
+                    <Typography variant="body2">{entry.displayName} - shared across {entry.configCount} config{entry.configCount === 1 ? '' : 's'}</Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {formatMetricValue(entry.tokens, 'tokens')} · API-equivalent {formatMoney(entry.apiValue, entry.apiCurrency)}
+                    </Typography>
+                  </Stack>
+                  <Typography variant="caption" color="text.secondary">
+                    Pricing coverage {entry.pricedPct != null ? `${entry.pricedPct}%` : '-'} ({entry.coverageLevel || 'insufficient'}) · Attribution {entry.attributionState || 'insufficient'}
+                  </Typography>
+                  {entry.note && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{entry.note}</Typography>
+                  )}
+                </Box>
+              ))}
+            </Stack>
+          </Box>
         )}
       </CardContent>
     </Card>

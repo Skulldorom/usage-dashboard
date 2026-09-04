@@ -56,6 +56,25 @@ export function valueTrendPoints(row) {
   }))
 }
 
+export function providerLevelRows(economics) {
+  // Shared provider-level Hermes workload that cannot be attributed to a single
+  // config. Rendered distinctly from config rows so the workload is never hidden
+  // and never mixed into per-config cost/multiplier calculations.
+  return (economics?.provider_level || []).map((entry) => ({
+    provider: entry.provider ?? null,
+    displayName: providerDisplayName(entry.provider),
+    configCount: entry.config_count ?? 0,
+    tokens: entry.observed?.tokens ?? null,
+    pricedTokens: entry.observed?.priced_tokens ?? null,
+    apiValue: entry.api_equivalent?.value ?? null,
+    apiCurrency: entry.api_equivalent?.currency ?? 'USD',
+    pricedPct: entry.observed?.pricing_coverage?.priced_token_pct ?? entry.observed?.priced_token_pct ?? null,
+    coverageLevel: entry.observed?.pricing_coverage?.level ?? null,
+    attributionState: entry.observed?.attribution_state ?? entry.observed?.attribution_confidence?.level ?? null,
+    note: entry.note ?? null,
+  }))
+}
+
 export const RANGE_OPTIONS = [
   { value: '24h', label: '24 hours', days: 1 },
   { value: '7d', label: '7 days', days: 7 },

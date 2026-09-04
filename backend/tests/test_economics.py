@@ -364,6 +364,73 @@ async def test_economics_two_configs_same_provider_do_not_double_count(sqlite_db
 
 
 @pytest.mark.asyncio
+async def test_economics_config_id_filter_does_not_hide_ambiguity(sqlite_db):
+    """Filtering to one config must not make shared Hermes data look unique.
+
+    The frontend requests /analytics/economics?config_id=<id> for the
+    single-provider view. If multiplicity were computed from the filtered result,
+    a shared provider would collapse to config_count=1 and the full provider-level
+    workload would be attributed to that one config. Multiplicity is global.
+    """
+    Session = sqlite_db
+    first = await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    now = datetime.now(UTC)
+    await _seed_tokens(Session, provider="anthropic", start=now - timedelta(days=30), days=30)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"config_id": first.id}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert [row["config_id"] for row in payload["providers"]] == [first.id]
+
+    row = payload["providers"][0]
+    # The filtered response still marks the config ambiguous and attributes no
+    # config-level Hermes workload, because the provider has two configs.
+    assert row["attribution_ambiguous"] is True
+    assert row["comparison_eligible"] is False
+    assert row["observed"]["tokens"] == 0
+    assert row["api_equivalent"]["value"] is None
+    assert "cannot be uniquely attributed" in row["exclusion_reason"]
+    # Ambiguous configs get no per-billing-period value trend either.
+    assert row["trend"] == []
+
+    # The shared provider-level workload is still surfaced exactly once.
+    assert len(payload["provider_level"]) == 1
+    rollup = payload["provider_level"][0]
+    assert rollup["provider"] == "anthropic"
+    assert rollup["config_count"] == 2
+    assert rollup["api_equivalent"]["value"] is not None
+    assert rollup["api_equivalent"]["value"] > 0
+
+
+@pytest.mark.asyncio
+async def test_economics_ambiguous_subscription_gets_empty_trend(sqlite_db):
+    """Two subscriptions of the same provider must not each receive the full
+    provider workload in their per-billing-period value trend."""
+    Session = sqlite_db
+    await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly", billing_anchor=datetime(2026, 1, 31, tzinfo=UTC))
+    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly", billing_anchor=datetime(2026, 1, 31, tzinfo=UTC))
+    start = datetime(2026, 2, 10, tzinfo=UTC)
+    end = datetime(2026, 3, 10, tzinfo=UTC)
+    async with Session() as session:
+        for observed_at in (datetime(2026, 2, 12, tzinfo=UTC), datetime(2026, 3, 5, tzinfo=UTC)):
+            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed_at, model="claude-sonnet-4"))
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    rows = response.json()["providers"]
+    assert len(rows) == 2
+    for row in rows:
+        assert row["attribution_ambiguous"] is True
+        assert row["trend"] == []
+
+
+@pytest.mark.asyncio
 async def test_economics_rejects_invalid_date_ranges(sqlite_db):
     await _config(sqlite_db, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
     now = datetime.now(UTC)

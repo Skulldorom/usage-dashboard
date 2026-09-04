@@ -1335,10 +1335,23 @@ async def economics(
     if config_id:
         query = query.where(ProviderConfig.id == config_id)
     configs = (await session.execute(query)).scalars().all()
-    provider_config_counts = {
-        provider: sum(1 for config in configs if config.provider == provider)
-        for provider in {config.provider for config in configs}
-    }
+
+    # Multiplicity is a *global* property of persisted configs, independent of
+    # the response filter. Filtering to a single config_id (or provider) must
+    # not make a shared provider's Hermes workload look uniquely attributable:
+    # if two configs exist for a provider, the workload stays ambiguous even when
+    # the caller only asked for one of them.
+    providers_of_interest = {config.provider for config in configs}
+    provider_config_counts: dict[str, int] = {}
+    if providers_of_interest:
+        count_rows = (
+            await session.execute(
+                select(ProviderConfig.provider, func.count(ProviderConfig.id))
+                .where(ProviderConfig.provider.in_(providers_of_interest))
+                .group_by(ProviderConfig.provider)
+            )
+        ).all()
+        provider_config_counts = {provider: int(count) for provider, count in count_rows}
 
     # Load provider-level Hermes observations once per provider. Multiple configs
     # of the same provider share the same provider-level observations, so copying
@@ -1354,13 +1367,16 @@ async def economics(
         provider_observations = await _load_observations(session, config.id, start=start, end=end)
         config_count = provider_config_counts.get(config.provider, 1)
         ambiguous = config_count > 1
-        hermes_observations = hermes_by_provider.get(config.provider, [])
+        # Ambiguous configs get no config-level Hermes workload — neither in their
+        # core economics nor their per-billing-period value trend — so a shared
+        # provider's workload is never double-attributed to two configs.
+        effective_hermes = [] if ambiguous else hermes_by_provider.get(config.provider, [])
         row = provider_economics(
-            config, provider_observations, hermes_observations, start, end,
+            config, provider_observations, effective_hermes, start, end,
             attribution_ambiguous=ambiguous,
         )
         row["disambiguate"] = ambiguous
-        row["trend"] = value_trend(config, hermes_observations, start, end)
+        row["trend"] = [] if ambiguous else value_trend(config, effective_hermes, start, end)
         rows.append(row)
 
     # Surface shared provider-level workload once for providers with multiple
