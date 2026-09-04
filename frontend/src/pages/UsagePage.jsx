@@ -601,7 +601,7 @@ function AttentionRisks({ overview }) {
         <Grid size={{ xs: 12, md: 6 }} key={row.config_id}>
           <Box className={`risk-card risk-card-${row.state || 'warning'}`}>
             <Stack direction="row" sx={{ justifyContent: 'space-between', gap: 1 }}>
-              <Typography variant="subtitle2">{row.provider}{row.label && row.label !== 'main' ? ` · ${row.label}` : ''}</Typography>
+              <Typography variant="subtitle2">{providerNameWithLabel(row.provider, row.label, { disambiguate: row.disambiguate })}</Typography>
               <Chip size="small" color={(row.state === 'critical' || row.state === 'exhausted') ? 'error' : 'warning'} label={row.state || 'warning'} />
             </Stack>
             <Typography variant="body2" sx={{ mt: 0.75 }}>{utilizationOverflowLabel(row)}</Typography>
