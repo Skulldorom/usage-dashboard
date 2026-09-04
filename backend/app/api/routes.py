@@ -110,8 +110,13 @@ def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
 def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
     provider_rows = []
     provider_counts = {
-        provider: sum(row["config"].provider == provider for row in rows)
-        for provider in {row["config"].provider for row in rows}
+        provider: sum(
+            row["config"].provider == provider and row["config"].is_enabled
+            for row in rows
+        )
+        for provider in {
+            row["config"].provider for row in rows if row["config"].is_enabled
+        }
     }
     for row in rows:
         cfg = row["config"]
