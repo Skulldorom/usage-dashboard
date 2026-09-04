@@ -370,3 +370,41 @@ export function healthText(health) {
   if (status === 'error') return health?.last_success_at ? `Unavailable · last successful update ${age || 'unknown'}` : 'Provider unavailable'
   return 'No successful connection yet'
 }
+
+export function stageLabel(stage) {
+  if (!stage) return null
+  return {
+    fetch_usage: 'Fetch usage',
+    oauth_refresh: 'OAuth refresh',
+    config_test: 'Test connection',
+    parse_response: 'Parse response',
+  }[stage] || String(stage).replaceAll('_', ' ')
+}
+
+export function providerErrorSummary(health) {
+  // Normalized, sanitized error info from the /usage health payload. Returns
+  // null for healthy/unknown providers so callers never render stale errors.
+  const details = health?.latest_error_details
+  if (!details) return null
+  return {
+    category: details.category ?? null,
+    message: details.message || health?.latest_error || null,
+    httpStatus: details.http_status ?? null,
+    stage: details.stage ?? null,
+    retryable: details.retryable ?? null,
+    occurredAt: details.occurred_at ?? null,
+  }
+}
+
+export function isAuthenticationError(errorSummary) {
+  return errorSummary?.category === 'authentication'
+}
+
+export function providerErrorActionLabel(errorSummary) {
+  // Actionable wording for authentication failures (reconnect) vs schema/upstream.
+  if (isAuthenticationError(errorSummary)) return 'Authentication rejected - reconnect provider.'
+  if (errorSummary?.category === 'schema_changed' || errorSummary?.category === 'parse_error') {
+    return 'Provider returned an unsupported response. Check server logs for diagnostic details.'
+  }
+  return errorSummary?.message || 'Provider request failed'
+}

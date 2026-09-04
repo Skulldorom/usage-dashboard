@@ -38,7 +38,14 @@ import NotificationsActiveRoundedIcon from "@mui/icons-material/NotificationsAct
 import { api } from "../api.js";
 import DataSourcesSection from "../components/DataSourcesSection.jsx";
 import ProviderIcon from "../components/ProviderIcon.jsx";
-import { formatThresholdRule } from "../lib/usageFormat.js";
+import {
+  formatDateTime,
+  formatThresholdRule,
+  healthText,
+  providerErrorActionLabel,
+  providerErrorSummary,
+  stageLabel,
+} from "../lib/usageFormat.js";
 import {
   extensionBridge,
   extensionSupportsOneClickSetup,
@@ -376,6 +383,8 @@ const initialForm = {
 export default function SettingsPage() {
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState([]);
+  const [healthByConfigId, setHealthByConfigId] = useState({});
+  const [retryingConfigId, setRetryingConfigId] = useState(null);
   const [apiTokens, setApiTokens] = useState([]);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(initialForm);
@@ -504,6 +513,17 @@ export default function SettingsPage() {
       ]);
       setConfigs(configRows);
       setApiTokens(tokenRows);
+      // Fetch provider health so Settings can show latest error/retry state.
+      try {
+        const usageRows = await api.usage();
+        const health = {};
+        usageRows.forEach((row) => {
+          if (row?.config?.id != null) health[row.config.id] = row.health;
+        });
+        setHealthByConfigId(health);
+      } catch {
+        setHealthByConfigId({});
+      }
     } catch (err) {
       setConfigs([]);
       setApiTokens([]);
@@ -670,6 +690,23 @@ export default function SettingsPage() {
       setError(err.message);
     } finally {
       setBillingSaving(false);
+    }
+  }
+
+  async function retryConfig(config) {
+    // Reuse the existing single-provider poll; guard against duplicate clicks so
+    // a retry can't spawn a concurrent storm. Refresh health after completion.
+    if (!config || retryingConfigId === config.id) return;
+    setError("");
+    setRetryingConfigId(config.id);
+    try {
+      await api.pollConfig(config.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+      await load();
+    } finally {
+      setRetryingConfigId(null);
     }
   }
 
@@ -1440,6 +1477,81 @@ export default function SettingsPage() {
                       )}
                     </div>
                   </div>
+                  {(() => {
+                    const health = healthByConfigId[config.id];
+                    const errSummary = providerErrorSummary(health);
+                    if (!health || health.status === "healthy") return null;
+                    return (
+                      <div
+                        className="config-health"
+                        style={{ gridColumn: "1 / -1" }}
+                      >
+                        <Alert
+                          severity={
+                            errSummary?.category === "authentication"
+                              ? "error"
+                              : "warning"
+                          }
+                          action={
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={() => retryConfig(config)}
+                              disabled={retryingConfigId === config.id}
+                            >
+                              {retryingConfigId === config.id
+                                ? "Retrying…"
+                                : "Retry"}
+                            </Button>
+                          }
+                        >
+                          <Typography variant="body2">
+                            {errSummary
+                              ? providerErrorActionLabel(errSummary)
+                              : healthText(health)}
+                          </Typography>
+                          {errSummary?.httpStatus != null && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              HTTP status: {errSummary.httpStatus}
+                            </Typography>
+                          )}
+                          {errSummary?.stage && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Stage: {stageLabel(errSummary.stage)}
+                            </Typography>
+                          )}
+                          {health.last_success_at && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Last successful sync:{" "}
+                              {formatDateTime(health.last_success_at)}
+                            </Typography>
+                          )}
+                          {health.last_attempt_at && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: "block" }}
+                            >
+                              Last attempt:{" "}
+                              {formatDateTime(health.last_attempt_at)}
+                            </Typography>
+                          )}
+                        </Alert>
+                      </div>
+                    );
+                  })()}
                   <div className="config-detail">
                     <span>Credential</span>
                     {config.api_key_masked}

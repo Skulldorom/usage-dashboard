@@ -20,7 +20,10 @@ import {
   opencodeGoLimitSections,
   overallUsageGroups,
   PREFERRED_METRICS,
+  providerErrorActionLabel,
+  providerErrorSummary,
   selectHistoryMetric,
+  stageLabel,
 } from './usageFormat.js'
 
 describe('codexRemainingValue', () => {
@@ -494,5 +497,68 @@ describe('opencodeGoLimitSections', () => {
     ].filter((metric) => !OPENCODEGO_LIMIT_METRIC_LABELS.includes(metric.label))
 
     expect(genericRows.map((metric) => metric.label)).toEqual(['balance_fallback_enabled', 'exhausted'])
+  })
+})
+
+describe('providerErrorSummary', () => {
+  it('returns null for a healthy provider with no error details', () => {
+    expect(providerErrorSummary({ status: 'healthy' })).toBeNull()
+    expect(providerErrorSummary({ status: 'healthy', latest_error_details: null })).toBeNull()
+  })
+
+  it('surfaces normalized error fields from health', () => {
+    const summary = providerErrorSummary({
+      latest_error_details: {
+        category: 'rate_limit',
+        message: 'Too Many Requests',
+        http_status: 429,
+        stage: 'fetch_usage',
+        retryable: true,
+        occurred_at: '2026-09-03T15:03:00Z',
+      },
+    })
+    expect(summary.category).toBe('rate_limit')
+    expect(summary.httpStatus).toBe(429)
+    expect(summary.stage).toBe('fetch_usage')
+    expect(summary.retryable).toBe(true)
+    expect(summary.occurredAt).toBe('2026-09-03T15:03:00Z')
+  })
+
+  it('falls back to latest_error for the message', () => {
+    const summary = providerErrorSummary({
+      latest_error_details: { category: 'authentication', message: null, http_status: 401, stage: 'fetch_usage', retryable: false, occurred_at: '2026-09-03T15:03:00Z' },
+      latest_error: 'Authentication rejected',
+    })
+    expect(summary.message).toBe('Authentication rejected')
+  })
+})
+
+describe('providerErrorActionLabel', () => {
+  it('gives actionable reconnect wording for authentication failures', () => {
+    expect(providerErrorActionLabel({ category: 'authentication' })).toBe('Authentication rejected - reconnect provider.')
+  })
+
+  it('gives schema/upstream wording for schema_changed', () => {
+    expect(providerErrorActionLabel({ category: 'schema_changed' })).toBe('Provider returned an unsupported response. Check server logs for diagnostic details.')
+  })
+
+  it('falls back to the message otherwise', () => {
+    expect(providerErrorActionLabel({ category: 'rate_limit', message: 'Too Many Requests' })).toBe('Too Many Requests')
+  })
+})
+
+describe('stageLabel', () => {
+  it('humanizes known stages', () => {
+    expect(stageLabel('fetch_usage')).toBe('Fetch usage')
+    expect(stageLabel('oauth_refresh')).toBe('OAuth refresh')
+  })
+
+  it('falls back to spaced raw stage', () => {
+    expect(stageLabel('custom_stage')).toBe('custom stage')
+  })
+
+  it('returns null for missing stage', () => {
+    expect(stageLabel(null)).toBeNull()
+    expect(stageLabel(undefined)).toBeNull()
   })
 })
