@@ -532,6 +532,19 @@ def test_homepage_usage_text_omits_unavailable_quota_windows():
     )
 
 
+def test_homepage_usage_text_omits_unavailable_codex_session_window():
+    from app.api.routes import _homepage_usage_text
+
+    metrics = [
+        {"label": "weekly_remaining_percent", "value": 64, "unit": "%"},
+    ]
+
+    assert (
+        _homepage_usage_text(metrics, "generic summary", "codex")
+        == "Weekly 64%"
+    )
+
+
 @pytest.mark.asyncio
 async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlite_db):
     now = datetime.now(UTC)
