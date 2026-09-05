@@ -443,7 +443,13 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
                             "value": 54,
                             "unit": "%",
                             "maximum": 100,
-                        }
+                        },
+                        {
+                            "label": "weekly_remaining_percent",
+                            "value": 76,
+                            "unit": "%",
+                            "maximum": 100,
+                        },
                     ],
                     raw={},
                     checked_at=now,
@@ -485,7 +491,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
             "provider": "codex",
             "config_id": codex.id,
             "label": "OpenAI Codex",
-            "value": "54% left",
+            "value": "Session 54% • Weekly 76%",
             "status": "healthy",
         },
         {
@@ -496,6 +502,47 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
             "status": "never_connected",
         },
     ]
+
+
+def test_homepage_usage_text_shows_all_opencode_go_quota_windows():
+    from app.api.routes import _homepage_usage_text
+
+    metrics = [
+        {"label": "five_hour_remaining_percent", "value": 91, "unit": "%"},
+        {"label": "weekly_remaining_percent", "value": 73.5, "unit": "%"},
+        {"label": "monthly_remaining_percent", "value": 48, "unit": "%"},
+    ]
+
+    assert (
+        _homepage_usage_text(metrics, "generic summary", "opencode-go")
+        == "Session 91% • Weekly 73.5% • Monthly 48%"
+    )
+
+
+def test_homepage_usage_text_omits_unavailable_quota_windows():
+    from app.api.routes import _homepage_usage_text
+
+    metrics = [
+        {"label": "weekly_remaining_percent", "value": 64, "unit": "%"},
+    ]
+
+    assert (
+        _homepage_usage_text(metrics, "generic summary", "opencode-go")
+        == "Weekly 64%"
+    )
+
+
+def test_homepage_usage_text_omits_unavailable_codex_session_window():
+    from app.api.routes import _homepage_usage_text
+
+    metrics = [
+        {"label": "weekly_remaining_percent", "value": 64, "unit": "%"},
+    ]
+
+    assert (
+        _homepage_usage_text(metrics, "generic summary", "codex")
+        == "Weekly 64%"
+    )
 
 
 @pytest.mark.asyncio
