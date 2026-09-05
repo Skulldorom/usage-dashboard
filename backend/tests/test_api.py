@@ -504,7 +504,6 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
     ]
 
 
-
 def test_homepage_usage_text_shows_all_opencode_go_quota_windows():
     from app.api.routes import _homepage_usage_text
 
