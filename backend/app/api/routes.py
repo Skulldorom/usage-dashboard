@@ -75,11 +75,34 @@ def _format_homepage_number(value: float | int | str | bool | None) -> str:
     return str(value)
 
 
-def _homepage_usage_text(metrics: list[dict], summary: str | None) -> str:
+def _homepage_usage_text(
+    metrics: list[dict], summary: str | None, provider: str | None = None
+) -> str:
     labeled_metrics = {
         str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_"): metric
         for metric in metrics
     }
+
+    quota_windows = {
+        "codex": (
+            ("Session", "session_remaining_percent"),
+            ("Weekly", "weekly_remaining_percent"),
+        ),
+        "opencode-go": (
+            ("Session", "five_hour_remaining_percent"),
+            ("Weekly", "weekly_remaining_percent"),
+            ("Monthly", "monthly_remaining_percent"),
+        ),
+    }.get(provider, ())
+    window_parts = [
+        f"{title} {_format_homepage_number(labeled_metrics[metric_name].get('value'))}%"
+        for title, metric_name in quota_windows
+        if metric_name in labeled_metrics
+        and labeled_metrics[metric_name].get("value") is not None
+    ]
+    if window_parts:
+        return " • ".join(window_parts)
+
     usage_percent = labeled_metrics.get("usage_percent")
     credits_remaining = labeled_metrics.get("credits_remaining")
     if usage_percent and credits_remaining:
@@ -148,7 +171,11 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
                     if provider_counts[cfg.provider] == 1
                     else f"{provider_name} ({cfg.label})"
                 ),
-                value=_homepage_usage_text(display.metrics, display.summary) if display else "No usage snapshot yet",
+                value=(
+                    _homepage_usage_text(display.metrics, display.summary, cfg.provider)
+                    if display
+                    else "No usage snapshot yet"
+                ),
                 status=status,
             )
         )
