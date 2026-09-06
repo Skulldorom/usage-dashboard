@@ -35,6 +35,28 @@ export function workloadChartData(hermes, metric, grouping) {
   return { series: visible, points }
 }
 
+export function observedSeriesKeys(point, series) {
+  return (point?.values || []).flatMap((value, index) =>
+    value !== null && value !== undefined ? [series?.[index]?.key] : []
+  ).filter((key) => key !== null && key !== undefined)
+}
+
+export function workloadTooltipLabel({ date, key, value, total, metric, grouping, observedZero = false, contributorCount = 0 }) {
+  const formattedDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))
+  if (total === null) return `${formattedDate} · No observation · Missing data is not zero`
+  const metricName = WORKLOAD_METRICS.find((item) => item.value === metric)?.label || metric
+  const source = metric === 'cost' ? 'Hermes observed cost' : 'Hermes observed'
+  if (observedZero && (key === null || key === undefined)) {
+    const contributors = contributorCount > 1 ? ` · ${contributorCount} series reported zero` : ''
+    return `${formattedDate} · ${metricDisplay(0, metric)} ${metricName.toLowerCase()} · Observed zero${contributors} · ${source}`
+  }
+  if (key === null || key === undefined) return `${formattedDate} · ${metricDisplay(total, metric)} ${metricName.toLowerCase()} · ${source}`
+  const groupLabel = grouping === 'provider' ? providerNameWithLabel(key) : key
+  const totalLabel = total === value ? '' : ` · Daily total ${metricDisplay(total, metric)}`
+  const zeroLabel = observedZero ? ' · Observed zero' : ''
+  return `${formattedDate} · ${groupLabel} · ${metricDisplay(value, metric)} ${metricName.toLowerCase()}${totalLabel}${zeroLabel} · ${source}`
+}
+
 export function totalValue(totals, metric) {
   return (totals || []).find((item) => item.metric === metric)?.value ?? null
 }
@@ -97,6 +119,18 @@ export function quotaStatus(window, quality = 'healthy') {
   if (window.used_pct >= 100) return 'exhausted'
   if (window.used_pct >= 70) return 'warning'
   return 'healthy'
+}
+
+export function quotaTooltipLabel(window, quality = 'healthy') {
+  const status = quotaStatus(window, quality)
+  const label = String(window?.label || 'Quota').replace(/^./, (letter) => letter.toUpperCase())
+  if (window?.used_pct === null || window?.used_pct === undefined) return `${label} · Quota unavailable · ${status}`
+  const remaining = window.remaining_pct ?? Math.max(0, 100 - Number(window.used_pct))
+  const reset = window.reset_at
+    ? ` · Resets ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(window.reset_at))}`
+    : ''
+  const source = window.source ? ` · ${window.source.replaceAll('_', ' ')}` : ''
+  return `${label} · ${Math.round(window.used_pct)}% used · ${Math.round(remaining)}% remaining · ${status}${reset}${source}`
 }
 
 export function billingLabel(row) {
