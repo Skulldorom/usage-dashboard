@@ -36,7 +36,7 @@ The selected representations are never added or averaged. This prevents a
 provider's rolling spend, billing buckets, and reconstructed price from counting
 the same purchase multiple times. When actual spend and a reconstruction both
 exist, actual spend is authoritative and the reconstruction is corroborating;
-a material disagreement is surfaced in reconciliation diagnostics.
+a material disagreement is returned in analytics API reconciliation metadata.
 
 An estimate at 80–94.99% coverage is marked partial but may be used. Below 80%,
 it remains diagnostic API-equivalent data and cannot be the PAYG cost basis or a
