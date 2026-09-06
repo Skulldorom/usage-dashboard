@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { Overview, WorkloadChart } from '../pages/UsageDashboardPage.jsx'
-import { WORKLOAD_METRICS, billingLabel, costPresentation, providerUsageRows, quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel } from './usageDashboardFormat.js'
+import { WORKLOAD_METRICS, billingLabel, costPresentation, observedSeriesKeys, providerUsageRows, quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel } from './usageDashboardFormat.js'
 
 const subscription = {
   config_id: 1, provider: 'codex', label: 'main', pricing_model: 'subscription', observed: { tokens: 100 },
@@ -84,6 +84,39 @@ it('renders observed zero distinctly from a missing chart sample', () => {
   expect(html).toContain('OpenAI Codex')
   expect(html).toContain('0 tokens')
   expect(html).toContain('No observation')
+})
+
+it('attributes an observed-zero day to the only series that actually reported it', () => {
+  const hermes = {
+    period: { start: '2026-09-01T00:00:00Z', end: '2026-09-02T00:00:00Z' },
+    daily_by_provider: [
+      { key: 'codex', points: [] },
+      { key: 'deepseek', points: [{ date: '2026-09-01', tokens: 0 }] },
+    ],
+  }
+  const chart = workloadChartData(hermes, 'tokens', 'provider')
+  expect(chart.points[0].values).toEqual([0])
+  expect(observedSeriesKeys(chart.points[0], chart.series)).toEqual(['deepseek'])
+  const html = renderToString(React.createElement(WorkloadChart, { hermes, metric: 'tokens', grouping: 'provider' }))
+  expect(html).toContain('DeepSeek')
+  expect(html).not.toContain('OpenAI Codex')
+})
+
+it('uses a neutral tooltip when multiple series explicitly reported zero', () => {
+  const hermes = {
+    period: { start: '2026-09-01T00:00:00Z', end: '2026-09-02T00:00:00Z' },
+    daily_by_provider: [
+      { key: 'codex', points: [{ date: '2026-09-01', tokens: 0 }] },
+      { key: 'deepseek', points: [{ date: '2026-09-01', tokens: 0 }] },
+    ],
+  }
+  const chart = workloadChartData(hermes, 'tokens', 'provider')
+  expect(observedSeriesKeys(chart.points[0], chart.series)).toEqual(['codex', 'deepseek'])
+  const html = renderToString(React.createElement(WorkloadChart, { hermes, metric: 'tokens', grouping: 'provider' }))
+  expect(html).toContain('Observed zero')
+  expect(html).toContain('2 series reported zero')
+  expect(html).not.toContain('OpenAI Codex')
+  expect(html).not.toContain('DeepSeek')
 })
 
 it('describes each hovered graph segment with date, group, value, total, and source', () => {

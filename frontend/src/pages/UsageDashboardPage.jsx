@@ -12,7 +12,7 @@ import ProviderIcon from '../components/ProviderIcon.jsx'
 import { DEFAULT_RANGE, RANGE_OPTIONS, compactNumber, formatMoney, providerNameWithLabel, rangeToParams } from '../lib/analyticsFormat.js'
 import {
   WORKLOAD_METRICS, economicsRows, metricDisplay, pricingQuality, providerUsageRows,
-  quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel,
+  observedSeriesKeys, quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel,
 } from '../lib/usageDashboardFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -129,15 +129,28 @@ export function WorkloadChart({ hermes, metric, grouping }) {
   return (
     <Box>
       <Box className="usage-workload-chart" role="img" aria-label={`${metric} over time grouped by ${grouping}`}>
-        {chart.points.map((point) => (
-          <Box className={`usage-workload-column${point.total === null ? ' usage-workload-gap' : ''}`} key={point.date}>
+        {chart.points.map((point) => {
+          const zeroKeys = point.total === 0 ? observedSeriesKeys(point, chart.series) : []
+          const zeroTooltip = point.total === 0
+            ? workloadTooltipLabel({
+              date: point.date,
+              key: zeroKeys.length === 1 ? zeroKeys[0] : null,
+              value: 0,
+              total: 0,
+              metric,
+              grouping,
+              observedZero: true,
+              contributorCount: zeroKeys.length,
+            })
+            : null
+          return <Box className={`usage-workload-column${point.total === null ? ' usage-workload-gap' : ''}`} key={point.date}>
             {point.total === null ? (
               <Tooltip arrow enterDelay={100} title={workloadTooltipLabel({ date: point.date, total: null, metric, grouping })}>
                 <Box className="usage-workload-missing" tabIndex={0} aria-label={workloadTooltipLabel({ date: point.date, total: null, metric, grouping })} />
               </Tooltip>
             ) : point.total === 0 ? (
-              <Tooltip arrow enterDelay={100} title={workloadTooltipLabel({ date: point.date, key: chart.series[0]?.key, value: 0, total: 0, metric, grouping })}>
-                <Box className="usage-workload-zero" tabIndex={0} aria-label={workloadTooltipLabel({ date: point.date, key: chart.series[0]?.key, value: 0, total: 0, metric, grouping })} />
+              <Tooltip arrow enterDelay={100} title={zeroTooltip}>
+                <Box className="usage-workload-zero" tabIndex={0} aria-label={zeroTooltip} />
               </Tooltip>
             ) : (
               <Box className="usage-workload-stack" sx={{ height: `${point.total / scaleMax * 100}%` }}>
@@ -151,7 +164,7 @@ export function WorkloadChart({ hermes, metric, grouping }) {
             )}
             <Typography variant="caption" color="text.secondary">{point.date.slice(5)}</Typography>
           </Box>
-        ))}
+        })}
       </Box>
       <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', mt: 1.5 }}>
         {chart.series.slice(0, 8).map((item, index) => <Stack key={item.key} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 9, height: 9, borderRadius: '50%', background: CHART_COLORS[index % CHART_COLORS.length] }} /><Typography variant="caption">{item.key}</Typography></Stack>)}
