@@ -703,7 +703,7 @@ async def test_deepseek_actual_spend_wins_and_is_not_added_to_estimate(sqlite_db
 
 
 @pytest.mark.asyncio
-async def test_payg_partial_estimate_and_unavailable_are_explicit(sqlite_db):
+async def test_payg_estimate_below_minimum_coverage_is_not_a_cost_basis(sqlite_db):
     Session = sqlite_db
     await _config(Session, provider="deepseek", pricing_model="payg")
     observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
@@ -716,9 +716,14 @@ async def test_payg_partial_estimate_and_unavailable_are_explicit(sqlite_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
     basis = response.json()["providers"][0]["cost_basis"]
-    assert basis["amount"] == pytest.approx(0.22)
-    assert basis["partial"] is True
+    economics = response.json()["providers"][0]["economics"]
+    assert basis["amount"] is None
+    assert basis["source"] == "unavailable"
+    assert "below the 80%" in basis["reason"]
     assert basis["pricing_coverage"]["priced_token_pct"] == 50
+    assert economics["tokens_per_dollar"] is None
+    assert economics["requests_per_dollar"] is None
+    assert economics["effective_cost_per_1m_tokens"] is None
 
 
 @pytest.mark.asyncio

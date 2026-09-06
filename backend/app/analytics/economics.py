@@ -218,15 +218,25 @@ def _cost_basis(config: Any, provider_observations: list[Any], start: datetime, 
         return Money(0.0, (config.subscription_currency or "USD").upper(), "free", source="configured_free").to_dict(), actual
     if actual is None:
         estimate = (api_equivalent or {}).get("value")
-        if estimate is not None and estimate > 0:
-            coverage = pricing_coverage or {}
+        coverage = pricing_coverage or {}
+        coverage_pct = coverage.get("priced_token_pct") or 0
+        if estimate is not None and estimate > 0 and coverage_pct >= MIN_PRICING_COVERAGE_PCT:
             return {
                 **Money(estimate, (api_equivalent or {}).get("currency", "USD"), "estimated_spend", estimated=True, source="pricing_estimate").to_dict(),
                 "partial": coverage.get("level") != "high",
                 "pricing_coverage": coverage,
                 "pricing_version": (api_equivalent or {}).get("pricing_version"),
             }, None
-        return Money(None, (config.subscription_currency or "USD").upper(), "unavailable", estimated=False, source="unavailable", reason="No provider billing data or priceable model/token-class usage").to_dict(), None
+        reason = (
+            f"Pricing coverage {coverage_pct:.2f}% is below the {MIN_PRICING_COVERAGE_PCT:.0f}% PAYG cost-basis threshold"
+            if estimate is not None and estimate > 0
+            else "No provider billing data or priceable model/token-class usage"
+        )
+        return {
+            **Money(None, (config.subscription_currency or "USD").upper(), "unavailable", estimated=False, source="unavailable", reason=reason).to_dict(),
+            "pricing_coverage": coverage,
+            "pricing_version": (api_equivalent or {}).get("pricing_version"),
+        }, None
     return {**actual, "kind": "actual_spend"}, actual
 
 

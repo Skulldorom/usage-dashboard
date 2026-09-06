@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from app.providers.anthropic import AnthropicAdapter
@@ -44,6 +45,47 @@ def test_anthropic_parser_and_native_history_include_billed_cost():
     assert any(m.label == "daily_cost" and m.value == 1.5 and m.unit == "USD" for m in usage.metrics)
     native = AnthropicAdapter.native_observations(raw)
     assert any(item["metric"] == "daily_cost" and item["value"] == 1.5 and item["unit"] == "USD" for item in native)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_cost_enrichment_failure_preserves_usage(monkeypatch):
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, **_kwargs):
+            request = httpx.Request("GET", url)
+            if url.endswith("/cost_report"):
+                return httpx.Response(403, json={"error": "forbidden"}, request=request)
+            return httpx.Response(200, json={"data": [{"results": [{"input_tokens": 10, "num_requests": 1}]}]}, request=request)
+
+    monkeypatch.setattr("app.providers.anthropic.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+    usage = await AnthropicAdapter("sk-ant-admin-test").fetch_usage()
+    assert usage.status == "healthy"
+    assert any(metric.label == "input_tokens" and metric.value == 10 for metric in usage.metrics)
+    assert not any(metric.label == "daily_cost" for metric in usage.metrics)
+
+
+@pytest.mark.asyncio
+async def test_anthropic_usage_failure_still_fails_provider(monkeypatch):
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, **_kwargs):
+            request = httpx.Request("GET", url)
+            status = 200 if url.endswith("/cost_report") else 401
+            return httpx.Response(status, json={}, request=request)
+
+    monkeypatch.setattr("app.providers.anthropic.httpx.AsyncClient", lambda **_kwargs: FakeClient())
+    with pytest.raises(httpx.HTTPStatusError):
+        await AnthropicAdapter("invalid").fetch_usage()
 
 def test_openrouter_parser_extracts_credit_usage():
     usage = OpenRouterAdapter.parse_usage({"data": {"label": "main", "limit_remaining": 45.2, "usage_daily": 2.15, "usage_weekly": 12.8, "usage_monthly": 55, "limit": 100}})

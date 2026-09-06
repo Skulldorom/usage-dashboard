@@ -52,10 +52,20 @@ class AnthropicAdapter(ProviderAdapter):
             usage_resp, cost_resp = await asyncio.gather(
                 client.get(f"{self.base_url}/v1/organizations/usage_report/messages", headers=headers, params=params),
                 client.get(f"{self.base_url}/v1/organizations/cost_report", headers=headers, params=cost_params),
+                return_exceptions=True,
             )
+            if isinstance(usage_resp, BaseException):
+                raise usage_resp
             usage_resp.raise_for_status()
-            cost_resp.raise_for_status()
-            data = {"usage": usage_resp.json(), "cost": cost_resp.json()}
+            cost_data: dict[str, Any] = {}
+            if isinstance(cost_resp, httpx.Response) and cost_resp.is_success:
+                try:
+                    parsed_cost = cost_resp.json()
+                except ValueError:
+                    parsed_cost = None
+                if isinstance(parsed_cost, dict):
+                    cost_data = parsed_cost
+            data = {"usage": usage_resp.json(), "cost": cost_data}
         return self.parse_usage(data)
 
     @staticmethod

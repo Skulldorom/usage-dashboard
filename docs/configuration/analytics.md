@@ -221,12 +221,14 @@ pricing pages.
 PAYG cost uses one source only: `provider_reported`, then
 `provider_billing_history`, then `pricing_estimate`, otherwise `unavailable`.
 Actual and reconstructed values are never added. A pricing estimate includes
-the catalogue version, priced-token coverage, and a partial flag.
+the catalogue version, priced-token coverage, and a partial flag. Estimates
+below the 80% pricing-coverage threshold remain diagnostic API-equivalent data
+and are not used as PAYG cost bases or whole-workload efficiency denominators.
 
 | Provider adapter | Strongest safe source with configured credential | Fallback / limitation |
 | --- | --- | --- |
 | OpenAI | Native organization daily cost history | Requires an organization admin key. |
-| Anthropic | Native Usage & Cost Admin API history | Requires an eligible Admin API credential; Priority Tier cost is not included by Anthropic's cost endpoint. |
+| Anthropic | Native Usage & Cost Admin API history | Cost enrichment is best-effort and requires an eligible Admin API credential; token usage remains available when cost access fails. Priority Tier cost is not included by Anthropic's cost endpoint. |
 | DeepSeek | Balance only; no historical spend endpoint for the standard API key | Official model/token-class/time pricing estimate from Hermes telemetry. |
 | OpenRouter | Key credit limits and rolling usage, not arbitrary-range billing history | Price from sufficiently detailed Hermes telemetry when catalogue coverage exists; otherwise unavailable. |
 | Firecrawl | Credit usage history | Credits are not assumed to be USD; PAYG monetary cost remains unavailable without an authoritative money observation or supported model pricing. |
