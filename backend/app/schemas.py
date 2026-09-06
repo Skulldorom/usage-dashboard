@@ -500,6 +500,7 @@ class HermesGroupRow(BaseModel):
     cost: float | None = None
     tokens: float | None = None
     requests: float | None = None
+    sessions: int = 0
     estimated_cost: float | None = None
 
 
@@ -508,6 +509,12 @@ class HermesBreakdownDaily(BaseModel):
     cost: float | None = None
     tokens: float | None = None
     requests: float | None = None
+    sessions: int = 0
+
+
+class HermesBreakdownSeries(BaseModel):
+    key: str
+    points: list[HermesBreakdownDaily] = Field(default_factory=list)
 
 
 class HermesTotal(BaseModel):
@@ -581,6 +588,8 @@ class HermesBreakdown(BaseModel):
     by_model: list[HermesGroupRow]
     by_profile: list[HermesGroupRow]
     daily: list[HermesBreakdownDaily]
+    daily_by_provider: list[HermesBreakdownSeries] = Field(default_factory=list)
+    daily_by_model: list[HermesBreakdownSeries] = Field(default_factory=list)
     sources: list[HermesSourceSummary] = Field(default_factory=list)
     diagnostics: list[HermesDiagnostic] = Field(default_factory=list)
     cost_estimate: CostEstimate | None = None

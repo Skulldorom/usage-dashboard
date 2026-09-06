@@ -19,7 +19,7 @@ export function providerDisplayName(provider) {
 
 export function providerNameWithLabel(provider, label, { disambiguate = false } = {}) {
   const name = providerDisplayName(provider)
-  if (disambiguate && label && label !== 'main' && label !== provider && label !== name) return `${name} - ${label}`
+  if (disambiguate && label) return `${name} - ${label}`
   return name
 }
 
@@ -76,9 +76,9 @@ export function providerLevelRows(economics) {
 }
 
 export const RANGE_OPTIONS = [
-  { value: '24h', label: '24 hours', days: 1 },
   { value: '7d', label: '7 days', days: 7 },
   { value: '30d', label: '30 days', days: 30 },
+  { value: 'month', label: 'This month', days: null },
   { value: '90d', label: '90 days', days: 90 },
 ]
 
@@ -165,6 +165,12 @@ export function peakLabel(peakHour) {
 }
 
 export function rangeToParams(range, now = new Date()) {
+  if (range === 'month') {
+    const from = new Date(now)
+    from.setDate(1)
+    from.setHours(0, 0, 0, 0)
+    return { from: from.toISOString(), to: now.toISOString() }
+  }
   const days = (RANGE_OPTIONS.find((option) => option.value === range)?.days) ?? 30
   const to = now.toISOString()
   const from = new Date(now.getTime() - days * 86_400_000).toISOString()

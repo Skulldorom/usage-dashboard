@@ -156,6 +156,7 @@ class OverviewProvider(BaseModel):
     estimated_cost: float | None = None
     estimated_cost_source: str | None = None
     disambiguate: bool = False
+    quota_windows: list[dict] = Field(default_factory=list)
 
 
 class OverviewCoverage(BaseModel):

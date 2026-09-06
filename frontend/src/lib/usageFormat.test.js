@@ -163,7 +163,7 @@ describe('overallUsageGroups', () => {
       },
     ])
     expect(groups.percent.metrics.map((metric) => metric.providerLabel).filter((label) => label.startsWith('OpenAI Codex'))).toEqual([
-      'OpenAI Codex',
+      'OpenAI Codex - main',
       'OpenAI Codex - Work',
     ])
   })

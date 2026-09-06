@@ -62,6 +62,7 @@ from app.schemas import (
     AttributionMetric,
     HermesBreakdown,
     HermesBreakdownDaily,
+    HermesBreakdownSeries,
     HermesDiagnostic,
     HermesGroupRow,
     HermesSourceSummary,
@@ -1029,6 +1030,7 @@ async def overview(
         forecast_pct: float | None = None
         util = utilization_metric(capabilities) if capabilities else None
         all_utils = utilization_metrics(capabilities) if capabilities else []
+        quota_windows: list[dict] = []
         quota_impact = None
         latest = None
         point_obs: list[Observation] = []
@@ -1196,6 +1198,20 @@ async def overview(
             )
             capacity_latest = max(capacity_util_obs, key=lambda obs: obs.observed_at)
             window_label = _window_label(capacity_spec.get("window"), capacity_metric_name)
+            capacity_used = round(capacity_latest.value, 4)
+            capacity_reset = capacity_latest.reset_at or _latest_reset_at(
+                [obs for obs in observations if obs.metric == capacity_metric_name]
+            )
+            quota_windows.append({
+                "metric": capacity_metric_name,
+                "label": window_label,
+                "used_pct": capacity_used,
+                "remaining_pct": round(max(0.0, 100.0 - capacity_used), 4),
+                "overage_pct": round(max(0.0, capacity_used - 100.0), 4),
+                "reset_at": capacity_reset.isoformat() if capacity_reset else None,
+                "source": capacity_latest.source,
+                "observed_at": capacity_latest.observed_at.isoformat(),
+            })
             display_label = _provider_display_name(config.provider)
             if provider_config_counts.get(config.provider, 0) > 1 and config.label and config.label != "main":
                 display_label = f"{display_label} - {config.label}"
@@ -1213,6 +1229,8 @@ async def overview(
                     disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
+
+        provider.quota_windows = quota_windows
 
     # Share % is scoped to like-unit groups so "95% of tokens" is honest.
     for provider in providers:
@@ -1424,16 +1442,17 @@ _HERMES_OVERLAY_UNITS = {
 }
 
 
-async def _load_hermes_rows(session: AsyncSession, start: datetime, end: datetime) -> list[UsageObservation]:
-    return (
-        await session.execute(
-            select(UsageObservation).where(
-                UsageObservation.source == "hermes",
-                UsageObservation.observed_at >= start,
-                UsageObservation.observed_at < end,
-            )
-        )
-    ).scalars().all()
+async def _load_hermes_rows(
+    session: AsyncSession, start: datetime, end: datetime, provider: str | None = None,
+) -> list[UsageObservation]:
+    query = select(UsageObservation).where(
+        UsageObservation.source == "hermes",
+        UsageObservation.observed_at >= start,
+        UsageObservation.observed_at < end,
+    )
+    if provider:
+        query = query.where(UsageObservation.provider_mapping == provider)
+    return (await session.execute(query)).scalars().all()
 
 
 def _round_or_none(value: float) -> float | None:
@@ -1615,13 +1634,14 @@ async def provider_attribution(
 async def hermes_breakdown(
     from_: datetime | None = Query(default=None, alias="from"),
     to_: datetime | None = Query(default=None, alias="to"),
+    provider: str | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     now = datetime.now(UTC)
     end = _as_aware(to_) if to_ is not None else now
     start = _as_aware(from_) if from_ is not None else end - timedelta(days=DEFAULT_RANGE_DAYS)
 
-    rows = await _load_hermes_rows(session, start, end)
+    rows = await _load_hermes_rows(session, start, end, provider=provider)
     sources = await _hermes_source_summaries(session, start=start, end=end)
 
     totals: list[HermesTotal] = []
@@ -1645,9 +1665,12 @@ async def hermes_breakdown(
 
     def _grouped(attribute: str) -> list[HermesGroupRow]:
         groups: dict[str, dict[str, float]] = {}
+        session_groups: dict[str, set[str]] = {}
         for row in rows:
             key = getattr(row, attribute) or "unknown"
             bucket = groups.setdefault(key, {"cost": 0.0, "tokens": 0.0, "requests": 0.0})
+            if row.session_id:
+                session_groups.setdefault(key, set()).add(row.session_id)
             if row.metric == "cost":
                 bucket["cost"] += row.value
             elif row.metric in _TOKEN_METRICS:
@@ -1667,15 +1690,19 @@ async def hermes_breakdown(
                     cost=_round_or_none(bucket["cost"]),
                     tokens=_round_or_none(bucket["tokens"]),
                     requests=_round_or_none(bucket["requests"]),
+                    sessions=len(session_groups.get(key, set())),
                     estimated_cost=_round_or_none(estimated),
                 )
             )
         return rows_out
 
     daily_groups: dict[str, dict[str, float]] = {}
+    daily_sessions: dict[str, set[str]] = {}
     for row in rows:
         day = _aware(row.observed_at).date().isoformat()
         bucket = daily_groups.setdefault(day, {"cost": 0.0, "tokens": 0.0, "requests": 0.0})
+        if row.session_id:
+            daily_sessions.setdefault(day, set()).add(row.session_id)
         if row.metric == "cost":
             bucket["cost"] += row.value
         elif row.metric in _TOKEN_METRICS:
@@ -1688,9 +1715,44 @@ async def hermes_breakdown(
             cost=_round_or_none(bucket["cost"]),
             tokens=_round_or_none(bucket["tokens"]),
             requests=_round_or_none(bucket["requests"]),
+            sessions=len(daily_sessions.get(day, set())),
         )
         for day, bucket in sorted(daily_groups.items())
     ]
+
+    def _daily_series(attribute: str) -> list[HermesBreakdownSeries]:
+        grouped: dict[str, dict[str, dict[str, float]]] = {}
+        grouped_sessions: dict[tuple[str, str], set[str]] = {}
+        for row in rows:
+            key = str(getattr(row, attribute) or "unknown")
+            day = _aware(row.observed_at).date().isoformat()
+            bucket = grouped.setdefault(key, {}).setdefault(
+                day, {"cost": 0.0, "tokens": 0.0, "requests": 0.0}
+            )
+            if row.session_id:
+                grouped_sessions.setdefault((key, day), set()).add(row.session_id)
+            if row.metric == "cost":
+                bucket["cost"] += row.value
+            elif row.metric in _TOKEN_METRICS:
+                bucket["tokens"] += row.value
+            elif row.metric == "requests":
+                bucket["requests"] += row.value
+        return [
+            HermesBreakdownSeries(
+                key=key,
+                points=[
+                    HermesBreakdownDaily(
+                        date=day,
+                        cost=_round_or_none(values["cost"]),
+                        tokens=_round_or_none(values["tokens"]),
+                        requests=_round_or_none(values["requests"]),
+                        sessions=len(grouped_sessions.get((key, day), set())),
+                    )
+                    for day, values in sorted(days.items())
+                ],
+            )
+            for key, days in sorted(grouped.items())
+        ]
 
     return HermesBreakdown(
         period={"start": start.isoformat(), "end": end.isoformat()},
@@ -1700,6 +1762,8 @@ async def hermes_breakdown(
         by_model=_grouped("model"),
         by_profile=_grouped("profile"),
         daily=daily,
+        daily_by_provider=_daily_series("provider_mapping"),
+        daily_by_model=_daily_series("model"),
         sources=sources,
         diagnostics=_hermes_diagnostics(sources=sources, rows=rows, start=start, end=end),
         cost_estimate=cost_estimate,

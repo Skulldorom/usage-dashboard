@@ -1,8 +1,9 @@
 # Usage analytics
 
-The **Usage** page turns the provider snapshots collected by Usage Dashboard
-into historical analytics: trends, daily/hourly breakdowns, peak-usage windows,
-previous-period comparisons, and pace-based forecasts.
+The **Usage** page combines provider snapshots with Hermes-observed workload so
+the primary view answers what was used, what it cost, where it went, and when
+each provider quota resets. Advanced source and pricing diagnostics remain
+available in the collapsed **Data sources & quality** section.
 
 Analytics are built as a normalization layer on top of the existing
 `UsageSnapshot` history - not a separate tracking system. Nothing about the
@@ -26,15 +27,22 @@ negative usage.
 
 ## What you can see
 
-- **Summary cards** - usage this week, average per day, trend vs. last week.
-- **Historical chart** - the selected metric over time (hourly / daily / weekly).
-- **Daily breakdown** - per-day usage, peak hour, day-over-day change, and status.
-- **Time-of-day heatmap** - when usage concentrates across the day and week.
-- **Previous-period comparison** - current period vs. the equivalent prior period.
-- **Forecast** - rate-based projections, estimated exhaustion, and a sustainable
-  daily pace, with a `high` / `medium` / `low` confidence indicator.
-- **All providers comparison** - a cross-provider view with like-unit totals,
-  a per-provider share table, and a quota-utilization overlay.
+- **Overview** - committed subscription cost, provider-reported PAYG spend, and
+  Hermes-observed tokens, requests, and sessions for the selected range.
+- **Provider usage & quota** - billing and workload beside every independently
+  reported quota window, including its own utilization, status, and reset time.
+- **Usage over time** - tokens, cost, requests, or sessions grouped by provider
+  or model. Missing days remain gaps instead of becoming zero usage.
+- **Cost & value** - direct provider economics using subscription commitment or
+  reported PAYG spend as the named denominator. Selected-range subscription
+  allocation remains available as detail and is never presented as plan price.
+- **Breakdown** - provider, model, and profile attribution in one tabbed table.
+- **Data sources & quality** - source freshness, unresolved aliases, pricing
+  coverage, and diagnostics, collapsed by default.
+
+Provider-reported and Hermes-observed values are never added when they describe
+the same workload. Provider values stay authoritative; Hermes provides observed
+workload and attribution. Unknown costs and missing quotas remain unknown.
 
 Forecasts are deterministic and rate-based; they are scoped to the relevant
 reset window and never extrapolate a rolling total (like OpenAI's 30-day cost)
