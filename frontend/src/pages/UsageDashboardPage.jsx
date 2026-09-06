@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Card, CardContent, Chip, CircularProgress, Collapse, FormControl, Grid,
   InputLabel, LinearProgress, MenuItem, Select, Stack, Tab, Tabs, Table, TableBody,
-  TableCell, TableHead, TableRow, Typography,
+  TableCell, TableHead, TableRow, Tooltip, Typography,
 } from '@mui/material'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded'
@@ -12,7 +12,7 @@ import ProviderIcon from '../components/ProviderIcon.jsx'
 import { DEFAULT_RANGE, RANGE_OPTIONS, compactNumber, formatMoney, providerNameWithLabel, rangeToParams } from '../lib/analyticsFormat.js'
 import {
   WORKLOAD_METRICS, economicsRows, metricDisplay, pricingQuality, providerUsageRows,
-  quotaStatus, selectedUsageSummary, usageSummary, workloadChartData,
+  quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel,
 } from '../lib/usageDashboardFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -58,6 +58,7 @@ export function Overview({ hermes, economics, overview, selectedProvider }) {
 function QuotaWindow({ window, quality }) {
   const status = quotaStatus(window, quality)
   const used = window.used_pct
+  const tooltip = quotaTooltipLabel(window, quality)
   return (
     <Box className="usage-quota-window">
       <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
@@ -67,7 +68,7 @@ function QuotaWindow({ window, quality }) {
           <Chip size="small" color={STATUS_COLORS[status]} label={status} />
         </Stack>
       </Stack>
-      {used !== null && used !== undefined && <LinearProgress variant="determinate" value={Math.min(100, Math.max(0, used))} color={STATUS_COLORS[status] === 'default' ? 'primary' : STATUS_COLORS[status]} sx={{ mt: 0.75, height: 7, borderRadius: 4 }} />}
+      {used !== null && used !== undefined && <Tooltip arrow enterDelay={100} title={tooltip}><LinearProgress tabIndex={0} aria-label={tooltip} variant="determinate" value={Math.min(100, Math.max(0, used))} color={STATUS_COLORS[status] === 'default' ? 'primary' : STATUS_COLORS[status]} sx={{ mt: 0.75, height: 7, borderRadius: 4 }} /></Tooltip>}
       {window.reset_at && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>Resets {dateTime(window.reset_at)}</Typography>}
     </Box>
   )
@@ -129,13 +130,22 @@ export function WorkloadChart({ hermes, metric, grouping }) {
     <Box>
       <Box className="usage-workload-chart" role="img" aria-label={`${metric} over time grouped by ${grouping}`}>
         {chart.points.map((point) => (
-          <Box className={`usage-workload-column${point.total === null ? ' usage-workload-gap' : ''}`} key={point.date} title={point.total === null ? `${point.date}: No observation` : `${point.date}: ${metricDisplay(point.total, metric)}`}>
-            {point.total === null ? <Box className="usage-workload-missing" aria-label={`${point.date} missing`} /> : point.total === 0 ? <Box className="usage-workload-zero" aria-label={`${point.date} observed zero`} /> : (
+          <Box className={`usage-workload-column${point.total === null ? ' usage-workload-gap' : ''}`} key={point.date}>
+            {point.total === null ? (
+              <Tooltip arrow enterDelay={100} title={workloadTooltipLabel({ date: point.date, total: null, metric, grouping })}>
+                <Box className="usage-workload-missing" tabIndex={0} aria-label={workloadTooltipLabel({ date: point.date, total: null, metric, grouping })} />
+              </Tooltip>
+            ) : point.total === 0 ? (
+              <Tooltip arrow enterDelay={100} title={workloadTooltipLabel({ date: point.date, key: chart.series[0]?.key, value: 0, total: 0, metric, grouping })}>
+                <Box className="usage-workload-zero" tabIndex={0} aria-label={workloadTooltipLabel({ date: point.date, key: chart.series[0]?.key, value: 0, total: 0, metric, grouping })} />
+              </Tooltip>
+            ) : (
               <Box className="usage-workload-stack" sx={{ height: `${point.total / scaleMax * 100}%` }}>
                 {chart.series.map((item, seriesIndex) => {
                   const value = point.values[seriesIndex]
                   if (value === null || value === undefined || Number(value) <= 0) return null
-                  return <Box key={item.key} sx={{ height: `${Number(value) / point.total * 100}%`, background: CHART_COLORS[seriesIndex % CHART_COLORS.length] }} />
+                  const tooltip = workloadTooltipLabel({ date: point.date, key: item.key, value: Number(value), total: point.total, metric, grouping })
+                  return <Tooltip key={item.key} arrow enterDelay={100} title={tooltip}><Box tabIndex={0} aria-label={tooltip} sx={{ height: `${Number(value) / point.total * 100}%`, background: CHART_COLORS[seriesIndex % CHART_COLORS.length] }} /></Tooltip>
                 })}
               </Box>
             )}

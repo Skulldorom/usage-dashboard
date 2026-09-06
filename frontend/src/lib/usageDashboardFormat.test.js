@@ -2,7 +2,7 @@ import React from 'react'
 import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { Overview, WorkloadChart } from '../pages/UsageDashboardPage.jsx'
-import { WORKLOAD_METRICS, billingLabel, costPresentation, providerUsageRows, quotaStatus, selectedUsageSummary, usageSummary, workloadChartData } from './usageDashboardFormat.js'
+import { WORKLOAD_METRICS, billingLabel, costPresentation, providerUsageRows, quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel } from './usageDashboardFormat.js'
 
 const subscription = {
   config_id: 1, provider: 'codex', label: 'main', pricing_model: 'subscription', observed: { tokens: 100 },
@@ -39,6 +39,16 @@ describe('quota window states', () => {
   })
 })
 
+it('describes quota bars with usage, remaining, status, reset, and source', () => {
+  const label = quotaTooltipLabel({
+    label: 'weekly', used_pct: 77, remaining_pct: 23,
+    reset_at: '2026-09-10T08:39:00Z', source: 'provider_native',
+  })
+  expect(label).toContain('Weekly · 77% used · 23% remaining · warning')
+  expect(label).toContain('Resets')
+  expect(label).toContain('provider native')
+})
+
 it('preserves every Codex and OpenCode quota window and each reset', () => {
   const providers = providerUsageRows({ providers: [
     { config_id: 1, provider: 'codex', label: 'main', quota_windows: [{ label: 'session', reset_at: 'a' }, { label: 'weekly', reset_at: 'b' }] },
@@ -59,8 +69,8 @@ it('preserves missing chart days instead of converting them to zero', () => {
   const chart = workloadChartData(hermes, 'tokens', 'provider')
   expect(chart.points.map((point) => point.total)).toEqual([100, null, 200])
   const html = renderToString(React.createElement(WorkloadChart, { hermes, metric: 'tokens', grouping: 'provider' }))
-  expect(html).toContain('2026-09-02 missing')
-  expect(html).toContain('2026-09-02: No observation')
+  expect(html).toContain('No observation')
+  expect(html).toContain('Missing data is not zero')
 })
 
 it('renders observed zero distinctly from a missing chart sample', () => {
@@ -71,8 +81,29 @@ it('renders observed zero distinctly from a missing chart sample', () => {
   const chart = workloadChartData(hermes, 'tokens', 'provider')
   expect(chart.points.map((point) => point.total)).toEqual([0, null])
   const html = renderToString(React.createElement(WorkloadChart, { hermes, metric: 'tokens', grouping: 'provider' }))
-  expect(html).toContain('2026-09-01 observed zero')
-  expect(html).toContain('2026-09-02 missing')
+  expect(html).toContain('OpenAI Codex')
+  expect(html).toContain('0 tokens')
+  expect(html).toContain('No observation')
+})
+
+it('describes each hovered graph segment with date, group, value, total, and source', () => {
+  const label = workloadTooltipLabel({
+    date: '2026-09-03', key: 'codex', value: 125, total: 200, metric: 'tokens', grouping: 'provider',
+  })
+  expect(label).toContain('Sep 3, 2026')
+  expect(label).toContain('OpenAI Codex')
+  expect(label).toContain('125 tokens')
+  expect(label).toContain('Daily total 200')
+  expect(label).toContain('Hermes observed')
+})
+
+it('identifies hovered cost values as Hermes observed cost', () => {
+  const label = workloadTooltipLabel({
+    date: '2026-09-03', key: 'deepseek', value: 1.25, total: 1.25, metric: 'cost', grouping: 'provider',
+  })
+  expect(label).toContain('DeepSeek')
+  expect(label).toContain('$1.25 observed cost')
+  expect(label).toContain('Hermes observed cost')
 })
 
 it('does not assign provider-level Hermes workload to an ambiguous selected config', () => {
