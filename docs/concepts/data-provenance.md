@@ -24,5 +24,10 @@ than 15 percentage points or activity differs by more than 50% relatively. A
 corroborating source more than six hours fresher can flag the authoritative
 reading as stale. Disagreement and staleness lower confidence.
 
-Use **Why this number?** and **Data sources & quality** on the Usage page to see
-the source, window, reset, confidence, corroboration, and warnings for a value.
+Use **Data sources & quality** on the active Usage page to inspect source health,
+observation freshness, pricing coverage, unresolved mappings, and diagnostics.
+
+More detailed reconciliation, confidence, corroboration, and source-priority
+information is available through the analytics API. See
+[Analytics configuration and behavior](../configuration/analytics.md) and the
+[API reference](../reference/api.md).
