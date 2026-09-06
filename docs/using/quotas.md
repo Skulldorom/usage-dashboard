@@ -35,8 +35,10 @@ as a reset rather than negative consumption.
 - **Overage** is the amount above 100% when a provider permits or reports usage
   beyond the nominal allowance.
 - **Pace ratio** compares actual burn rate with even use through the window.
-- **Burn/forecast** projects from observed history to the window reset. It is
-  omitted when there is insufficient history or no meaningful reset window.
+- **Burn/forecast** is available through the analytics API and projects from
+  observed history to the window reset. It is unavailable when there is
+  insufficient history or no meaningful reset window; the active Usage page
+  does not currently render this advanced forecast.
 
 ## Missing windows
 
