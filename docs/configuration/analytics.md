@@ -1,339 +1,43 @@
-# Usage analytics
-
-The **Usage** page combines provider snapshots with Hermes-observed workload so
-the primary view answers what was used, what it cost, where it went, and when
-each provider quota resets. Advanced source and pricing diagnostics remain
-available in the collapsed **Data sources & quality** section.
-
-Analytics are built as a normalization layer on top of the existing
-`UsageSnapshot` history - not a separate tracking system. Nothing about the
-Dashboard's current-usage view changes.
-
-## How it works
-
-Each poll stores a snapshot of provider state. A normalizer then derives a
-normalized observation per metric, including:
-
-- **point readings** for gauges, balances, and remaining-quota values, and
-- **interval deltas** for counters (usage consumed between observations).
-
-Where a provider already returns historical buckets (Anthropic hourly usage,
-OpenAI daily costs, Firecrawl historical periods), that native history is
-ingested directly rather than derived from polling cadence.
-
-Quota resets are detected from known reset timestamps first and a heuristic
-second, so a quota rollover (e.g. `5% → 98% remaining`) is never reported as
-negative usage.
-
-## What you can see
-
-- **Overview** - committed subscription cost, provider-reported PAYG spend, and
-  Hermes-observed tokens, requests, and sessions for the selected range.
-- **Provider usage & quota** - billing and workload beside every independently
-  reported quota window, including its own utilization, status, and reset time.
-- **Usage over time** - tokens, cost, requests, or sessions grouped by provider
-  or model. The cost series is explicitly labelled **Observed cost** because it
-  represents Hermes cost telemetry, not subscription commitment or
-  provider-reported spend. Missing days remain gaps instead of becoming zero
-  usage; observed zeroes remain distinct from dates with no observation.
-- **Cost & value** - direct provider economics using subscription commitment or
-  PAYG cost basis as the named denominator. Selected-range subscription
-  allocation remains available as detail and is never presented as plan price.
-- **Breakdown** - provider, model, and profile attribution in one tabbed table.
-- **Data sources & quality** - source freshness, unresolved aliases, pricing
-  coverage, and diagnostics, collapsed by default.
-
-Provider-reported and Hermes-observed values are never added when they describe
-the same workload. Provider values stay authoritative; Hermes provides observed
-workload and attribution. Unknown costs and missing quotas remain unknown.
-
-Forecasts are deterministic and rate-based; they are scoped to the relevant
-reset window and never extrapolate a rolling total (like OpenAI's 30-day cost)
-as if it were a simple counter. Confidence reflects observation count, history
-span, data coverage, and whether data is provider-native or snapshot-derived.
-Missing samples are reported as gaps, not zero usage.
-
-The chart defaults to a **30-day** window regardless of how much history is
-retained.
-
-## Provider health & stale data
-
-Each configured provider exposes a **health state** derived from its most recent
-collection attempts, so the dashboard can tell fresh data apart from stale
-last-known-good data and outright failures:
-
-| State | Meaning |
-| --- | --- |
-| `healthy` | The most recent refresh succeeded and displayed data is current. |
-| `stale` | The latest refresh failed, but a recent successful snapshot exists. The dashboard keeps showing the last-known-good values and marks them stale. |
-| `error` | The provider cannot currently be queried and there is no useful (or no recent enough) successful value. |
-| `never_connected` | The provider has not yet produced a successful collection. |
-
-A failed refresh **never** replaces useful values with zero or an empty state.
-The last successful snapshot is retained and returned as `last_good`, and a
-failed collection does not create a zero-usage observation for analytics (it is
-treated as missing data, not zero usage).
-
-Staleness is determined from the polling interval (a provider expected to
-refresh hourly becomes stale after missing roughly two expected refreshes)
-rather than a single hard-coded duration.
-
-### Health in the API
-
-`GET /api/v1/usage` now returns, per provider, a `health` object alongside the
-existing `latest` snapshot:
-
-```json
-{
-  "health": {
-    "status": "stale",
-    "last_attempt_at": "2026-08-22T11:55:00+00:00",
-    "last_success_at": "2026-08-22T09:40:00+00:00",
-    "last_failure_at": "2026-08-22T11:55:00+00:00",
-    "consecutive_failures": 3,
-    "latest_error": "connect timeout",
-    "age_seconds": 8100,
-    "is_stale": true
-  }
-}
-```
-
-`last_good` is populated only while the last-known-good value is still within
-policy (`status == "stale"`). The browser extension and other API consumers can
-read `health` to represent provider state consistently without independently
-guessing whether data is stale. Error text is sanitized and never includes
-credentials.
-
-## Analytics API
-
-The `GET /api/v1/usage` endpoint remains focused on current/latest state.
-Historical analytics live under `GET /api/v1/analytics/*` and require the
-`analytics:read` scope (admin sessions are always allowed):
-
-```
-GET /api/v1/analytics/summary
-GET /api/v1/analytics/overview?interval=&from=&to=&timezone=
-GET /api/v1/analytics/economics?from=&to=&provider=&config_id=
-GET /api/v1/analytics/providers/{config_id}
-GET /api/v1/analytics/providers/{config_id}/timeseries?metric=&interval=&from=&to=&timezone=
-GET /api/v1/analytics/providers/{config_id}/daily?metric=&from=&to=&timezone=
-GET /api/v1/analytics/providers/{config_id}/hourly?metric=&date=&timezone=
-GET /api/v1/analytics/providers/{config_id}/forecast?metric=&timezone=
-GET /api/v1/analytics/providers/{config_id}/comparison?metric=&window=day|week|month&timezone=
-```
-
-`interval` is one of `hour`, `day`, or `week`. Day and hour grouping honor the
-requested `timezone` (IANA name); the frontend passes the user's local timezone.
-
-## Source reconciliation & data audit
-
-Because provider-reported and Hermes-observed data describe the *same* underlying
-usage, the dashboard never blindly sums them. Each provider's analytics value is
-built from an **authoritative** source with other compatible observations used as
-**corroboration**:
-
-- **Authoritative priority** - `native` provider data &gt; `snapshot`-derived &gt;
-  `hermes`-observed &gt; `estimated`.
-- **Material disagreement** - when a corroborating source differs from the
-  authoritative value by more than a tolerance (15 percentage points for
-  capacity, 50% relative for activity), it is flagged as a disagreement rather
-  than silently blended in.
-- **Staleness guard** - a corroborating source fresher than the authoritative
-  reading (by more than 6 hours) marks the authoritative data as potentially
-  stale, so lagging primary data cannot silently win on priority alone.
-- **Confidence degradation** - disagreements and staleness each reduce the
-  provider's confidence by one step (`high → medium → low`).
-
-### "Why this number?" audit
-
-Each provider row in the comparison table exposes a **"Why this number?"**
-button. It opens a panel showing, per value:
-
-- the authoritative source and value;
-- the quota/window and reset timestamp (capacity);
-- corroborating sources and Hermes activity/estimated cost (activity);
-- the confidence level; and
-- any reconciliation warnings (disagreements, staleness).
-
-This makes unexpected analytics diagnosable without inspecting the database or
-API directly. The same reconciliation metadata is available under `audit.*.reconciliation`
-in the `/analytics/overview` response.
-
-## Estimated cost (Hermes-derived)
-
-When a Hermes data source supplies **model + token-class** telemetry for a mapped
-provider, the dashboard derives a supplementary **estimated cost** by pricing
-those token classes against a maintained catalogue of provider/model list prices.
-
-The estimate is intentionally distinct from provider-reported cost:
-
-- Token classes - `input`, `output`, `cache read`, `cache write`, and
-  `reasoning` - are priced **separately** where the catalogue lists them.
-- Rates are selected **by effective date**, so historical usage is priced with
-  the rate in effect on each observation's date rather than today's price.
-- The result is always labelled **Estimated cost** and carries the catalogue
-  version (`pricing_version`) used, so a number can be traced to its rate set.
-- Unknown models, and token classes with no listed rate, are surfaced as
-  **unpriced** - never silently priced at zero.
-- `requests` and provider-reported `cost` are never token-priced; the estimate
-  is never added to provider-authoritative totals.
-
-## Value / cost efficiency
-
-Provider rows can store billing metadata in **Settings → Billing configuration**:
-
-- `pricing_model` - `payg`, `subscription`, or `free`.
-- `subscription_amount`, `subscription_currency`, `billing_cadence`, and an
-  optional `billing_anchor` for subscription providers.
-
-`GET /api/v1/analytics/economics` combines that billing configuration with
-Hermes-observed model/token telemetry and the pricing catalogue to report:
-
-- **cost basis** - actual provider-reported spend, provider billing history, or
-  a clearly labelled pricing estimate for PAYG rows (in that order); prorated
-  subscription cost for subscription rows, or zero for free rows;
-- **API-equivalent value** - what the observed model/token workload would cost at
-  the maintained list-price catalogue;
-- **value multiplier** - API-equivalent value per paid dollar; and
-- **coverage diagnostics** - priced vs. unpriced tokens, unknown models, and why
-  a provider is not eligible for comparison.
-
-Subscription cost is prorated by the real overlap between the selected analytics
-range and each billing period. Month lengths and leap years are respected. When a
-subscription has no anchor, the response marks the allocation as estimated rather
-than pretending the period boundary is known.
-
-The Usage page shows these values in a **Value / Cost Efficiency** panel. The
-panel labels them as consumption economics, not ROI, because it compares measured
-usage against API list prices - it does not infer business value.
-
-### Pricing catalogue
-
-Prices live in `backend/app/analytics/pricing.py`. Entries are keyed by
-(provider, model) with an `effective_from` date and per-token-class USD rates
-per 1M tokens. Bump `PRICING_VERSION` whenever you edit an entry so existing
-dashboards can tell which rate set produced a stored number. Seed values are
-representative list prices and should be reviewed against current provider
-pricing pages.
-
-### PAYG source precedence and provider audit
-
-PAYG cost uses one source only: `provider_reported`, then
-`provider_billing_history`, then `pricing_estimate`, otherwise `unavailable`.
-Actual and reconstructed values are never added. A pricing estimate includes
-the catalogue version, priced-token coverage, and a partial flag. Estimates
-below the 80% pricing-coverage threshold remain diagnostic API-equivalent data
-and are not used as PAYG cost bases or whole-workload efficiency denominators.
-
-| Provider adapter | Strongest safe source with configured credential | Fallback / limitation |
-| --- | --- | --- |
-| OpenAI | Native organization daily cost history | Requires an organization admin key. |
-| Anthropic | Native Usage & Cost Admin API history | Cost enrichment is best-effort and requires an eligible Admin API credential; token usage remains available when cost access fails. Priority Tier cost is not included by Anthropic's cost endpoint. |
-| DeepSeek | Balance only; no historical spend endpoint for the standard API key | Official model/token-class/time pricing estimate from Hermes telemetry. |
-| OpenRouter | Key credit limits and rolling usage, not arbitrary-range billing history | Price from sufficiently detailed Hermes telemetry when catalogue coverage exists; otherwise unavailable. |
-| Firecrawl | Credit usage history | Credits are not assumed to be USD; PAYG monetary cost remains unavailable without an authoritative money observation or supported model pricing. |
-| OpenCode Go | Subscription usage windows | Configure as subscription; allowance figures are not treated as PAYG billed spend. |
-| Codex | Subscription quota windows | Configure as subscription; quota utilization is not PAYG billed spend. |
-| Custom HTTP | Operator-defined metrics | Monetary deltas can be authoritative only when the configured endpoint returns a supported currency; otherwise unavailable. |
-
-## Cross-provider comparison
-
-Because providers report different units (tokens, USD, credits, percentages),
-the "All providers" view compares along two honest axes:
-
-- **Capacity** - every quota window that a provider declares as normalizable is
-  shown as its own line (for example, 5h, weekly, and monthly limits), so
-  overlapping capacity windows are not collapsed into a single misleading
-  series. Values are each provider/window's fraction of its own quota consumed
-  (0-100%, and above 100% when over allowance). Providers without a declared
-  quota simply don't appear on the overlay.
-- **Activity dimensions** - consumption grouped into compatible dimensions:
-  `tokens`, `requests`, `cost`, and `credits`. Only providers exposing a
-  compatible unit appear in a given dimension, and shares are always calculated
-  within a single dimension.
-
-### Activity metric modes
-
-The overview graph switches between **Capacity %** (default) and the four
-activity dimensions. Rules that keep the numbers honest:
-
-- **State is not activity.** Gauges, balances, remaining-quota, and rolling
-  totals are point-in-time state and never appear in an activity dimension.
-- **Disjoint classes sum.** A provider's input/output/cache token counters are
-  disjoint and are summed into its token total.
-- **Overlapping windows do not sum.** When a provider reports the same unit over
-  multiple overlapping windows (e.g. OpenRouter daily/weekly/monthly credits),
-  only the declared overview metric is used - never a naive sum that
-  double-counts.
-- **Shares are dimension-scoped.** A provider's share is its fraction of the
-  total *within one compatible dimension*, never a ranking across units.
-
-The same data is available under `activity` in the `/analytics/overview`
-response: one entry per dimension with `total`, per-provider `value`/`share_pct`,
-and a bucketed time series.
-
-## Provider capacity & pace
-
-Each provider's detail view exposes a **Capacity** panel built from the same
-canonical utilization model:
-
-- **Current capacity** - quota consumed, remaining, and any over-allowance
-  (shown explicitly, e.g. `128% used · 28% over allowance`).
-- **Reset / window** - when the quota window resets.
-- **Pace ratio** - the canonical `pace_ratio` dimension: actual burn rate ÷
-  sustainable burn rate. `1.0` is on pace; above `1.0` is burning faster than the
-  remaining quota can sustain; below `1.0` is under pace. Available both here and
-  in the forecast panel.
-- **Capacity history** - the utilization percentage over time, with a fixed 100%
-  reference line (values may extend above it).
-
-This is served by `GET /analytics/providers/{id}/capacity`. Providers without a
-normalizable quota metric return a capacity object with null utilization - never
-a fabricated 0%.
-
-## Quota-impact correlation
-
-When a provider has enough history, the dashboard estimates how **Hermes-observed
-activity correlates with quota movement** across complete reset windows. This is
-deliberately a statistical estimate, never a fixed tokens-to-quota conversion:
-
-- Each complete reset window contributes a pair: peak quota consumed and the
-  Hermes token volume observed in that same window.
-- A least-squares slope (`estimated_impact_per_token`) plus Pearson correlation
-  and r² describe how well Hermes explains quota movement.
-- An estimate is produced only with at least **3 complete windows** of history;
-  below that there is not enough correlated data to be meaningful.
-- The result is labelled an **estimate** and carries sample size and confidence.
-- Confidence degrades (and the result is marked unexplained) when r² falls below
-  a floor, i.e. when quota movement is not explained by Hermes activity.
-- Unattributed quota consumption stays visible as `unattributed_pct` (1 - r²);
-  the system never forces 100% attribution.
-
-The estimate is available on `GET /analytics/providers/{id}/capacity` under
-`quota_impact`, and in the "Why this number?" audit view under
-`audit.quota_impact`.
-
-## Retention
-
-| Data | Retention |
-| --- | --- |
-| Raw snapshots | 180 days (`SNAPSHOT_RETENTION_DAYS`) |
-| Hourly observations | 365 days (`ANALYTICS_HOURLY_RETENTION_DAYS`) |
-| Daily aggregates | Indefinitely (materialized in a follow-up) |
-
-Retention is decoupled from the default chart range, which is 30 days.
-
-## Provider support
-
-Analytics capability is declared per provider through reusable metadata rather
-than provider-specific conditionals. Providers expose the metric semantics the
-analytics engine needs:
-
-- **Anthropic** - token/request counters with native hourly history.
-- **OpenAI** - rolling 30-day cost plus native daily cost buckets.
-- **Codex** - session/weekly remaining percentages with reset windows.
-- **OpenRouter** - credit counters and remaining limit.
-- **DeepSeek** - account balance.
-- **Firecrawl** - credits and usage percent with a billing window.
-- **Custom HTTP** - generic point history; advanced analytics (forecasts,
-  pacing) are unavailable because metric semantics are unknown.
+# Analytics configuration and behavior
+
+This page is the operator-oriented analytics reference. For the product tour,
+start with [Usage & analytics](../using/usage-and-analytics.md).
+
+Analytics normalize saved provider snapshots, provider-native dated buckets,
+and optional Hermes observations. They do not form a second collection system.
+The default selected range is 30 days; retention is configured separately.
+
+## Metric behavior
+
+- Counters can produce interval consumption deltas.
+- Gauges, balances, and rolling totals are point-in-time state and are not
+  summed as activity.
+- Remaining/rate-limit values can produce consumption only when the adapter
+  declares safe capacity and reset semantics.
+- Native dated buckets are used directly where available; otherwise history is
+  derived from polling snapshots.
+- Known reset timestamps take priority over reset heuristics. A rollover is not
+  reported as negative usage.
+
+Aggregation can be hourly, daily, or weekly. Day/hour grouping honors the IANA
+`timezone` parameter; the frontend uses the browser's timezone.
+
+## Forecasts, confidence, and reconciliation
+
+Forecasts are deterministic rate projections scoped to a meaningful reset
+window. Confidence considers observation count, time span, coverage, and source.
+Provider-native observations have priority over snapshot-derived, Hermes, and
+estimated evidence. Material disagreement and stale authoritative data reduce
+confidence and are returned in analytics API audit metadata.
+
+These capabilities are available from the analytics API. The active Usage page
+focuses on the simpler workload, quota, cost, breakdown, and data-quality views;
+it does not currently render every advanced analytics response.
+
+## Related guides
+
+- [Understanding quotas](../using/quotas.md)
+- [Understanding cost & value](../using/cost-and-value.md)
+- [Data sources & provenance](../concepts/data-provenance.md)
+- [Missing data vs zero](../concepts/missing-vs-zero.md)
+- [API reference](../reference/api.md)

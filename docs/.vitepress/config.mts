@@ -29,7 +29,20 @@ export default defineConfig({
           { text: 'Introduction', link: '/getting-started/' },
           { text: 'Installation', link: '/getting-started/installation' },
           { text: 'First-run setup', link: '/getting-started/first-run' },
+          { text: 'Connect your first provider', link: '/getting-started/first-provider' },
           { text: 'Updating', link: '/getting-started/updating' },
+        ],
+      },
+      {
+        text: 'Using Usage Dashboard',
+        collapsed: false,
+        items: [
+          { text: 'Overview', link: '/using/' },
+          { text: 'Dashboard', link: '/using/dashboard' },
+          { text: 'Usage & analytics', link: '/using/usage-and-analytics' },
+          { text: 'Understanding quotas', link: '/using/quotas' },
+          { text: 'Understanding cost & value', link: '/using/cost-and-value' },
+          { text: 'Provider health & errors', link: '/using/provider-health' },
         ],
       },
       {
@@ -39,6 +52,8 @@ export default defineConfig({
           { text: 'Environment variables', link: '/configuration/environment' },
           { text: 'Authentication', link: '/configuration/authentication' },
           { text: 'API tokens', link: '/configuration/api-tokens' },
+          { text: 'Connected providers', link: '/configuration/connected-providers' },
+          { text: 'Billing', link: '/configuration/billing' },
           { text: 'Automatic polling', link: '/configuration/polling' },
           { text: 'Usage analytics', link: '/configuration/analytics' },
           { text: 'Data sources', link: '/configuration/data-sources' },
@@ -55,7 +70,19 @@ export default defineConfig({
           { text: 'OpenRouter', link: '/providers/openrouter' },
           { text: 'Firecrawl', link: '/providers/firecrawl' },
           { text: 'OpenAI Codex', link: '/providers/codex' },
+          { text: 'OpenCode Go', link: '/providers/opencode-go' },
           { text: 'Custom HTTP', link: '/providers/custom-http' },
+        ],
+      },
+      {
+        text: 'Concepts',
+        collapsed: true,
+        items: [
+          { text: 'Data sources & provenance', link: '/concepts/data-provenance' },
+          { text: 'Cost accounting', link: '/concepts/cost-accounting' },
+          { text: 'Hermes attribution', link: '/concepts/hermes-attribution' },
+          { text: 'Missing data vs zero', link: '/concepts/missing-vs-zero' },
+          { text: 'Pricing & coverage', link: '/concepts/pricing-coverage' },
         ],
       },
       {
@@ -85,6 +112,7 @@ export default defineConfig({
         ],
       },
       { text: 'Troubleshooting', link: '/troubleshooting' },
+      { text: 'API reference', link: '/reference/api' },
     ],
     search: {
       provider: 'local',

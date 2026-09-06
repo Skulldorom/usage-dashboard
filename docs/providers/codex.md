@@ -28,6 +28,10 @@ The provider card groups the session (5-hour) and weekly limits into usage-windo
 sections that show the remaining percentage, a progress bar, and a "Resets …"
 timestamp in the viewer's local timezone whenever the provider supplies one.
 
+Configure Codex as a subscription with your real commitment. Quota percentages
+are allowance state, not PAYG spend. Hermes can supply model/token workload for
+API-equivalent value when mapped to this provider.
+
 ## Notes
 
 - If the OAuth token is rejected (401/403), re-authorize the Codex provider from
