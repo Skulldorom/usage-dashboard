@@ -2,7 +2,7 @@
 
 # Usage Dashboard
 
-Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, and custom HTTP usage endpoints. It stores provider credentials encrypted at rest, polls usage/balance APIs, renders a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
+Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, and custom HTTP endpoints. It tracks current quota and health, retains history, analyzes cost and value, attributes Hermes-observed workload by provider/model/profile, stores provider credentials encrypted at rest, and exposes integrations for Homepage Dashboard and the browser extension.
 
 <p align="center">
   <a href="https://ko-fi.com/skulldorom"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>
@@ -12,7 +12,7 @@ Self-hosted API usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claud
 
 ## Documentation
 
-Full documentation - installation, configuration, providers, integrations, the browser extension, and development - lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/).
+Full documentation lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/). Useful starting points are [Dashboard](https://skulldorom.github.io/usage-dashboard/docs/using/dashboard.html), [Usage & analytics](https://skulldorom.github.io/usage-dashboard/docs/using/usage-and-analytics.html), [Connected providers](https://skulldorom.github.io/usage-dashboard/docs/configuration/connected-providers.html), and [Understanding cost & value](https://skulldorom.github.io/usage-dashboard/docs/using/cost-and-value.html).
 
 ## Quick start
 
@@ -43,7 +43,9 @@ See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-
 ## Features
 
 - 🔐 Provider credentials encrypted at rest with Fernet.
-- 📊 Usage and balance tracking for eight provider types.
+- 📊 Current quota, balance, usage history, forecasts, and provider health for eight provider types.
+- 💵 PAYG and subscription cost accounting with explicit provenance and pricing coverage.
+- 🧭 Hermes workload attribution by provider, model, profile, request, and session.
 - 🏠 Homepage Dashboard widget with dynamic per-provider rows.
 - 🧩 Chrome/Brave browser extension with one-click setup.
 - 🔔 Alert thresholds and automatic background polling.

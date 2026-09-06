@@ -21,3 +21,6 @@ Your OpenRouter API key.
 
 - The summary surfaces remaining credit, with daily/weekly/monthly usage
   available as secondary metrics.
+- These windows overlap and are not added together. The adapter does not expose
+  arbitrary-range native billing history; credit state is not assumed to be USD
+  spend.

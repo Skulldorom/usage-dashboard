@@ -24,3 +24,5 @@ A Firecrawl API key.
 
 - `usage_percent` is derived from `credits_used / plan_credits`.
 - The summary includes the plan name and refresh date when available.
+- Historical periods are native credit usage, not monetary billing history.
+  Usage Dashboard does not assume one credit equals one unit of currency.

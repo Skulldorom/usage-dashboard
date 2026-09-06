@@ -162,6 +162,9 @@ DELETE /api/v1/datasources/configs/{id}             # delete (admin)
 POST   /api/v1/datasources/configs/{id}/test        # test connection (admin)
 POST   /api/v1/datasources/configs/{id}/sync        # sync now (admin)
 GET    /api/v1/datasources/configs/{id}/status      # sync/health status
+GET    /api/v1/datasources/configs/{id}/observations # inspect recent records
+GET    /api/v1/datasources/configs/{id}/provider-mappings # mappings (admin)
+PUT    /api/v1/datasources/configs/{id}/provider-mappings # update mappings (admin)
 
 GET    /api/v1/analytics/hermes                     # global Hermes breakdown
 GET    /api/v1/analytics/providers/{id}/attribution # provider attribution

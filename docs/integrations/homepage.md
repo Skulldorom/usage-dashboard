@@ -54,7 +54,7 @@ object-style mappings as a block-display array.
 The `list` array contains one flat object per enabled provider config:
 
 - `label` → left side (for example `DeepSeek` for one configuration, or
-  `DeepSeek (work)` and `DeepSeek (personal)` when duplicate configurations
+  `DeepSeek - work` and `DeepSeek - personal` when duplicate configurations
   need disambiguation)
 - `value` → right side (prefers remaining credits/usage, then percent-used, then
   summary fallback)
