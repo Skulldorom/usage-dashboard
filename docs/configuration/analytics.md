@@ -37,7 +37,7 @@ negative usage.
   provider-reported spend. Missing days remain gaps instead of becoming zero
   usage; observed zeroes remain distinct from dates with no observation.
 - **Cost & value** - direct provider economics using subscription commitment or
-  reported PAYG spend as the named denominator. Selected-range subscription
+  PAYG cost basis as the named denominator. Selected-range subscription
   allocation remains available as detail and is never presented as plan price.
 - **Breakdown** - provider, model, and profile attribution in one tabbed table.
 - **Data sources & quality** - source freshness, unresolved aliases, pricing
@@ -189,7 +189,8 @@ Provider rows can store billing metadata in **Settings → Billing configuration
 `GET /api/v1/analytics/economics` combines that billing configuration with
 Hermes-observed model/token telemetry and the pricing catalogue to report:
 
-- **cost basis** - actual provider-reported spend for PAYG rows, prorated
+- **cost basis** - actual provider-reported spend, provider billing history, or
+  a clearly labelled pricing estimate for PAYG rows (in that order); prorated
   subscription cost for subscription rows, or zero for free rows;
 - **API-equivalent value** - what the observed model/token workload would cost at
   the maintained list-price catalogue;
@@ -214,6 +215,26 @@ per 1M tokens. Bump `PRICING_VERSION` whenever you edit an entry so existing
 dashboards can tell which rate set produced a stored number. Seed values are
 representative list prices and should be reviewed against current provider
 pricing pages.
+
+### PAYG source precedence and provider audit
+
+PAYG cost uses one source only: `provider_reported`, then
+`provider_billing_history`, then `pricing_estimate`, otherwise `unavailable`.
+Actual and reconstructed values are never added. A pricing estimate includes
+the catalogue version, priced-token coverage, and a partial flag. Estimates
+below the 80% pricing-coverage threshold remain diagnostic API-equivalent data
+and are not used as PAYG cost bases or whole-workload efficiency denominators.
+
+| Provider adapter | Strongest safe source with configured credential | Fallback / limitation |
+| --- | --- | --- |
+| OpenAI | Native organization daily cost history | Requires an organization admin key. |
+| Anthropic | Native Usage & Cost Admin API history | Cost enrichment is best-effort and requires an eligible Admin API credential; token usage remains available when cost access fails. Priority Tier cost is not included by Anthropic's cost endpoint. |
+| DeepSeek | Balance only; no historical spend endpoint for the standard API key | Official model/token-class/time pricing estimate from Hermes telemetry. |
+| OpenRouter | Key credit limits and rolling usage, not arbitrary-range billing history | Price from sufficiently detailed Hermes telemetry when catalogue coverage exists; otherwise unavailable. |
+| Firecrawl | Credit usage history | Credits are not assumed to be USD; PAYG monetary cost remains unavailable without an authoritative money observation or supported model pricing. |
+| OpenCode Go | Subscription usage windows | Configure as subscription; allowance figures are not treated as PAYG billed spend. |
+| Codex | Subscription quota windows | Configure as subscription; quota utilization is not PAYG billed spend. |
+| Custom HTTP | Operator-defined metrics | Monetary deltas can be authoritative only when the configured endpoint returns a supported currency; otherwise unavailable. |
 
 ## Cross-provider comparison
 

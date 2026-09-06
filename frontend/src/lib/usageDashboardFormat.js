@@ -65,12 +65,13 @@ export function usageSummary(hermes, economics, overview) {
   const subscriptions = (economics?.providers || []).filter((row) => row.pricing_model === 'subscription')
   const commitment = subscriptions.reduce((sum, row) => sum + Number(row.audit?.subscription?.amount || 0), 0)
   const paygRows = (economics?.providers || []).filter((row) => row.pricing_model === 'payg')
-  const knownPayg = paygRows.filter((row) => row.actual_spend?.amount !== null && row.actual_spend?.amount !== undefined)
+  const paygBasis = (row) => row.cost_basis?.amount !== null && row.cost_basis?.amount !== undefined ? row.cost_basis : row.actual_spend
+  const knownPayg = paygRows.filter((row) => paygBasis(row)?.amount !== null && paygBasis(row)?.amount !== undefined)
   const freeRows = (economics?.providers || []).filter((row) => row.pricing_model === 'free')
-  const payg = knownPayg.reduce((sum, row) => sum + Number(row.actual_spend.amount), 0)
+  const payg = knownPayg.reduce((sum, row) => sum + Number(paygBasis(row).amount), 0)
   const currencies = new Set([
     ...subscriptions.map((row) => row.audit?.subscription?.currency || 'USD'),
-    ...knownPayg.map((row) => row.actual_spend.currency || 'USD'),
+    ...knownPayg.map((row) => paygBasis(row).currency || 'USD'),
   ])
   const hasKnownPaidCost = subscriptions.length || knownPayg.length
   const cost = currencies.size <= 1 && hasKnownPaidCost
@@ -94,7 +95,7 @@ export function selectedUsageSummary(base, selectedProvider, hermes, economics) 
   const economic = (economics?.providers || []).find((row) => row.config_id === selectedProvider.config_id)
   const cost = economic?.pricing_model === 'subscription'
     ? economic.audit?.subscription?.amount ?? null
-    : economic?.actual_spend?.amount ?? (economic?.pricing_model === 'free' ? 0 : null)
+    : economic?.cost_basis?.amount ?? (economic?.pricing_model === 'free' ? 0 : null)
   const ambiguous = Boolean(selectedProvider.attributionAmbiguous || economic?.attribution_ambiguous)
   const observed = ambiguous
     ? null
@@ -102,7 +103,7 @@ export function selectedUsageSummary(base, selectedProvider, hermes, economics) 
   return {
     ...base,
     cost,
-    currency: economic?.actual_spend?.currency || economic?.audit?.subscription?.currency || 'USD',
+    currency: economic?.cost_basis?.currency || economic?.audit?.subscription?.currency || 'USD',
     commitment: economic?.pricing_model === 'subscription' ? cost || 0 : 0,
     payg: economic?.pricing_model === 'payg' && cost !== null ? cost : 0,
     tokens: ambiguous ? null : observed?.tokens ?? economic?.observed?.tokens ?? null,
@@ -157,10 +158,22 @@ export function costPresentation(row) {
     }
   }
   if (row.pricing_model === 'free') return { value: 0, currency: row.cost_basis?.currency || 'USD', label: 'Free' }
+  const basis = row.cost_basis || {}
+  const sourceLabels = {
+    provider_reported: 'Actual provider spend',
+    provider_billing_history: 'Provider billing-history spend',
+    pricing_estimate: basis.partial ? 'Estimated cost (partial)' : 'Estimated from provider pricing',
+    unavailable: 'Spend unavailable',
+  }
   return {
-    value: row.actual_spend?.amount ?? null,
-    currency: row.actual_spend?.currency || row.cost_basis?.currency || 'USD',
-    label: row.actual_spend?.amount === null || row.actual_spend?.amount === undefined ? 'Spend unavailable' : 'Provider-reported spend',
+    value: basis.amount ?? null,
+    currency: basis.currency || 'USD',
+    label: sourceLabels[basis.source] || (basis.amount == null ? 'Spend unavailable' : 'PAYG cost'),
+    source: basis.source || 'unavailable',
+    estimated: Boolean(basis.estimated),
+    partial: Boolean(basis.partial),
+    coverage: basis.pricing_coverage?.priced_token_pct ?? null,
+    pricingVersion: basis.pricing_version || null,
   }
 }
 

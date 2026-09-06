@@ -178,3 +178,17 @@ it('does not assign provider-level Hermes workload to an ambiguous selected conf
 it('labels the chart cost metric with Hermes provenance', () => {
   expect(WORKLOAD_METRICS.find((item) => item.value === 'cost').label).toBe('Observed cost')
 })
+
+it('presents PAYG pricing estimates with provenance and partial coverage', () => {
+  const cost = costPresentation({
+    pricing_model: 'payg',
+    cost_basis: { amount: 4.2, currency: 'USD', source: 'pricing_estimate', estimated: true, partial: true, pricing_version: 'v2', pricing_coverage: { priced_token_pct: 92.5 } },
+  })
+  expect(cost).toMatchObject({ value: 4.2, label: 'Estimated cost (partial)', estimated: true, partial: true, coverage: 92.5, pricingVersion: 'v2' })
+})
+
+it('uses PAYG cost basis in summaries without turning unavailable cost into zero', () => {
+  const estimated = { pricing_model: 'payg', cost_basis: { amount: 3, currency: 'USD', source: 'pricing_estimate' } }
+  expect(usageSummary({ totals: [] }, { providers: [estimated] }).cost).toBe(3)
+  expect(usageSummary({ totals: [] }, { providers: [{ pricing_model: 'payg', cost_basis: { amount: null, currency: 'USD', source: 'unavailable' } }] }).cost).toBeNull()
+})

@@ -269,10 +269,14 @@ class EconomicsMoney(BaseModel):
     source: str | None = None
     comparable: bool = True
     reason: str | None = None
+    partial: bool = False
+    pricing_coverage: dict | None = None
+    pricing_version: str | None = None
 
 
 class EconomicsObserved(BaseModel):
     tokens: float = 0.0
+    requests: float = 0.0
     priced_tokens: float = 0.0
     unpriced_tokens: float = 0.0
     priced_token_pct: float | None = None
@@ -296,6 +300,7 @@ class EconomicsMetrics(BaseModel):
     savings_pct: float | None = None
     effective_cost_per_1m_tokens: float | None = None
     tokens_per_dollar: float | None = None
+    requests_per_dollar: float | None = None
     actual_cost_per_1m_tokens: float | None = None
 
 
