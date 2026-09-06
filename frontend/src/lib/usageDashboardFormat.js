@@ -42,7 +42,7 @@ export function observedSeriesKeys(point, series) {
 }
 
 export function workloadTooltipLabel({ date, key, value, total, metric, grouping, observedZero = false, contributorCount = 0 }) {
-  const formattedDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(`${date}T00:00:00Z`))
+  const formattedDate = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))
   if (total === null) return `${formattedDate} · No observation · Missing data is not zero`
   const metricName = WORKLOAD_METRICS.find((item) => item.value === metric)?.label || metric
   const source = metric === 'cost' ? 'Hermes observed cost' : 'Hermes observed'
