@@ -18,11 +18,17 @@ The production images and CI define the runtime baseline: **Python 3.14**,
 the supplied assets is `/opt/usage-dashboard`; secrets live in
 `/etc/usage-dashboard/backend.env`.
 
-On Debian or Ubuntu, install the host packages first:
+On Debian or Ubuntu, install the common host packages first:
 
 ```bash
 sudo apt update
-sudo apt install -y ca-certificates curl git nginx postgresql-common
+sudo apt install -y ca-certificates curl git nginx
+```
+
+For a local database, install PostgreSQL 18 from a supported package source:
+
+```bash
+sudo apt install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
 sudo apt install -y postgresql-18 postgresql-client-18
 ```
@@ -40,12 +46,23 @@ node --version   # must report v26.x
 uv --version
 ```
 
-If your PostgreSQL package is older than 18, use a supported PostgreSQL 18
-repository or external PostgreSQL 18 service before continuing.
+If using an external PostgreSQL 18 service, skip the local PostgreSQL block,
+local role/database creation, and service-enablement command. Create the database
+and role on that service instead, allow the host to reach it on port `5432`, and
+use its hostname in `DATABASE_URL`.
 
 ## 1. Create PostgreSQL and the service account
 
-Generate a URL-safe password, then create the database role and database:
+Create the dedicated application account on every installation:
+
+```bash
+sudo useradd --system --create-home --home-dir /var/lib/usage-dashboard \
+  --shell /usr/sbin/nologin usage-dashboard
+```
+
+For local PostgreSQL, generate a URL-safe password, then create the database role
+and database. For external PostgreSQL, perform the equivalent operations through
+that service's administration interface.
 
 ```bash
 DB_PASSWORD=$(openssl rand -base64 36 | tr '+/' '-_' | tr -d '=\n')
@@ -53,8 +70,6 @@ sudo -u postgres psql --set=db_password="$DB_PASSWORD" <<'SQL'
 CREATE ROLE usage_dashboard LOGIN PASSWORD :'db_password';
 CREATE DATABASE usage_dashboard OWNER usage_dashboard;
 SQL
-sudo useradd --system --create-home --home-dir /var/lib/usage-dashboard \
-  --shell /usr/sbin/nologin usage-dashboard
 ```
 
 Save the generated password now; the next step needs it.
@@ -113,13 +128,17 @@ sudoedit /etc/nginx/sites-available/usage-dashboard  # set server_name
 
 sudo nginx -t
 sudo systemctl daemon-reload
-sudo systemctl enable --now postgresql nginx usage-dashboard-backend.service
+sudo systemctl enable --now postgresql  # local PostgreSQL only
+sudo systemctl enable --now nginx usage-dashboard-backend.service
 ```
 
 Enabling the backend also starts its required migration unit. On every backend
-start, `usage-dashboard-migrate.service` must finish successfully before Uvicorn
-starts. The migration unit uses the same `alembic upgrade head` command as the
-backend container.
+start, `usage-dashboard-migrate.service` waits for network readiness and must
+finish successfully before Uvicorn starts. Alembic connects to the configured
+`DATABASE_URL`, so the same unit supports local and external PostgreSQL. If the
+database is unavailable, migration fails and the backend correctly remains
+stopped. The unit uses the same `alembic upgrade head` command as the backend
+container.
 
 Confirm the complete route:
 

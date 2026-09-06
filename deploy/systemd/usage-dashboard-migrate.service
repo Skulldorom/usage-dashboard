@@ -1,8 +1,8 @@
 [Unit]
 Description=Usage Dashboard database migrations
 Documentation=https://skulldorom.github.io/usage-dashboard/docs/getting-started/native-linux.html
-Requires=postgresql.service
-After=network-online.target postgresql.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

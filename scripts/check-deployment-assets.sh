@@ -26,21 +26,25 @@ require_text 'CUSTOM_HTTP_ALLOWED_HOSTS: ${CUSTOM_HTTP_ALLOWED_HOSTS:-}' docker-
 require_text 'ANALYTICS_HOURLY_RETENTION_DAYS: ${ANALYTICS_HOURLY_RETENTION_DAYS:-365}' docker-compose.yml
 
 require_text 'ExecStart=/opt/usage-dashboard/backend/.venv/bin/alembic' deploy/systemd/usage-dashboard-migrate.service
+require_text 'After=network-online.target' deploy/systemd/usage-dashboard-migrate.service
+require_text 'Wants=network-online.target' deploy/systemd/usage-dashboard-migrate.service
+if grep -Eq '^(Requires|After)=.*postgresql\.service' deploy/systemd/usage-dashboard-migrate.service; then
+  echo 'The generic migration unit must not require a local PostgreSQL service.' >&2
+  exit 1
+fi
 require_text 'Requires=usage-dashboard-migrate.service' deploy/systemd/usage-dashboard-backend.service
 require_text 'Restart=on-failure' deploy/systemd/usage-dashboard-backend.service
 require_text 'proxy_pass http://127.0.0.1:8000/api/;' deploy/nginx/usage-dashboard.conf
 require_text 'proxy_pass http://127.0.0.1:8000/health;' deploy/nginx/usage-dashboard.conf
 require_text 'try_files $uri $uri/ /index.html;' deploy/nginx/usage-dashboard.conf
 
-# systemd-analyze checks the unit grammar. Replace deployment-only paths and the
-# distro PostgreSQL unit in temporary copies so verification is host-independent.
+# systemd-analyze checks the shipped dependency graph and unit grammar. Only the
+# deployment-only executable paths are replaced in temporary copies.
 if command -v systemd-analyze >/dev/null 2>&1; then
   check_dir=$(mktemp -d)
   trap 'rm -rf "$check_dir"' EXIT HUP INT TERM
   for unit in deploy/systemd/*.service; do
     sed \
-      -e '/^Requires=postgresql\.service$/d' \
-      -e 's/postgresql\.service//g' \
       -e 's#^ExecStart=.*#ExecStart=/bin/true#' \
       "$unit" > "$check_dir/$(basename "$unit")"
   done
