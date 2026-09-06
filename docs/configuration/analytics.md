@@ -28,7 +28,7 @@ Forecasts are deterministic rate projections scoped to a meaningful reset
 window. Confidence considers observation count, time span, coverage, and source.
 Provider-native observations have priority over snapshot-derived, Hermes, and
 estimated evidence. Material disagreement and stale authoritative data reduce
-confidence and appear in **Why this number?** diagnostics.
+confidence and are returned in analytics API audit metadata.
 
 These capabilities are available from the analytics API. The active Usage page
 focuses on the simpler workload, quota, cost, breakdown, and data-quality views;
