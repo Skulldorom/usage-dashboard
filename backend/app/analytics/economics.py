@@ -138,13 +138,27 @@ def _token_total(observations: list[Any]) -> float:
     )
 
 
+def _request_total(observations: list[Any]) -> float:
+    return sum(
+        float(getattr(obs, "value", 0) or 0)
+        for obs in observations
+        if getattr(obs, "metric", None) == "requests" and float(getattr(obs, "value", 0) or 0) > 0
+    )
+
+
 def _money_currency(value: Any) -> str | None:
     unit = str(value or "").strip().upper()
     return unit if unit in _MONEY_UNITS else None
 
 
 def _actual_spend(provider_observations: list[Any]) -> dict | None:
-    totals: dict[str, float] = {}
+    # Keep independently-derived observation families separate. Snapshot cost
+    # deltas are provider-reported readings; native buckets are billing history.
+    # Selecting one family prevents the same spend being added twice.
+    totals_by_source: dict[str, dict[str, float]] = {
+        "provider_reported": {},
+        "provider_billing_history": {},
+    }
     for obs in provider_observations:
         metric = str(getattr(obs, "metric", "")).lower()
         currency = _money_currency(getattr(obs, "unit", None))
@@ -154,14 +168,18 @@ def _actual_spend(provider_observations: list[Any]) -> dict | None:
         if any(word in metric for word in _SPEND_WORDS):
             value = float(getattr(obs, "value", 0) or 0)
             if value > 0:
+                provenance = "provider_billing_history" if getattr(obs, "source", None) == "native" else "provider_reported"
+                totals = totals_by_source[provenance]
                 totals[currency] = totals.get(currency, 0.0) + value
+    provenance = next((name for name in ("provider_reported", "provider_billing_history") if totals_by_source[name]), None)
+    totals = totals_by_source[provenance] if provenance else {}
     if not totals:
         return None
     if len(totals) > 1:
         currencies = ", ".join(sorted(totals))
-        return Money(None, "MIXED", "actual_spend", source="provider_reported", comparable=False, reason=f"mixed provider spend currencies: {currencies}").to_dict()
+        return Money(None, "MIXED", "actual_spend", source=provenance, comparable=False, reason=f"mixed provider spend currencies: {currencies}").to_dict()
     currency, amount = next(iter(totals.items()))
-    return Money(round(amount, 6), currency, "actual_spend", source="provider_reported").to_dict()
+    return Money(round(amount, 6), currency, "actual_spend", source=provenance).to_dict()
 
 
 def _same_currency(left: dict | None, right: dict | None) -> bool:
@@ -190,7 +208,7 @@ def _attribution_confidence(observations: list[Any]) -> dict:
     return {"level": scored["level"], "score": scored.get("score", 0), "reason": scored.get("reason"), "coverage": scored.get("coverage", cov)}
 
 
-def _cost_basis(config: Any, provider_observations: list[Any], start: datetime, end: datetime) -> tuple[dict, dict | None]:
+def _cost_basis(config: Any, provider_observations: list[Any], start: datetime, end: datetime, api_equivalent: dict | None = None, pricing_coverage: dict | None = None) -> tuple[dict, dict | None]:
     pricing_model = config.pricing_model or "payg"
     actual = _actual_spend(provider_observations)
     if pricing_model == "subscription":
@@ -199,7 +217,16 @@ def _cost_basis(config: Any, provider_observations: list[Any], start: datetime, 
     if pricing_model == "free":
         return Money(0.0, (config.subscription_currency or "USD").upper(), "free", source="configured_free").to_dict(), actual
     if actual is None:
-        return Money(None, (config.subscription_currency or "USD").upper(), "payg_unreported", estimated=True).to_dict(), None
+        estimate = (api_equivalent or {}).get("value")
+        if estimate is not None and estimate > 0:
+            coverage = pricing_coverage or {}
+            return {
+                **Money(estimate, (api_equivalent or {}).get("currency", "USD"), "estimated_spend", estimated=True, source="pricing_estimate").to_dict(),
+                "partial": coverage.get("level") != "high",
+                "pricing_coverage": coverage,
+                "pricing_version": (api_equivalent or {}).get("pricing_version"),
+            }, None
+        return Money(None, (config.subscription_currency or "USD").upper(), "unavailable", estimated=False, source="unavailable", reason="No provider billing data or priceable model/token-class usage").to_dict(), None
     return {**actual, "kind": "actual_spend"}, actual
 
 
@@ -262,7 +289,6 @@ def provider_level_economics(provider: str, hermes_observations: list[Any], conf
 
 def provider_economics(config: Any, provider_observations: list[Any], hermes_observations: list[Any], start: datetime, end: datetime, *, attribution_ambiguous: bool = False) -> dict:
     pricing_model = config.pricing_model or "payg"
-    cost_basis, actual = _cost_basis(config, provider_observations, start, end)
     if attribution_ambiguous:
         # The Hermes workload for this provider is shared by multiple configs and
         # cannot be attributed to this specific config. Do not price it here (it
@@ -270,7 +296,9 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         # double-count the same observations across configs.
         hermes_observations = []
     api_equivalent, pricing_coverage, tokens = _api_equivalent(hermes_observations)
+    cost_basis, actual = _cost_basis(config, provider_observations, start, end, api_equivalent, pricing_coverage)
     api_value = api_equivalent["value"]
+    requests = _request_total(hermes_observations)
     priced_tokens = pricing_coverage["priced_tokens"]
     unpriced_tokens = pricing_coverage["unpriced_tokens"]
     attribution_confidence = _attribution_confidence(hermes_observations)
@@ -284,6 +312,7 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         metrics["savings_pct"] = _round(1 - (basis / api_value), 4) if api_value > 0 else None
         metrics["effective_cost_per_1m_tokens"] = _round(basis / tokens * 1_000_000, 6) if tokens > 0 else None
         metrics["tokens_per_dollar"] = _round(tokens / basis, 2)
+        metrics["requests_per_dollar"] = _round(requests / basis, 2) if requests > 0 else None
     if actual and actual.get("amount") is not None and actual["amount"] > 0 and tokens > 0:
         metrics["actual_cost_per_1m_tokens"] = _round(actual["amount"] / tokens * 1_000_000, 6)
 
@@ -304,7 +333,7 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         elif tokens <= 0:
             exclusion = "no attributed token workload in selected range"
         elif basis is None:
-            exclusion = "PAYG provider did not report actual spend for selected range"
+            exclusion = "PAYG cost is unavailable for selected range"
         elif api_value is None:
             exclusion = "no priced token workload for API-equivalent comparison"
         elif (pricing_coverage["priced_token_pct"] or 0) < MIN_PRICING_COVERAGE_PCT:
@@ -399,6 +428,7 @@ def provider_economics(config: Any, provider_observations: list[Any], hermes_obs
         "subscription_cost_basis": cost_basis if pricing_model == "subscription" else None,
         "observed": {
             "tokens": round(tokens, 2),
+            "requests": round(requests, 2),
             "priced_tokens": round(priced_tokens, 2),
             "unpriced_tokens": round(unpriced_tokens, 2),
             "priced_token_pct": pricing_coverage["priced_token_pct"],

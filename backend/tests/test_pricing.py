@@ -317,3 +317,28 @@ def test_estimate_prices_input_output_cache_read_write_separately():
     assert classes["output_tokens"] == 75.0
     assert classes["cache_write_tokens"] == 18.75
     assert classes["cache_read_tokens"] == 1.50
+
+
+def test_deepseek_v4_uses_weekday_peak_windows_and_weekend_off_peak():
+    cat = PricingCatalogue()
+    # Monday 02:00 UTC is peak; Sunday at the same hour is off-peak.
+    peak = cat.lookup("deepseek", "deepseek-v4-pro", datetime(2026, 8, 17, 2, tzinfo=UTC))
+    off_peak = cat.lookup("deepseek", "deepseek-v4-pro", datetime(2026, 8, 23, 2, tzinfo=UTC))
+    assert peak is not None and peak.rates == {"input_tokens": 1.32, "cache_read_tokens": 0.044, "output_tokens": 3.96}
+    assert off_peak is not None and off_peak.rates == {"input_tokens": 0.66, "cache_read_tokens": 0.022, "output_tokens": 1.98}
+
+
+def test_deepseek_v4_exact_effective_timestamp_is_respected():
+    cat = PricingCatalogue()
+    assert cat.lookup("deepseek", "deepseek-v4-flash", datetime(2026, 8, 16, 15, 59, tzinfo=UTC)) is None
+    assert cat.lookup("deepseek", "deepseek-v4-flash", datetime(2026, 8, 16, 16, 0, tzinfo=UTC)) is not None
+
+
+def test_deepseek_v4_prices_cache_miss_hit_and_output_separately():
+    observed = datetime(2026, 8, 23, 12, tzinfo=UTC)  # weekend/off-peak
+    result = estimate_cost([
+        Obs("input_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
+        Obs("cache_read_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
+        Obs("output_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
+    ])
+    assert result["total_cost"] == 0.887

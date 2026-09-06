@@ -658,6 +658,100 @@ async def test_economics_payg_reconciliation_agrees_when_close(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_deepseek_payg_falls_back_to_pricing_estimate_with_efficiency_metrics(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="deepseek", pricing_model="payg")
+    observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
+    async with Session() as session:
+        session.add_all([
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="cache_read_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="output_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="requests", value=100, unit="count", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+        ])
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+    row = response.json()["providers"][0]
+    assert row["cost_basis"]["amount"] == pytest.approx(0.887)
+    assert row["cost_basis"]["source"] == "pricing_estimate"
+    assert row["cost_basis"]["estimated"] is True
+    assert row["cost_basis"]["partial"] is False
+    assert row["economics"]["tokens_per_dollar"] == pytest.approx(3_382_187.15, abs=0.01)
+    assert row["economics"]["requests_per_dollar"] == pytest.approx(112.74, abs=0.01)
+    assert row["economics"]["effective_cost_per_1m_tokens"] == pytest.approx(0.295667, abs=0.000001)
+
+
+@pytest.mark.asyncio
+async def test_deepseek_actual_spend_wins_and_is_not_added_to_estimate(sqlite_db):
+    Session = sqlite_db
+    config = await _config(Session, provider="deepseek", pricing_model="payg")
+    observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
+    async with Session() as session:
+        session.add_all([
+            UsageObservation(provider_config_id=config.id, provider="deepseek", metric="billed_cost", value=5, unit="USD", kind="delta", source="native", observed_at=observed),
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+        ])
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+    row = response.json()["providers"][0]
+    assert row["cost_basis"]["amount"] == 5
+    assert row["cost_basis"]["source"] == "provider_billing_history"
+    assert row["api_equivalent"]["value"] == pytest.approx(0.22)
+    assert row["cost_basis"]["amount"] != 5.22
+
+
+@pytest.mark.asyncio
+async def test_payg_partial_estimate_and_unavailable_are_explicit(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="deepseek", pricing_model="payg")
+    observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
+    async with Session() as session:
+        session.add_all([
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
+            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="unknown-model"),
+        ])
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+    basis = response.json()["providers"][0]["cost_basis"]
+    assert basis["amount"] == pytest.approx(0.22)
+    assert basis["partial"] is True
+    assert basis["pricing_coverage"]["priced_token_pct"] == 50
+
+
+@pytest.mark.asyncio
+async def test_payg_without_billing_or_priceable_usage_is_unavailable_not_zero(sqlite_db):
+    Session = sqlite_db
+    await _config(Session, provider="deepseek", pricing_model="payg")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+    basis = response.json()["providers"][0]["cost_basis"]
+    assert basis["amount"] is None
+    assert basis["kind"] == "unavailable"
+    assert basis["source"] == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_provider_reported_spend_precedes_native_history_without_summing(sqlite_db):
+    Session = sqlite_db
+    config = await _config(Session, provider="openai", pricing_model="payg")
+    now = datetime.now(UTC)
+    async with Session() as session:
+        session.add_all([
+            UsageObservation(provider_config_id=config.id, provider="openai", metric="reported_cost", value=3, unit="USD", kind="delta", source="snapshot", observed_at=now),
+            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=4, unit="USD", kind="delta", source="native", observed_at=now),
+        ])
+        await session.commit()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
+    basis = response.json()["providers"][0]["cost_basis"]
+    assert basis["amount"] == 3
+    assert basis["source"] == "provider_reported"
+
+
+@pytest.mark.asyncio
 async def test_economics_subscription_value_trend_by_billing_period(sqlite_db):
     Session = sqlite_db
     await _config(

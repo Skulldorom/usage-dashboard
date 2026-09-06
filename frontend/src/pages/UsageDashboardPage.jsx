@@ -42,11 +42,11 @@ function SummaryCard({ label, value, detail, source }) {
 export function Overview({ hermes, economics, overview, selectedProvider }) {
   const summary = selectedUsageSummary(usageSummary(hermes, economics, overview), selectedProvider, hermes, economics)
   const costDetail = summary.cost === null
-    ? 'No authoritative cost is available'
+    ? 'No reliable cost is available'
     : [summary.commitment ? `${formatMoney(summary.commitment, summary.currency)} subscriptions` : null, summary.payg ? `${formatMoney(summary.payg, summary.currency)} PAYG` : null].filter(Boolean).join(' · ')
   return (
     <Grid container spacing={1.5} className="usage-summary-grid">
-      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Cost" value={summary.cost === null ? '—' : formatMoney(summary.cost, summary.currency)} detail={costDetail} source={summary.hasUnknownPayg ? 'Some PAYG spend is unavailable' : 'Commitment + reported spend'} /></Grid>
+      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Cost" value={summary.cost === null ? '—' : formatMoney(summary.cost, summary.currency)} detail={costDetail} source={summary.hasUnknownPayg ? 'Some PAYG cost is unavailable' : 'Commitment + PAYG cost bases'} /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Tokens" value={metricDisplay(summary.tokens, 'tokens')} source="Hermes observed" /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Requests" value={metricDisplay(summary.requests, 'requests')} source="Hermes observed" /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Sessions" value={metricDisplay(summary.sessions, 'sessions')} source="Hermes observed" /></Grid>
@@ -101,7 +101,7 @@ function ProviderCard({ row, icon }) {
             {row.quotaWindows.map((window) => <Grid key={window.metric} size={{ xs: 12, md: row.quotaWindows.length > 1 ? 6 : 12 }}><QuotaWindow window={window} quality={row.quality} /></Grid>)}
           </Grid>
         ) : row.pricingModel === 'payg' ? (
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>{row.cost.value === null ? 'Provider spend is unavailable for this range.' : `${costValue} provider-reported spend in this range.`}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>{row.cost.value === null ? 'Provider spend is unavailable for this range.' : `${costValue} · ${row.cost.label}${row.cost.coverage != null ? ` · ${row.cost.coverage}% pricing coverage` : ''}.`}</Typography>
         ) : (
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>This provider does not expose a normalizable quota.</Typography>
         )}
@@ -198,11 +198,14 @@ function ValueTable({ economics, hermes }) {
     <Card component="section" variant="outlined" className="glass-panel">
       <CardContent>
         <Typography variant="h5">Cost & value</Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>Efficiency uses subscription commitment or provider-reported PAYG spend—not an unexplained proration.</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>PAYG cost uses provider spend first, then billing history, then a clearly marked pricing estimate.</Typography>
         <Box className="usage-table-scroll"><Table size="small"><TableHead><TableRow><TableCell>Provider</TableCell><TableCell>Billing</TableCell><TableCell align="right">Cost</TableCell><TableCell align="right">Tokens</TableCell><TableCell align="right">Requests</TableCell><TableCell align="right">Tokens / $</TableCell><TableCell align="right">Requests / $</TableCell><TableCell align="right">Cost / 1M</TableCell><TableCell align="right">Share</TableCell></TableRow></TableHead><TableBody>
-          {rows.map((row) => <TableRow key={row.config_id}><TableCell>{row.displayName}</TableCell><TableCell>{row.pricing_model === 'subscription' ? 'Subscription' : row.pricing_model === 'free' ? 'Free' : 'PAYG'}</TableCell><TableCell align="right">{row.cost.value === null ? '—' : formatMoney(row.cost.value, row.cost.currency)}</TableCell><TableCell align="right">{metricDisplay(row.tokens, 'tokens')}</TableCell><TableCell align="right">{metricDisplay(row.requests, 'requests')}</TableCell><TableCell align="right">{metricDisplay(row.tokensPerDollar, 'tokens')}</TableCell><TableCell align="right">{metricDisplay(row.requestsPerDollar, 'requests')}</TableCell><TableCell align="right">{row.costPerMillion === null ? '—' : formatMoney(row.costPerMillion, row.cost.currency)}</TableCell><TableCell align="right">{row.tokens !== null && totalTokens > 0 ? `${(row.tokens / totalTokens * 100).toFixed(1)}%` : '—'}</TableCell></TableRow>)}
+          {rows.map((row) => {
+            const costDetails = `${row.cost.label}${row.cost.coverage != null ? ` · Coverage ${row.cost.coverage}%` : ''}${row.cost.pricingVersion ? ` · Catalogue ${row.cost.pricingVersion}` : ''}`
+            return <TableRow key={row.config_id}><TableCell>{row.displayName}</TableCell><TableCell>{row.pricing_model === 'subscription' ? 'Subscription' : row.pricing_model === 'free' ? 'Free' : 'PAYG'}</TableCell><TableCell align="right"><Tooltip arrow title={costDetails}><span tabIndex={0}>{row.cost.value === null ? '—' : formatMoney(row.cost.value, row.cost.currency)}{row.cost.estimated ? row.cost.partial ? ' (estimated, partial)' : ' (estimated)' : ''}</span></Tooltip></TableCell><TableCell align="right">{metricDisplay(row.tokens, 'tokens')}</TableCell><TableCell align="right">{metricDisplay(row.requests, 'requests')}</TableCell><TableCell align="right">{metricDisplay(row.tokensPerDollar, 'tokens')}</TableCell><TableCell align="right">{metricDisplay(row.requestsPerDollar, 'requests')}</TableCell><TableCell align="right">{row.costPerMillion === null ? '—' : formatMoney(row.costPerMillion, row.cost.currency)}</TableCell><TableCell align="right">{row.tokens !== null && totalTokens > 0 ? `${(row.tokens / totalTokens * 100).toFixed(1)}%` : '—'}</TableCell></TableRow>
+          })}
         </TableBody></Table></Box>
-        {quality.coverage !== null && quality.coverage >= 80 ? <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>API-equivalent estimate: {formatMoney(hermes.cost_estimate?.total_cost)} · {Math.round(quality.coverage)}% pricing coverage.</Typography> : <Alert severity="info" sx={{ mt: 1.5 }}>API-equivalent estimate unavailable — pricing coverage is insufficient.</Alert>}
+        {quality.coverage !== null ? <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>API-equivalent estimate: {formatMoney(hermes.cost_estimate?.total_cost)} · {Math.round(quality.coverage)}% pricing coverage{quality.coverage < 100 ? ' (partial)' : ''}.</Typography> : <Alert severity="info" sx={{ mt: 1.5 }}>API-equivalent estimate unavailable — no workload could be priced safely.</Alert>}
       </CardContent>
     </Card>
   )

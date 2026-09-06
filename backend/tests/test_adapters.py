@@ -35,6 +35,16 @@ def test_anthropic_parser_sums_nested_usage_records():
     assert any(m.label == "input_tokens" and m.value == 10 and m.unit == "tokens" for m in usage.metrics)
     assert any(m.label == "num_requests" and m.value == 4 and m.unit == "requests" for m in usage.metrics)
 
+def test_anthropic_parser_and_native_history_include_billed_cost():
+    raw = {
+        "usage": {"data": [{"starting_at": "2026-09-01T00:00:00Z", "results": [{"input_tokens": 10, "num_requests": 1}]}]},
+        "cost": {"data": [{"starting_at": "2026-09-01T00:00:00Z", "ending_at": "2026-09-02T00:00:00Z", "results": [{"amount": "125"}, {"amount": "25"}]}]},
+    }
+    usage = AnthropicAdapter.parse_usage(raw)
+    assert any(m.label == "daily_cost" and m.value == 1.5 and m.unit == "USD" for m in usage.metrics)
+    native = AnthropicAdapter.native_observations(raw)
+    assert any(item["metric"] == "daily_cost" and item["value"] == 1.5 and item["unit"] == "USD" for item in native)
+
 def test_openrouter_parser_extracts_credit_usage():
     usage = OpenRouterAdapter.parse_usage({"data": {"label": "main", "limit_remaining": 45.2, "usage_daily": 2.15, "usage_weekly": 12.8, "usage_monthly": 55, "limit": 100}})
     assert usage.status == "healthy"

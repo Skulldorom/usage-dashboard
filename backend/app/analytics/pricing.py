@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from typing import Any
 
 # Token classes we will price, in a stable display order. These mirror the
@@ -38,7 +38,7 @@ TOKEN_CLASSES: tuple[str, ...] = (
 
 # Bump on any catalogue change so consumers can tell which rate set produced a
 # number. Kept as a simple ordered string; not parsed.
-PRICING_VERSION = "2026-08-25.1"
+PRICING_VERSION = "2026-09-06.1"
 
 # Metrics that are deliberately never token-priced (requests are unit-counts,
 # cost is provider/Hermes-reported and must not be re-derived from tokens).
@@ -65,11 +65,12 @@ class PriceEntry:
 
     provider: str
     model: str
-    effective_from: date
+    effective_from: date | datetime
     rates: dict[str, float]
     source: str | None = None
     note: str | None = None
     time_window: tuple[int, int] | None = None
+    weekdays: tuple[int, ...] | None = None
 
 
 # Canonical aliases: Hermes/model strings that differ from the catalogue key.
@@ -114,7 +115,7 @@ def _build_index(catalog: list[PriceEntry]) -> dict[tuple[str, str], list[PriceE
     for entry in catalog:
         index.setdefault((entry.provider, entry.model), []).append(entry)
     for key in index:
-        index[key].sort(key=lambda e: e.effective_from)
+        index[key].sort(key=_effective_instant)
     return index
 
 
@@ -145,16 +146,21 @@ class PricingCatalogue:
         entries = self._index.get(key)
         if not entries:
             return None
-        day = _observation_date(observed_at)
+        instant = _observation_instant(observed_at)
         hour = _observation_hour(observed_at)
-        effective: list[PriceEntry] = [entry for entry in entries if entry.effective_from <= day]
+        weekday = instant.weekday()
+        effective: list[PriceEntry] = [entry for entry in entries if _effective_instant(entry) <= instant]
         if not effective:
             return None
         # Prefer a time-windowed rate whose window contains the observation hour;
         # otherwise fall back to the latest default (non-windowed) rate. Rates
         # without a time_window continue to behave exactly as before.
         for entry in reversed(effective):
-            if entry.time_window is not None and _in_time_window(entry.time_window, hour):
+            if (
+                entry.time_window is not None
+                and (entry.weekdays is None or weekday in entry.weekdays)
+                and _in_time_window(entry.time_window, hour)
+            ):
                 return entry
         for entry in reversed(effective):
             if entry.time_window is None:
@@ -186,6 +192,20 @@ def _observation_date(observed_at: datetime) -> date:
     return value.date()
 
 
+def _observation_instant(observed_at: datetime) -> datetime:
+    value = observed_at
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
+
+
+def _effective_instant(entry: PriceEntry) -> datetime:
+    value = entry.effective_from
+    if isinstance(value, datetime):
+        return _observation_instant(value)
+    return datetime.combine(value, time.min, tzinfo=UTC)
+
+
 def _numeric(value: Any) -> float | None:
     try:
         numeric = float(value)
@@ -213,7 +233,7 @@ def estimate_cost(
     token-class splits, an unpriced breakdown, and the catalogue version.
     """
     cat = catalogue or PricingCatalogue()
-    groups: dict[tuple[str, str | None], dict[str, Any]] = {}
+    groups: dict[tuple[str, str | None, str, tuple[int, int] | None], dict[str, Any]] = {}
     unpriced_classes: dict[str, float] = {}
     unpriced_by_model: dict[str, float] = {}
     total_cost = 0.0
@@ -253,7 +273,7 @@ def estimate_cost(
             unpriced_classes[metric] = unpriced_classes.get(metric, 0.0) + value
             continue
 
-        key = (entry.provider, normalize_model(model))
+        key = (entry.provider, normalize_model(model), entry.effective_from.isoformat(), entry.time_window)
         group = groups.setdefault(
             key,
             {
@@ -279,13 +299,13 @@ def estimate_cost(
         total_priced_tokens += value
 
     group_list: list[dict] = []
-    for (provider, model), group in sorted(groups.items(), key=lambda item: (-item[1]["cost"])):
+    for _key, group in sorted(groups.items(), key=lambda item: (-item[1]["cost"])):
         classes = list(group["classes"].values())
         classes.sort(key=lambda c: -c["cost"])
         group_list.append(
             {
-                "provider": provider,
-                "model": model,
+                "provider": group["provider"],
+                "model": group["model"],
                 "cost": round(group["cost"], 6),
                 "tokens": round(group["tokens"], 2),
                 "matched": True,
@@ -399,10 +419,13 @@ PRICING_CATALOG: list[PriceEntry] = [
         note="List price; verify against current OpenAI pricing page.",
     ),
     # --- DeepSeek ---
+    # Legacy aliases were billed at these rates from the post-promotional V3
+    # change. They intentionally remain separate from the V4 model names so an
+    # old request is never repriced with the current V4 card.
     PriceEntry(
         provider="deepseek",
         model="deepseek-chat",
-        effective_from=date(2025, 2, 1),
+        effective_from=date(2025, 2, 8),
         rates={"input_tokens": 0.27, "output_tokens": 1.10, "cache_read_tokens": 0.07},
         source="DeepSeek public pricing",
         note="List price; verify against current DeepSeek pricing page.",
@@ -415,4 +438,40 @@ PRICING_CATALOG: list[PriceEntry] = [
         source="DeepSeek public pricing",
         note="List price; verify against current DeepSeek pricing page.",
     ),
+    # V4 pricing took effect at 2026-08-16 16:00 UTC. Peak applies only on
+    # weekdays in two disjoint UTC windows; the default entries are off-peak.
+    # Source: https://api-docs.deepseek.com/quick_start/pricing/
+    *[
+        PriceEntry(
+            provider="deepseek",
+            model=model,
+            effective_from=datetime(2026, 8, 16, 16, tzinfo=UTC),
+            rates=rates,
+            source="DeepSeek official Models & Pricing",
+            note="Off-peak list price; peak is weekdays 01:00-04:00 and 06:00-10:00 UTC.",
+        )
+        for model, rates in {
+            "deepseek-v4-flash": {"input_tokens": 0.22, "cache_read_tokens": 0.007, "output_tokens": 0.66},
+            "deepseek-v4-pro": {"input_tokens": 0.66, "cache_read_tokens": 0.022, "output_tokens": 1.98},
+            "deepseek-v4-flash-vision-exp": {"input_tokens": 0.22, "cache_read_tokens": 0.007, "output_tokens": 0.66},
+        }.items()
+    ],
+    *[
+        PriceEntry(
+            provider="deepseek",
+            model=model,
+            effective_from=datetime(2026, 8, 16, 16, tzinfo=UTC),
+            rates=rates,
+            source="DeepSeek official Models & Pricing",
+            note="Peak list price; weekdays only.",
+            time_window=window,
+            weekdays=(0, 1, 2, 3, 4),
+        )
+        for model, rates in {
+            "deepseek-v4-flash": {"input_tokens": 0.44, "cache_read_tokens": 0.014, "output_tokens": 1.32},
+            "deepseek-v4-pro": {"input_tokens": 1.32, "cache_read_tokens": 0.044, "output_tokens": 3.96},
+            "deepseek-v4-flash-vision-exp": {"input_tokens": 0.44, "cache_read_tokens": 0.014, "output_tokens": 1.32},
+        }.items()
+        for window in ((1, 4), (6, 10))
+    ],
 ]

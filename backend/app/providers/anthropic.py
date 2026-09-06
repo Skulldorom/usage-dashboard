@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -16,7 +17,7 @@ class AnthropicAdapter(ProviderAdapter):
     name = "Anthropic / Claude"
     description = "Claude Usage & Cost Admin API message usage. Requires an Anthropic Admin API key."
     default_base_url = "https://api.anthropic.com"
-    metric_names = list(TOKEN_FIELDS)
+    metric_names = [*TOKEN_FIELDS, "daily_cost"]
     alert_metrics = [
         {"metric": "input_tokens", "label": "Input tokens", "unit": "tokens", "direction": "increasing"},
         {"metric": "output_tokens", "label": "Output tokens", "unit": "tokens", "direction": "increasing"},
@@ -33,6 +34,7 @@ class AnthropicAdapter(ProviderAdapter):
             "cache_creation_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),
             "cache_read_tokens": metric_spec(type_="counter", unit="tokens", direction="increasing"),
             "num_requests": metric_spec(type_="counter", unit="requests", direction="increasing"),
+            "daily_cost": metric_spec(type_="counter", unit="USD", direction="increasing"),
         },
     )
 
@@ -45,10 +47,15 @@ class AnthropicAdapter(ProviderAdapter):
             "Accept": "application/json",
         }
         params = {"starting_at": start.isoformat(), "ending_at": end.isoformat(), "bucket_width": "1h"}
+        cost_params = {"starting_at": start.isoformat(), "ending_at": end.isoformat(), "bucket_width": "1d"}
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            resp = await client.get(f"{self.base_url}/v1/organizations/usage_report/messages", headers=headers, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+            usage_resp, cost_resp = await asyncio.gather(
+                client.get(f"{self.base_url}/v1/organizations/usage_report/messages", headers=headers, params=params),
+                client.get(f"{self.base_url}/v1/organizations/cost_report", headers=headers, params=cost_params),
+            )
+            usage_resp.raise_for_status()
+            cost_resp.raise_for_status()
+            data = {"usage": usage_resp.json(), "cost": cost_resp.json()}
         return self.parse_usage(data)
 
     @staticmethod
@@ -64,8 +71,9 @@ class AnthropicAdapter(ProviderAdapter):
 
     @staticmethod
     def parse_usage(data: dict) -> ProviderUsage:
+        usage_data = data.get("usage", data)
         totals = {field: 0 for field in TOKEN_FIELDS}
-        records = list(AnthropicAdapter._walk_records(data))
+        records = list(AnthropicAdapter._walk_records(usage_data))
         for record in records:
             for field in TOKEN_FIELDS:
                 value = record.get(field)
@@ -75,6 +83,10 @@ class AnthropicAdapter(ProviderAdapter):
         requests = totals["num_requests"]
         total_tokens = sum(totals[field] for field in TOKEN_FIELDS if field.endswith("tokens"))
         summary = f"{total_tokens:,} tokens across {requests:,} requests in last 24h"
+        cost = sum(item["value"] for item in _cost_observations(data.get("cost") or {}))
+        if cost > 0:
+            metrics.append(Metric("daily_cost", round(cost, 6), "USD"))
+            summary += f"; {cost:.2f} USD billed"
         return ProviderUsage(status="healthy", summary=summary, metrics=metrics, raw=data)
 
     @staticmethod
@@ -113,8 +125,39 @@ class AnthropicAdapter(ProviderAdapter):
                 for child in node:
                     walk(child, start, end)
 
-        walk(raw, None, None)
+        walk(raw.get("usage", raw), None, None)
+        observations.extend(_cost_observations(raw.get("cost") or {}))
         return observations
+
+
+def _cost_observations(raw: dict[str, Any]) -> list[dict]:
+    """Normalize Anthropic cost buckets (decimal cents) to USD deltas."""
+    observations: list[dict] = []
+    for bucket in raw.get("data") or []:
+        if not isinstance(bucket, dict):
+            continue
+        start = _first_time(bucket, _TIME_START_KEYS)
+        end = _first_time(bucket, _TIME_END_KEYS)
+        if start is None:
+            continue
+        cents = 0.0
+        for result in bucket.get("results") or []:
+            value = (result or {}).get("amount")
+            try:
+                cents += float(value)
+            except (TypeError, ValueError):
+                continue
+        if cents > 0:
+            observations.append({
+                "metric": "daily_cost",
+                "value": cents / 100.0,
+                "unit": "USD",
+                "observed_at": start,
+                "window_start": start,
+                "window_end": end,
+                "kind": "delta",
+            })
+    return observations
 
 
 def _first_time(record: dict, keys: tuple[str, ...]) -> datetime | None:
