@@ -51,6 +51,7 @@ import {
   extensionSupportsOneClickSetup,
 } from "../lib/extensionBridge.js";
 import { homepageYaml } from "../lib/homepageYaml.js";
+import { providerDisplayName } from "../lib/analyticsFormat.js";
 
 const PROVIDER_SETUP = {
   firecrawl: {
@@ -1459,7 +1460,7 @@ export default function SettingsPage() {
                       <span>Provider</span>
                       <strong>{config.label}</strong>
                       <Typography variant="caption" color="text.secondary">
-                        {config.provider}
+                        {providerDisplayName(config.provider)}
                       </Typography>
                       {(config.alert_thresholds || []).length > 0 && (
                         <div className="config-alert-summary">
@@ -1482,10 +1483,7 @@ export default function SettingsPage() {
                     const errSummary = providerErrorSummary(health);
                     if (!health || health.status === "healthy") return null;
                     return (
-                      <div
-                        className="config-health"
-                        style={{ gridColumn: "1 / -1" }}
-                      >
+                      <div className="config-health">
                         <Alert
                           severity={
                             errSummary?.category === "authentication"
@@ -1552,15 +1550,15 @@ export default function SettingsPage() {
                       </div>
                     );
                   })()}
-                  <div className="config-detail">
+                  <div className="config-detail config-credential">
                     <span>Credential</span>
                     {config.api_key_masked}
                   </div>
-                  <div className="config-detail">
+                  <div className="config-detail config-endpoint">
                     <span>Endpoint</span>
                     {config.base_url || "Provider default"}
                   </div>
-                  <div className="config-detail">
+                  <div className="config-detail config-billing">
                     <span>Billing</span>
                     {config.pricing_model === "subscription"
                       ? `${config.subscription_amount ?? "-"} ${config.subscription_currency || "USD"} / ${config.billing_cadence || "period"}`
