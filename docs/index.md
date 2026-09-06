@@ -14,7 +14,8 @@ a dark React/MUI dashboard, and exposes a flat Homepage Dashboard endpoint.
 
 ## Start here
 
-- [Installation](/getting-started/installation) - Docker Compose quick start.
+- [Installation options](/getting-started/installation) - compare supported production deployments.
+- [Docker Compose](/getting-started/docker-compose) - recommended quick start.
 - [First-run setup](/getting-started/first-run) - create the admin password.
 - [Connect your first provider](/getting-started/first-provider) - credential, billing, test, and first poll.
 - [Environment variables](/configuration/environment) - the configuration reference.

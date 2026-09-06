@@ -27,7 +27,10 @@ export default defineConfig({
         collapsed: false,
         items: [
           { text: 'Introduction', link: '/getting-started/' },
-          { text: 'Installation', link: '/getting-started/installation' },
+          { text: 'Installation options', link: '/getting-started/installation' },
+          { text: 'Docker Compose (Recommended)', link: '/getting-started/docker-compose' },
+          { text: 'Native Linux', link: '/getting-started/native-linux' },
+          { text: 'Standalone containers', link: '/getting-started/standalone-containers' },
           { text: 'First-run setup', link: '/getting-started/first-run' },
           { text: 'Connect your first provider', link: '/getting-started/first-provider' },
           { text: 'Updating', link: '/getting-started/updating' },

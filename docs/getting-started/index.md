@@ -10,7 +10,7 @@ Dashboard endpoint.
 
 - **Backend**: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
 - **Frontend**: Vite, React, MUI, React Router
-- **Runtime**: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
+- **Runtime**: PostgreSQL, Uvicorn, production Vite assets, and nginx
 
 ![Usage Dashboard screenshot](/screenshot.png)
 
@@ -24,6 +24,6 @@ Dashboard endpoint.
 
 ## Next steps
 
-1. [Install](/getting-started/installation) the stack with Docker Compose.
+1. [Choose an installation method](/getting-started/installation). Docker Compose is recommended.
 2. Complete [first-run setup](/getting-started/first-run) to create the admin password.
 3. Add your providers and review the [configuration](/configuration/environment) reference.

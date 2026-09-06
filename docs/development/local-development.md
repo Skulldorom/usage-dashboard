@@ -2,6 +2,12 @@
 
 Run the backend and frontend outside Docker for a fast edit/test loop.
 
+::: warning Development only
+This workflow uses SQLite by default and the Vite development server. It is not
+a production deployment. Use one of the supported
+[installation options](/getting-started/installation) for production.
+:::
+
 ## Backend
 
 ```bash

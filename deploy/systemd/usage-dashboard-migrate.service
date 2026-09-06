@@ -1,0 +1,23 @@
+[Unit]
+Description=Usage Dashboard database migrations
+Documentation=https://skulldorom.github.io/usage-dashboard/docs/getting-started/native-linux.html
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=usage-dashboard
+Group=usage-dashboard
+WorkingDirectory=/opt/usage-dashboard/backend
+EnvironmentFile=/etc/usage-dashboard/backend.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/usage-dashboard/backend/.venv/bin/alembic -c /opt/usage-dashboard/backend/alembic.ini upgrade head
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

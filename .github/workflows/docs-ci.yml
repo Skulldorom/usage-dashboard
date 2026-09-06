@@ -5,6 +5,15 @@ on:
     paths:
       - "docs/**"
       - "README.md"
+      - ".env.example"
+      - "deploy/**"
+      - "scripts/check-deployment-assets.sh"
+      - "backend/Dockerfile"
+      - "backend/app/core/config.py"
+      - "frontend/Dockerfile"
+      - "frontend/nginx.conf"
+      - "frontend/docker-entrypoint.d/**"
+      - "docker-compose.yml"
       - ".github/workflows/docs-ci.yml"
   workflow_dispatch:
 
@@ -34,6 +43,9 @@ jobs:
       - name: Install dependencies
         working-directory: docs
         run: npm ci --ignore-scripts
+
+      - name: Validate deployment examples
+        run: sh scripts/check-deployment-assets.sh
 
       - name: Build docs
         working-directory: docs

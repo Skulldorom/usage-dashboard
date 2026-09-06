@@ -5,12 +5,12 @@ logs. There is no default password.
 
 ## Create the admin password
 
-1. Start the stack and open the frontend.
+1. Start the installation and open the frontend.
 2. The UI asks for a setup code. Get it from the backend logs:
 
-   ```bash
-   docker compose logs backend
-   ```
+   - Docker Compose: `docker compose logs backend`
+   - Native Linux: `sudo journalctl -u usage-dashboard-backend.service`
+   - Standalone container: `docker logs backend` (or your platform's backend logs)
 
    Look for a line like `Admin setup code: <code>`.
 3. Enter the code and choose a new password in the UI.
