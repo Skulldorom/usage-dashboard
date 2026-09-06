@@ -1,5 +1,6 @@
 import React from 'react'
 import { renderToString } from 'react-dom/server'
+import process from 'node:process'
 import { describe, expect, it } from 'vitest'
 import { Overview, WorkloadChart } from '../pages/UsageDashboardPage.jsx'
 import { WORKLOAD_METRICS, billingLabel, costPresentation, observedSeriesKeys, providerUsageRows, quotaStatus, quotaTooltipLabel, selectedUsageSummary, usageSummary, workloadChartData, workloadTooltipLabel } from './usageDashboardFormat.js'
@@ -128,6 +129,21 @@ it('describes each hovered graph segment with date, group, value, total, and sou
   expect(label).toContain('125 tokens')
   expect(label).toContain('Daily total 200')
   expect(label).toContain('Hermes observed')
+})
+
+it('keeps workload calendar bucket dates unchanged west of UTC', () => {
+  const originalTimezone = process.env.TZ
+  process.env.TZ = 'America/New_York'
+  try {
+    const label = workloadTooltipLabel({
+      date: '2026-09-03', key: 'codex', value: 125, total: 125, metric: 'tokens', grouping: 'provider',
+    })
+    expect(label).toContain('Sep 3, 2026')
+    expect(label).not.toContain('Sep 2, 2026')
+  } finally {
+    if (originalTimezone === undefined) delete process.env.TZ
+    else process.env.TZ = originalTimezone
+  }
 })
 
 it('identifies hovered cost values as Hermes observed cost', () => {
