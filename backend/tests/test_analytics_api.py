@@ -700,10 +700,13 @@ async def test_overview_comparison_includes_each_capacity_window(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="opencode-go")
     base = datetime.now(UTC) - timedelta(days=2)
+    five_hour_reset = base + timedelta(hours=5)
+    weekly_reset = base + timedelta(days=7)
+    monthly_reset = base + timedelta(days=30)
     await _seed_observations(Session, config, [
-        {"metric": "five_hour_used_percent", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "weekly_used_percent", "value": 40.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+        {"metric": "five_hour_used_percent", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": five_hour_reset},
+        {"metric": "weekly_used_percent", "value": 40.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": weekly_reset},
+        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": monthly_reset},
         {"metric": "five_hour_used_percent", "value": 25.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
         {"metric": "weekly_used_percent", "value": 45.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
         {"metric": "monthly_used_percent", "value": 65.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
@@ -720,6 +723,12 @@ async def test_overview_comparison_includes_each_capacity_window(sqlite_db):
     assert any("5h" in label for label in labels)
     assert any("weekly" in label.lower() for label in labels)
     assert any("monthly" in label.lower() for label in labels)
+    provider = next(item for item in payload["providers"] if item["provider"] == "opencode-go")
+    windows = {item["label"]: item for item in provider["quota_windows"]}
+    assert set(windows) == {"5h", "weekly", "monthly"}
+    assert windows["5h"]["reset_at"] == five_hour_reset.isoformat()
+    assert windows["weekly"]["used_pct"] == 45.0
+    assert windows["monthly"]["remaining_pct"] == 35.0
 
 
 @pytest.mark.asyncio
@@ -741,6 +750,9 @@ async def test_overview_comparison_includes_codex_session_and_weekly_windows(sql
     series = [item for item in response.json()["comparison"] if item["provider"] == "codex"]
     assert {item["metric"] for item in series} == {"session_remaining_percent", "weekly_remaining_percent"}
     assert all(item["window"] in {"session", "weekly"} for item in series)
+    windows = response.json()["providers"][0]["quota_windows"]
+    assert {item["label"] for item in windows} == {"session", "weekly"}
+    assert {item["used_pct"] for item in windows} == {25.0, 45.0}
 
 
 @pytest.mark.asyncio
@@ -954,6 +966,13 @@ async def test_hermes_breakdown_includes_source_diagnostics_and_keeps_totals_sup
     assert any("filtered to profiles: coder" in item["message"] for item in payload["diagnostics"])
     totals = {item["metric"]: item["value"] for item in payload["totals"]}
     assert totals["tokens"] == 900.0
+    assert payload["sessions"] == 1
+    assert payload["by_provider"][0]["sessions"] == 1
+    assert payload["by_model"][0]["sessions"] == 1
+    assert payload["by_profile"][0]["sessions"] == 1
+    assert payload["daily"][0]["sessions"] == 1
+    assert payload["daily_by_provider"][0]["points"][0]["tokens"] == 900.0
+    assert payload["daily_by_model"][0]["points"][0]["sessions"] == 1
 
     assert overview.status_code == 200, overview.text
     # Hermes is supplemental; overview totals stay provider-authoritative only.

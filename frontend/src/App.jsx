@@ -32,7 +32,7 @@ import SettingsRoundedIcon from "@mui/icons-material/SettingsRounded";
 import InsightsRoundedIcon from "@mui/icons-material/InsightsRounded";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import SettingsPage from "./pages/SettingsPage.jsx";
-import UsagePage from "./pages/UsagePage.jsx";
+import UsagePage from "./pages/UsageDashboardPage.jsx";
 import {
   visibleUsageSubmenuItems as filterUsageSubmenuItems,
 } from "./lib/navigation.js";

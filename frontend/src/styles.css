@@ -281,6 +281,98 @@ input {
   gap: 28px;
   margin-bottom: 30px;
 }
+
+.usage-page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.usage-header-controls {
+  flex-shrink: 0;
+}
+
+.usage-summary-card {
+  height: 100%;
+}
+
+.usage-provider-card {
+  height: 100%;
+}
+
+.usage-quota-window {
+  padding: 12px;
+  border: 1px solid var(--border-color, rgba(127, 127, 127, 0.18));
+  border-radius: 10px;
+}
+
+.usage-workload-chart {
+  height: 250px;
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(4px, 1vw, 12px);
+  padding: 16px 4px 0;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border-color, rgba(127, 127, 127, 0.2));
+}
+
+.usage-workload-column {
+  height: 100%;
+  min-width: 24px;
+  flex: 1 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  text-align: center;
+}
+
+.usage-workload-stack {
+  min-height: 3px;
+  overflow: hidden;
+  border-radius: 6px 6px 0 0;
+}
+
+.usage-workload-missing {
+  height: 3px;
+  margin-bottom: 1px;
+  border-top: 1px dashed rgba(127, 127, 127, 0.35);
+}
+
+.usage-workload-zero {
+  height: 3px;
+  margin-bottom: 1px;
+  border-radius: 2px;
+  background: rgba(127, 127, 127, 0.7);
+}
+
+.usage-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+@media (max-width: 700px) {
+  .usage-page-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .usage-header-controls .MuiFormControl-root {
+    width: 100%;
+  }
+
+  .usage-summary-card .MuiCardContent-root {
+    padding: 14px;
+  }
+
+  .usage-summary-card .MuiTypography-h4 {
+    font-size: 1.45rem;
+  }
+
+  .usage-workload-chart {
+    height: 210px;
+  }
+}
 .page-kicker {
   display: flex;
   align-items: center;

@@ -46,7 +46,9 @@ describe('providerNameWithLabel', () => {
   it('uses labels only as secondary disambiguation for duplicate provider configs', () => {
     expect(providerNameWithLabel('codex', 'Work', { disambiguate: true })).toBe('OpenAI Codex - Work')
     expect(providerNameWithLabel('codex', 'Personal', { disambiguate: true })).toBe('OpenAI Codex - Personal')
-    expect(providerNameWithLabel('codex', 'main', { disambiguate: true })).toBe('OpenAI Codex')
+    expect(providerNameWithLabel('codex', 'main', { disambiguate: true })).toBe('OpenAI Codex - main')
+    expect(providerNameWithLabel('codex', 'codex', { disambiguate: true })).toBe('OpenAI Codex - codex')
+    expect(providerNameWithLabel('codex', 'OpenAI Codex', { disambiguate: true })).toBe('OpenAI Codex - OpenAI Codex')
   })
 })
 
