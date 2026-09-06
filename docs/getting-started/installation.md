@@ -1,56 +1,26 @@
-# Installation
+# Installation options
 
-Usage Dashboard ships as a Docker Compose stack with published images on GitHub
-Container Registry. You only need Docker (with the Compose plugin) to get running.
+Usage Dashboard supports three production deployment methods. Docker Compose is
+the recommended default because it manages PostgreSQL, networking, persistence,
+migrations, and service restarts as one tested stack.
 
-## Quick start
+| Method | Best for | PostgreSQL | Reverse proxy / TLS | Persistence | Startup | Upgrades |
+| --- | --- | --- | --- | --- | --- | --- |
+| [Docker Compose (recommended)](/getting-started/docker-compose) | Most self-hosters | Included | HTTP proxy included; operator adds TLS | Named PostgreSQL volume | Compose restart policies | Pull and recreate |
+| [Native Linux](/getting-started/native-linux) | Debian/Ubuntu hosts managed with systemd | Operator-managed local PostgreSQL | Operator-managed nginx and TLS | PostgreSQL plus `/etc/usage-dashboard` | systemd | Update source, dependencies, build, migrate, restart |
+| [Standalone containers](/getting-started/standalone-containers) | Portainer, Unraid, Synology, or custom container management | Operator-managed container or external service | Frontend image provides HTTP proxy; operator adds TLS | PostgreSQL storage | Container platform | Pull and recreate in order |
 
-Start from a machine with Git and Docker Compose installed. The default Compose
-file pulls published images, so there is no local build step.
+All production methods use PostgreSQL, the same Alembic migrations, the same
+Uvicorn ASGI application, and a production Vite build served through nginx.
+Back up both PostgreSQL and the `ENCRYPTION_KEY`; losing that key makes stored
+provider credentials unreadable.
 
-1. Clone the repository and enter it:
+## Development is separate
 
-   ```bash
-   git clone https://github.com/Skulldorom/usage-dashboard.git
-   cd usage-dashboard
-   ```
+The Python virtual environment plus Vite development server described in
+[Local development](/development/local-development) is an edit/test workflow.
+It is not a production installation and does not provide production process
+supervision, static asset serving, TLS, or PostgreSQL lifecycle management.
 
-2. Create your local environment file:
-
-   ```bash
-   cp .env.example .env
-   openssl rand -base64 32 | tr '+/' '-_'
-   ```
-
-   Copy the generated value into `ENCRYPTION_KEY` in `.env`, replacing
-   `replace-with-generated-fernet-key`. You can leave the rest of the defaults
-   alone for a first local run.
-
-3. Start the stack:
-
-   ```bash
-   docker compose pull
-   docker compose up -d
-   docker compose logs backend
-   ```
-
-4. Open `http://localhost:3000`, then use the one-time setup code from the
-   backend logs to create the admin password.
-
-## Accessing the stack
-
-Open the frontend container, which also proxies API traffic to the backend:
-
-- **Frontend**: `http://localhost:3000`
-- **Backend health**: `http://localhost:3000/health`
-- **Homepage payload**: `http://localhost:3000/api/v1/homepage` (requires a login session/scoped bearer token unless `HOMEPAGE_ALLOWED_HOSTS` allows the request host)
-
-Set `NGINX_HTTP_PORT` in `.env` to change the external HTTP port. PostgreSQL is
-intentionally internal-only and is not published on the host.
-
-## Images
-
-The default Compose stack pulls published images from GitHub Container Registry.
-Set `IMAGE_TAG`, `BACKEND_IMAGE`, or `FRONTEND_IMAGE` to pin or override them.
-
-To build local images instead, see [Docker images](/development/docker-images).
+After choosing a method, continue to [First-run setup](/getting-started/first-run)
+and [connect your first provider](/getting-started/first-provider).

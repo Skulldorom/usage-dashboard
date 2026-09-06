@@ -12,7 +12,7 @@ Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/
 
 ## Documentation
 
-Full documentation lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/). Useful starting points are [Dashboard](https://skulldorom.github.io/usage-dashboard/docs/using/dashboard.html), [Usage & analytics](https://skulldorom.github.io/usage-dashboard/docs/using/usage-and-analytics.html), [Connected providers](https://skulldorom.github.io/usage-dashboard/docs/configuration/connected-providers.html), and [Understanding cost & value](https://skulldorom.github.io/usage-dashboard/docs/using/cost-and-value.html).
+Full documentation lives in the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/). Start with [Installation options](https://skulldorom.github.io/usage-dashboard/docs/getting-started/installation.html) to compare Docker Compose, native Linux, and standalone containers.
 
 ## Quick start
 
@@ -38,7 +38,7 @@ Open the frontend, then use the one-time setup code from the backend logs to cre
 - Frontend: http://localhost:3000
 - Backend health: http://localhost:3000/health
 
-See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-started/first-run.html) for the setup-code flow in more detail.
+See the complete [Docker Compose guide](https://skulldorom.github.io/usage-dashboard/docs/getting-started/docker-compose.html) and [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-started/first-run.html). Native Linux and standalone-container production deployments are documented under [Installation options](https://skulldorom.github.io/usage-dashboard/docs/getting-started/installation.html).
 
 ## Features
 
@@ -54,11 +54,11 @@ See [First-run setup](https://skulldorom.github.io/usage-dashboard/docs/getting-
 
 - Backend: FastAPI, SQLAlchemy async, asyncpg, Alembic, cryptography/Fernet
 - Frontend: Vite, React, MUI, React Router
-- Runtime: PostgreSQL, nginx-based frontend/proxy image, Docker Compose
+- Runtime: PostgreSQL, Uvicorn, production Vite assets, nginx, and optional Docker Compose
 
 ## Development
 
-See the [documentation site](https://skulldorom.github.io/usage-dashboard/docs/development/local-development.html) for local development, testing, and Docker image build instructions.
+Local source setup is a development workflow, not a production installation. See [Local development](https://skulldorom.github.io/usage-dashboard/docs/development/local-development.html) for the Vite dev server and test commands.
 
 ## License
 

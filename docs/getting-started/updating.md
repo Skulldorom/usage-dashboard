@@ -1,6 +1,12 @@
 # Updating
 
-Updates are shipped as new images on GitHub Container Registry.
+Use the upgrade procedure for the way Usage Dashboard was installed:
+
+- [Docker Compose](/getting-started/docker-compose#upgrade)
+- [Native Linux](/getting-started/native-linux#upgrade)
+- [Standalone containers](/getting-started/standalone-containers#upgrade)
+
+Updates are shipped as release tags and matching images on GitHub Container Registry.
 
 ## Update to the latest release
 
@@ -33,3 +39,7 @@ FRONTEND_IMAGE=ghcr.io/your-org/usage-dashboard-frontend:latest
 
 See the [environment variable reference](/configuration/environment) for all
 image-related settings.
+
+The commands on this page apply only to Docker Compose. Native and standalone
+container deployments must follow their linked ordering so migrations complete
+before the new backend serves traffic.

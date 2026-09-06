@@ -1,13 +1,15 @@
 # Environment variables
 
-The backend reads its configuration from environment variables. The Compose
-stack supplies them through `.env`. Values with a default are optional.
+The backend reads its configuration from environment variables. Compose supplies
+them through `.env`; native Linux uses `/etc/usage-dashboard/backend.env`; a
+standalone container receives them from its container manager. Values with a
+default are optional.
 
 ## Core
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_URL` | Async SQLAlchemy URL. Defaults to the Compose PostgreSQL service. |
+| `DATABASE_URL` | Async SQLAlchemy URL. Compose derives a PostgreSQL URL when this is blank. Native and standalone deployments must set a `postgresql+asyncpg://` URL. The application default SQLite URL is for development only. |
 | `ENCRYPTION_KEY` | Required Fernet key used to encrypt API credentials at rest. Generate with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. |
 
 ## Database (Compose)
@@ -34,7 +36,7 @@ stack supplies them through `.env`. Values with a default are optional.
 | `HOMEPAGE_ALLOWED_HOSTS` | Comma-separated hostnames that may access `GET /api/v1/homepage` without a bearer token; ports are ignored. All other API routes still require a valid admin session or scoped API token. |
 | `CUSTOM_HTTP_ALLOWED_HOSTS` | Comma-separated hostnames the Custom HTTP provider is allowed to reach. Blank allows any host. |
 
-## Images and networking (Compose)
+## Images and networking
 
 | Variable | Description |
 | --- | --- |
@@ -42,7 +44,7 @@ stack supplies them through `.env`. Values with a default are optional.
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
 | `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
 | `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |
-| `VITE_API_BASE_URL` | Frontend API base path baked into the published frontend image. Defaults to `/api`. |
+| `VITE_API_BASE_URL` | Frontend build-time API base path. Published images use `/api`; this is not a runtime container or Compose override. |
 
 ## Polling and retention
 

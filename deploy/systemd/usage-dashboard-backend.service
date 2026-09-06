@@ -1,0 +1,28 @@
+[Unit]
+Description=Usage Dashboard backend
+Documentation=https://skulldorom.github.io/usage-dashboard/docs/getting-started/native-linux.html
+Requires=usage-dashboard-migrate.service
+After=network-online.target usage-dashboard-migrate.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=usage-dashboard
+Group=usage-dashboard
+WorkingDirectory=/opt/usage-dashboard/backend
+EnvironmentFile=/etc/usage-dashboard/backend.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/usage-dashboard/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillSignal=SIGTERM
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target
