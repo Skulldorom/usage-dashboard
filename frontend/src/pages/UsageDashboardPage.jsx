@@ -12,7 +12,7 @@ import ProviderIcon from '../components/ProviderIcon.jsx'
 import { DEFAULT_RANGE, RANGE_OPTIONS, compactNumber, formatMoney, providerNameWithLabel, rangeToParams } from '../lib/analyticsFormat.js'
 import {
   WORKLOAD_METRICS, economicsRows, metricDisplay, pricingQuality, providerUsageRows,
-  quotaStatus, usageSummary,
+  quotaStatus, selectedUsageSummary, usageSummary, workloadChartData,
 } from '../lib/usageDashboardFormat.js'
 
 const TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -39,26 +39,8 @@ function SummaryCard({ label, value, detail, source }) {
   )
 }
 
-function Overview({ hermes, economics, overview, selectedProvider }) {
-  let summary = usageSummary(hermes, economics, overview)
-  if (selectedProvider) {
-    const observed = (hermes?.by_provider || []).find((row) => row.key === selectedProvider.provider)
-    const economic = (economics?.providers || []).find((row) => row.config_id === selectedProvider.config_id)
-    const cost = economic?.pricing_model === 'subscription'
-      ? economic.audit?.subscription?.amount ?? null
-      : economic?.actual_spend?.amount ?? (economic?.pricing_model === 'free' ? 0 : null)
-    summary = {
-      ...summary,
-      cost,
-      currency: economic?.actual_spend?.currency || economic?.audit?.subscription?.currency || 'USD',
-      commitment: economic?.pricing_model === 'subscription' ? cost || 0 : 0,
-      payg: economic?.pricing_model === 'payg' && cost !== null ? cost : 0,
-      tokens: observed?.tokens ?? economic?.observed?.tokens ?? null,
-      requests: observed?.requests ?? null,
-      sessions: observed?.sessions ?? null,
-      hasUnknownPayg: economic?.pricing_model === 'payg' && cost === null,
-    }
-  }
+export function Overview({ hermes, economics, overview, selectedProvider }) {
+  const summary = selectedUsageSummary(usageSummary(hermes, economics, overview), selectedProvider, hermes, economics)
   const costDetail = summary.cost === null
     ? 'No authoritative cost is available'
     : [summary.commitment ? `${formatMoney(summary.commitment, summary.currency)} subscriptions` : null, summary.payg ? `${formatMoney(summary.payg, summary.currency)} PAYG` : null].filter(Boolean).join(' · ')
@@ -68,6 +50,7 @@ function Overview({ hermes, economics, overview, selectedProvider }) {
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Tokens" value={metricDisplay(summary.tokens, 'tokens')} source="Hermes observed" /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Requests" value={metricDisplay(summary.requests, 'requests')} source="Hermes observed" /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Sessions" value={metricDisplay(summary.sessions, 'sessions')} source="Hermes observed" /></Grid>
+      {summary.sharedWorkload && <Grid size={{ xs: 12 }}><Alert severity="info">Shared provider workload cannot be attributed to this config. Select All providers to view the provider-level totals.</Alert></Grid>}
     </Grid>
   )
 }
@@ -136,43 +119,32 @@ function ProviderSection({ rows, icons }) {
   )
 }
 
-function WorkloadChart({ hermes, metric, grouping }) {
-  const series = grouping === 'provider' ? hermes?.daily_by_provider || [] : hermes?.daily_by_model || []
-  const visible = series.filter((item) => item.points.some((point) => point[metric] !== null && point[metric] !== undefined))
-  const observedDates = [...new Set(visible.flatMap((item) => item.points.map((point) => point.date)))].sort()
-  const dates = []
-  const start = new Date(hermes?.period?.start)
-  const end = new Date(hermes?.period?.end)
-  if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
-    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
-    while (cursor < end && dates.length < 100) {
-      dates.push(cursor.toISOString().slice(0, 10))
-      cursor.setUTCDate(cursor.getUTCDate() + 1)
-    }
-  }
-  if (!dates.length) dates.push(...observedDates)
-  const lookup = visible.map((item) => new Map(item.points.map((point) => [point.date, point[metric]])))
-  const totals = dates.map((date) => lookup.reduce((sum, values) => sum + Number(values.get(date) || 0), 0))
+export function WorkloadChart({ hermes, metric, grouping }) {
+  const chart = workloadChartData(hermes, metric, grouping)
+  const totals = chart.points.map((point) => point.total).filter((value) => typeof value === 'number')
   const max = Math.max(...totals, 0)
-  if (!visible.length || !dates.length || max <= 0) return <Typography variant="body2" color="text.secondary">No {metric} history is available for this range.</Typography>
+  if (!chart.series.length || !chart.points.length || !totals.length) return <Typography variant="body2" color="text.secondary">No {metric} history is available for this range.</Typography>
+  const scaleMax = max || 1
   return (
     <Box>
       <Box className="usage-workload-chart" role="img" aria-label={`${metric} over time grouped by ${grouping}`}>
-        {dates.map((date, dateIndex) => (
-          <Box className="usage-workload-column" key={date} title={`${date}: ${metricDisplay(totals[dateIndex], metric)}`}>
-            <Box className="usage-workload-stack" sx={{ height: `${Math.max(3, totals[dateIndex] / max * 100)}%` }}>
-              {visible.map((item, seriesIndex) => {
-                const value = lookup[seriesIndex].get(date)
-                if (value === null || value === undefined || totals[dateIndex] <= 0) return null
-                return <Box key={item.key} sx={{ height: `${Number(value) / totals[dateIndex] * 100}%`, background: CHART_COLORS[seriesIndex % CHART_COLORS.length] }} />
-              })}
-            </Box>
-            <Typography variant="caption" color="text.secondary">{date.slice(5)}</Typography>
+        {chart.points.map((point) => (
+          <Box className={`usage-workload-column${point.total === null ? ' usage-workload-gap' : ''}`} key={point.date} title={point.total === null ? `${point.date}: No observation` : `${point.date}: ${metricDisplay(point.total, metric)}`}>
+            {point.total === null ? <Box className="usage-workload-missing" aria-label={`${point.date} missing`} /> : point.total === 0 ? <Box className="usage-workload-zero" aria-label={`${point.date} observed zero`} /> : (
+              <Box className="usage-workload-stack" sx={{ height: `${point.total / scaleMax * 100}%` }}>
+                {chart.series.map((item, seriesIndex) => {
+                  const value = point.values[seriesIndex]
+                  if (value === null || value === undefined || Number(value) <= 0) return null
+                  return <Box key={item.key} sx={{ height: `${Number(value) / point.total * 100}%`, background: CHART_COLORS[seriesIndex % CHART_COLORS.length] }} />
+                })}
+              </Box>
+            )}
+            <Typography variant="caption" color="text.secondary">{point.date.slice(5)}</Typography>
           </Box>
         ))}
       </Box>
       <Stack direction="row" spacing={1.5} sx={{ flexWrap: 'wrap', mt: 1.5 }}>
-        {visible.slice(0, 8).map((item, index) => <Stack key={item.key} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 9, height: 9, borderRadius: '50%', background: CHART_COLORS[index % CHART_COLORS.length] }} /><Typography variant="caption">{item.key}</Typography></Stack>)}
+        {chart.series.slice(0, 8).map((item, index) => <Stack key={item.key} direction="row" spacing={0.5} sx={{ alignItems: 'center' }}><Box sx={{ width: 9, height: 9, borderRadius: '50%', background: CHART_COLORS[index % CHART_COLORS.length] }} /><Typography variant="caption">{item.key}</Typography></Stack>)}
       </Stack>
     </Box>
   )
@@ -185,7 +157,7 @@ function UsageOverTime({ hermes }) {
     <Card component="section" variant="outlined" className="glass-panel">
       <CardContent>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', mb: 2 }}>
-          <Box><Typography variant="h5">Usage over time</Typography><Typography variant="body2" color="text.secondary">Daily Hermes-observed workload. Missing samples remain gaps.</Typography></Box>
+          <Box><Typography variant="h5">Usage over time</Typography><Typography variant="body2" color="text.secondary">Daily Hermes-observed workload. Observed cost is telemetry reported by Hermes—not subscription commitment or provider-reported spend. Missing samples remain gaps.</Typography></Box>
           <FormControl size="small" sx={{ minWidth: 145 }}><InputLabel>Group</InputLabel><Select label="Group" value={grouping} onChange={(event) => setGrouping(event.target.value)}><MenuItem value="provider">By provider</MenuItem><MenuItem value="model">By model</MenuItem></Select></FormControl>
         </Stack>
         <Tabs value={metric} onChange={(_, value) => setMetric(value)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>{WORKLOAD_METRICS.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}</Tabs>

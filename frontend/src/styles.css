@@ -333,6 +333,19 @@ input {
   border-radius: 6px 6px 0 0;
 }
 
+.usage-workload-missing {
+  height: 3px;
+  margin-bottom: 1px;
+  border-top: 1px dashed rgba(127, 127, 127, 0.35);
+}
+
+.usage-workload-zero {
+  height: 3px;
+  margin-bottom: 1px;
+  border-radius: 2px;
+  background: rgba(127, 127, 127, 0.7);
+}
+
 .usage-table-scroll {
   max-width: 100%;
   overflow-x: auto;

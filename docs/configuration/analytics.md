@@ -32,7 +32,10 @@ negative usage.
 - **Provider usage & quota** - billing and workload beside every independently
   reported quota window, including its own utilization, status, and reset time.
 - **Usage over time** - tokens, cost, requests, or sessions grouped by provider
-  or model. Missing days remain gaps instead of becoming zero usage.
+  or model. The cost series is explicitly labelled **Observed cost** because it
+  represents Hermes cost telemetry, not subscription commitment or
+  provider-reported spend. Missing days remain gaps instead of becoming zero
+  usage; observed zeroes remain distinct from dates with no observation.
 - **Cost & value** - direct provider economics using subscription commitment or
   reported PAYG spend as the named denominator. Selected-range subscription
   allocation remains available as detail and is never presented as plan price.

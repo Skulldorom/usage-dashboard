@@ -2,10 +2,38 @@ import { compactNumber, formatMoney, providerNameWithLabel } from './analyticsFo
 
 export const WORKLOAD_METRICS = [
   { value: 'tokens', label: 'Tokens' },
-  { value: 'cost', label: 'Cost' },
+  { value: 'cost', label: 'Observed cost' },
   { value: 'requests', label: 'Requests' },
   { value: 'sessions', label: 'Sessions' },
 ]
+
+export function workloadChartData(hermes, metric, grouping) {
+  const series = grouping === 'provider' ? hermes?.daily_by_provider || [] : hermes?.daily_by_model || []
+  const visible = series.filter((item) => item.points.some((point) => point[metric] !== null && point[metric] !== undefined))
+  const observedDates = [...new Set(visible.flatMap((item) => item.points.map((point) => point.date)))].sort()
+  const dates = []
+  const start = new Date(hermes?.period?.start)
+  const end = new Date(hermes?.period?.end)
+  if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+    const cursor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()))
+    while (cursor < end && dates.length < 100) {
+      dates.push(cursor.toISOString().slice(0, 10))
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    }
+  }
+  if (!dates.length) dates.push(...observedDates)
+  const lookup = visible.map((item) => new Map(item.points.map((point) => [point.date, point[metric]])))
+  const points = dates.map((date) => {
+    const values = lookup.map((items) => items.get(date))
+    const observed = values.some((value) => value !== null && value !== undefined)
+    return {
+      date,
+      total: observed ? values.reduce((sum, value) => sum + Number(value ?? 0), 0) : null,
+      values,
+    }
+  })
+  return { series: visible, points }
+}
 
 export function totalValue(totals, metric) {
   return (totals || []).find((item) => item.metric === metric)?.value ?? null
@@ -36,6 +64,30 @@ export function usageSummary(hermes, economics, overview) {
     tokens: totalValue(hermes?.totals, 'tokens') ?? activity.get('tokens') ?? null,
     requests: totalValue(hermes?.totals, 'requests') ?? activity.get('requests') ?? null,
     sessions: hermes?.sessions ?? null,
+  }
+}
+
+export function selectedUsageSummary(base, selectedProvider, hermes, economics) {
+  if (!selectedProvider) return { ...base, sharedWorkload: false }
+  const economic = (economics?.providers || []).find((row) => row.config_id === selectedProvider.config_id)
+  const cost = economic?.pricing_model === 'subscription'
+    ? economic.audit?.subscription?.amount ?? null
+    : economic?.actual_spend?.amount ?? (economic?.pricing_model === 'free' ? 0 : null)
+  const ambiguous = Boolean(selectedProvider.attributionAmbiguous || economic?.attribution_ambiguous)
+  const observed = ambiguous
+    ? null
+    : (hermes?.by_provider || []).find((row) => row.key === selectedProvider.provider)
+  return {
+    ...base,
+    cost,
+    currency: economic?.actual_spend?.currency || economic?.audit?.subscription?.currency || 'USD',
+    commitment: economic?.pricing_model === 'subscription' ? cost || 0 : 0,
+    payg: economic?.pricing_model === 'payg' && cost !== null ? cost : 0,
+    tokens: ambiguous ? null : observed?.tokens ?? economic?.observed?.tokens ?? null,
+    requests: ambiguous ? null : observed?.requests ?? null,
+    sessions: ambiguous ? null : observed?.sessions ?? null,
+    hasUnknownPayg: economic?.pricing_model === 'payg' && cost === null,
+    sharedWorkload: ambiguous,
   }
 }
 
@@ -90,9 +142,9 @@ export function providerUsageRows(overview, economics, hermes) {
       displayName: providerNameWithLabel(provider.provider, provider.label, { disambiguate: provider.disambiguate }),
       billing: billingLabel(economic),
       cost: costPresentation(economic),
-      tokens: observed?.tokens ?? economic?.observed?.tokens ?? (provider.unit === 'tokens' ? provider.value : null),
-      requests: observed?.requests ?? (provider.unit === 'requests' ? provider.value : null),
-      sessions: observed?.sessions ?? null,
+      tokens: ambiguous ? null : observed?.tokens ?? economic?.observed?.tokens ?? (provider.unit === 'tokens' ? provider.value : null),
+      requests: ambiguous ? null : observed?.requests ?? (provider.unit === 'requests' ? provider.value : null),
+      sessions: ambiguous ? null : observed?.sessions ?? null,
       attributionAmbiguous: ambiguous,
       pricingModel: economic?.pricing_model || null,
       quotaWindows: provider.quota_windows || [],
