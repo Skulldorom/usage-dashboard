@@ -123,7 +123,7 @@ def _safe_browser_error(exc: Exception) -> str:
 def _browser_status_payload(flow: CodexBrowserFlowState) -> dict[str, object]:
     return {"status": flow.status, "error": flow.error, "config_id": flow.config_id_result, "label": flow.label_result}
 
-async def _claim_codex_browser_flow(flow_id: str | None, callback: str) -> tuple[str | None, CodexBrowserFlowState | None, str | None, str | None]:
+async def _claim_codex_browser_flow(flow_id: str | None, callback: str, *, allow_failed_retry: bool = False) -> tuple[str | None, CodexBrowserFlowState | None, str | None, str | None]:
     async with _codex_device_lock:
         _prune_codex_device_flows()
         candidates = [(fid, flow) for fid, flow in _codex_browser_flows.items() if flow_id is None or fid == flow_id]
@@ -133,7 +133,7 @@ async def _claim_codex_browser_flow(flow_id: str | None, callback: str) -> tuple
                 code = codex_oauth.authorization_code_from_callback(callback, expected_state=flow.browser.state)
             except Exception:
                 continue
-            if flow.status != "pending":
+            if flow.status != "pending" and not (allow_failed_retry and flow.status == "failed"):
                 return None, flow, None, "This Codex authorization flow is already being processed or has finished. Start a new login if needed."
             if flow.browser.expires_at <= datetime.now(UTC):
                 flow.status = "expired"
@@ -573,7 +573,7 @@ async def start_codex_browser_oauth(payload: CodexDevicePollRequest | None = Non
 
 @router.post("/codex/oauth/browser/{flow_id}/complete", response_model=CodexBrowserCompleteRead, dependencies=[Depends(require_admin_auth)])
 async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserCompleteRequest, session: AsyncSession = Depends(get_session)):
-    claimed_id, flow, code, error = await _claim_codex_browser_flow(flow_id, payload.callback)
+    claimed_id, flow, code, error = await _claim_codex_browser_flow(flow_id, payload.callback, allow_failed_retry=True)
     if not flow:
         raise HTTPException(status_code=404, detail="Codex browser authorization flow was not found or expired")
     if not claimed_id or not code:

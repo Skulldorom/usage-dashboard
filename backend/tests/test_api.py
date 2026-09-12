@@ -2126,3 +2126,41 @@ async def test_codex_browser_raw_exception_is_sanitized(sqlite_db, monkeypatch):
     assert "SECRET_CODE" not in combined
     assert "SECRET_TOKEN" not in combined
     assert "Unable to exchange" in combined
+
+@pytest.mark.asyncio
+async def test_codex_browser_manual_retry_after_automatic_exchange_failure(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.providers.codex import CodexCredentials
+
+    calls = 0
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("temporary exchange failure code=SECRET_CODE access_token=SECRET_TOKEN")
+        return CodexCredentials(access_token="retry-access", refresh_token="retry-refresh").to_secret_json()
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", json={"label": "retry"}, headers=auth)
+        flow = routes._codex_browser_flows[started.json()["flow_id"]]
+        callback = f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"
+
+        automatic_ok, automatic_message = await routes._complete_codex_browser_callback(flow.state, callback)
+        assert automatic_ok is False
+        assert automatic_message == "Unable to exchange the Codex authorization code."
+
+        manual = await client.post(
+            f"/api/v1/codex/oauth/browser/{started.json()['flow_id']}/complete",
+            json={"callback": callback},
+            headers=auth,
+        )
+        assert manual.status_code == 200, manual.text
+        assert manual.json()["status"] == "completed"
+        assert manual.json()["config"]["label"] == "retry"
+        assert calls == 2
