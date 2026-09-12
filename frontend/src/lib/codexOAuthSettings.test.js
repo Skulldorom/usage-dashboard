@@ -1,0 +1,88 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const settingsSource = readFileSync(resolve(currentDir, "../pages/SettingsPage.jsx"), "utf8");
+const apiSource = readFileSync(resolve(currentDir, "../api.js"), "utf8");
+
+const functionBody = (name) => {
+  const start = settingsSource.indexOf(`async function ${name}()`);
+  expect(start).toBeGreaterThan(-1);
+  const nextFunction = settingsSource.indexOf("\n  async function", start + 1);
+  const nextConst = settingsSource.indexOf("\n  const ", start + 1);
+  const end = Math.min(...[nextFunction, nextConst].filter((index) => index > start));
+  return settingsSource.slice(start, end);
+};
+
+describe("Codex browser OAuth settings flow", () => {
+  it("keeps Connect Codex on browser OAuth without targeting an existing config", () => {
+    expect(settingsSource).toContain("Connect Codex");
+    expect(apiSource).toContain("startCodexBrowserOAuth: (payload = {}) => request('/codex/oauth/browser/start'");
+    const startBody = functionBody("startCodexBrowserLogin");
+    expect(startBody).toContain("api.startCodexBrowserOAuth");
+    expect(startBody).toContain("label: credentialTarget ? credentialTarget.label : form.label.trim() || null");
+    expect(startBody).toContain("config_id: credentialTarget?.id || null");
+    expect(startBody).toContain('window.open(flow.authorization_url, "codex_oauth"');
+    expect(startBody).toContain('window.open(flow.authorization_url, "_blank"');
+    const addProviderSection = settingsSource.slice(settingsSource.indexOf("Connect without Codex CLI"), settingsSource.indexOf("Manual OAuth token bundle fallback"));
+    expect(addProviderSection).toContain("Connect Codex");
+    expect(addProviderSection).toContain("onClick={startCodexBrowserLogin}");
+    expect(addProviderSection).not.toContain("credentialTarget?.id");
+  });
+
+  it("keeps Reconnect Codex targeted at the exact existing provider config", () => {
+    const credentialDialogSection = settingsSource.slice(settingsSource.indexOf("Credential replacement"), settingsSource.indexOf("DialogActions", settingsSource.indexOf("Credential replacement")));
+    expect(credentialDialogSection).toContain("Reconnect Codex");
+    expect(credentialDialogSection).toContain("onClick={startCodexBrowserLogin}");
+    const startBody = functionBody("startCodexBrowserLogin");
+    expect(startBody).toContain("config_id: credentialTarget?.id || null");
+    expect(startBody).toContain("label: credentialTarget ? credentialTarget.label");
+    const completeBody = functionBody("completeCodexBrowserLogin");
+    expect(completeBody).toContain("config_id: credentialTarget?.id || null");
+    expect(completeBody).toContain("label: credentialTarget ? credentialTarget.label");
+    expect(completeBody).toContain("Codex reauthenticated for ${label}.");
+  });
+
+  it("preserves manual callback fallback and reconnect config association", () => {
+    const startBody = functionBody("startCodexBrowserLogin");
+    expect(startBody).toContain("automaticCaptureAvailable");
+    expect(startBody).toContain("Popup was blocked or automatic callback capture is unavailable. Open the login link, then paste the localhost callback URL below.");
+    const completeBody = functionBody("completeCodexBrowserLogin");
+    expect(completeBody).toContain("api.completeCodexBrowserOAuth");
+    expect(completeBody).toContain("callback: codexCallback.trim()");
+    expect(completeBody).toContain("config_id: credentialTarget?.id || null");
+    expect(settingsSource).toContain("OpenAI localhost callback URL");
+    expect(settingsSource).toContain("Callback URL after login");
+    expect(settingsSource).toContain("Open Codex browser login");
+  });
+
+  it("covers automatic status completion cleanup for connect and reconnect", () => {
+    const effectStart = settingsSource.indexOf("api.codexBrowserOAuthStatus");
+    expect(effectStart).toBeGreaterThan(-1);
+    const effectBody = settingsSource.slice(effectStart - 1200, effectStart + 2200);
+    expect(effectBody).toContain('result.status === "pending"');
+    expect(effectBody).toContain('result.status === "processing"');
+    expect(effectBody).toContain('result.status === "completed"');
+    expect(effectBody).toContain("setCodexBrowserFlow(null)");
+    expect(effectBody).toContain('setCodexCallback("")');
+    expect(effectBody).toContain("codexPopupRef.current.close()");
+    expect(effectBody).toContain("setOpen(false)");
+    expect(effectBody).toContain("setForm(initialForm)");
+    expect(effectBody).toContain("await load()");
+    expect(effectBody).toContain("credentialTarget ? `Codex reauthenticated for ${label}.` : `Codex connected as ${label}.`");
+  });
+
+  it("does not render normal device-code login or reauth controls", () => {
+    expect(settingsSource).not.toContain("Start Codex device login");
+    expect(settingsSource).not.toContain("Start Codex device reauth");
+    expect(settingsSource).not.toContain("I authorized it - check now");
+    expect(settingsSource).not.toContain("I authorized Codex");
+    expect(settingsSource).not.toContain("startCodexDeviceLogin");
+    expect(settingsSource).not.toContain("pollCodexDeviceLogin");
+    expect(settingsSource).not.toContain("codexDeviceFlow");
+    expect(apiSource).not.toContain("startCodexDeviceOAuth");
+    expect(apiSource).not.toContain("pollCodexDeviceOAuth");
+  });
+});

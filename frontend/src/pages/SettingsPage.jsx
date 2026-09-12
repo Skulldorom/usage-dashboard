@@ -77,10 +77,10 @@ const PROVIDER_SETUP = {
     keyPlaceholder: "sk-…",
   },
   codex: {
-    title: "Codex device login",
+    title: "Codex browser login",
     steps: [
-      "Try Start Codex device login first. If OpenAI Cloudflare blocks your Docker/server IP, use Start browser login instead.",
-      "Browser login opens OpenAI in your browser, then asks you to paste the localhost callback URL from the failed browser redirect.",
+      "Use Connect Codex to sign in with OpenAI in a browser window.",
+      "Automatic callback capture is attempted first; if unavailable, paste the localhost callback URL shown by the browser redirect.",
       "Tokens are exchanged and encrypted by the backend only; access_token and refresh_token are never exposed to browser JavaScript.",
     ],
     url: "https://chatgpt.com/codex/settings/general#settings/Security",
@@ -392,7 +392,6 @@ export default function SettingsPage() {
   const [error, setError] = useState("");
   const [testing, setTesting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [codexDeviceFlow, setCodexDeviceFlow] = useState(null);
   const [codexBrowserFlow, setCodexBrowserFlow] = useState(null);
   const [codexCallback, setCodexCallback] = useState("");
   const codexPopupRef = useRef(null);
@@ -622,7 +621,6 @@ export default function SettingsPage() {
     setCredentialStatus("");
     setTestError("");
     setTestResult(null);
-    setCodexDeviceFlow(null);
     setCodexBrowserFlow(null);
     setCodexCallback("");
     setCodexDeviceStatus("");
@@ -633,7 +631,6 @@ export default function SettingsPage() {
     setCredentialTarget(null);
     setCredentialValue("");
     setCredentialStatus("");
-    setCodexDeviceFlow(null);
     setCodexBrowserFlow(null);
     setCodexCallback("");
     setCodexDeviceStatus("");
@@ -1174,35 +1171,6 @@ export default function SettingsPage() {
       setThresholdSaving(false);
     }
   }
-  async function startCodexDeviceLogin() {
-    setError("");
-    setCredentialStatus("");
-    setTestError("");
-    setTestResult(null);
-    setCodexDeviceStatus("Requesting device code…");
-    setCodexDeviceBusy(true);
-    try {
-      const flow = await api.startCodexDeviceOAuth();
-      setCodexDeviceFlow(flow);
-      setCodexBrowserFlow(null);
-      setCodexCallback("");
-      setCodexDeviceStatus(
-        "Open the link, enter the code, then leave this dialog open while polling completes.",
-      );
-      if (flow.verification_uri_complete)
-        window.open(
-          flow.verification_uri_complete,
-          "_blank",
-          "noopener,noreferrer",
-        );
-    } catch (err) {
-      setCodexDeviceStatus("");
-      setTestError(err.message);
-    } finally {
-      setCodexDeviceBusy(false);
-    }
-  }
-
   async function startCodexBrowserLogin() {
     setError("");
     setCredentialStatus("");
@@ -1216,7 +1184,6 @@ export default function SettingsPage() {
         config_id: credentialTarget?.id || null,
       });
       setCodexBrowserFlow(flow);
-      setCodexDeviceFlow(null);
       setCodexCallback("");
       if (codexPopupRef.current && !codexPopupRef.current.closed) {
         codexPopupRef.current.close();
@@ -1351,51 +1318,6 @@ export default function SettingsPage() {
     };
   }, [codexBrowserFlow?.flow_id, codexBrowserFlow?.callback_available, codexBrowserFlow?.expires_at, credentialTarget, load]);
 
-  async function pollCodexDeviceLogin() {
-    if (!codexDeviceFlow?.flow_id) return;
-    setError("");
-    setTestError("");
-    setCodexDeviceBusy(true);
-    try {
-      const result = await api.pollCodexDeviceOAuth(codexDeviceFlow.flow_id, {
-        label: credentialTarget ? credentialTarget.label : form.label.trim() || null,
-        config_id: credentialTarget?.id || null,
-      });
-      if (result.status === "completed") {
-        const label = result.config?.label || "codex";
-        setCodexDeviceStatus(
-          credentialTarget
-            ? `Codex reauthenticated for ${label}.`
-            : `Codex connected as ${label}.`,
-        );
-        setCredentialStatus(
-          credentialTarget
-            ? "Codex credential replaced. The previous OAuth token was overwritten and never displayed."
-            : "",
-        );
-        setCodexDeviceFlow(null);
-        if (!credentialTarget) {
-          setOpen(false);
-          setForm(initialForm);
-        }
-        await load();
-      } else if (result.status === "pending" || result.status === "slow_down") {
-        setCodexDeviceStatus(
-          `Still waiting for OpenAI authorization. Try again in ${result.interval_seconds || codexDeviceFlow.interval_seconds || 5}s.`,
-        );
-      } else {
-        setCodexDeviceStatus("");
-        setTestError(
-          result.error || "Codex device authorization did not complete.",
-        );
-      }
-    } catch (err) {
-      setTestError(err.message);
-    } finally {
-      setCodexDeviceBusy(false);
-    }
-  }
-
   const missingRequired =
     (!isCodex && !form.api_key.trim()) ||
     (isCustom &&
@@ -1427,7 +1349,6 @@ export default function SettingsPage() {
             setOpen(true);
             setTestResult(null);
             setTestError("");
-            setCodexDeviceFlow(null);
             setCodexBrowserFlow(null);
             setCodexCallback("");
             setCodexDeviceStatus("");
@@ -2361,7 +2282,7 @@ export default function SettingsPage() {
                 <Stack direction="row" spacing={1} useFlexGap sx={{ flexWrap: "wrap" }}>
                   <Button
                     variant="contained"
-                    onClick={startCodexDeviceLogin}
+                    onClick={startCodexBrowserLogin}
                     disabled={codexDeviceBusy}
                     startIcon={
                       codexDeviceBusy ? (
@@ -2369,54 +2290,9 @@ export default function SettingsPage() {
                       ) : null
                     }
                   >
-                    Start Codex device login
+                    Connect Codex
                   </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={startCodexBrowserLogin}
-                    disabled={codexDeviceBusy}
-                  >
-                    Start browser login fallback
-                  </Button>
-                  {codexDeviceFlow && (
-                    <Button
-                      variant="outlined"
-                      onClick={pollCodexDeviceLogin}
-                      disabled={codexDeviceBusy}
-                    >
-                      I authorized it - check now
-                    </Button>
-                  )}
                 </Stack>
-                {codexDeviceFlow && (
-                  <Stack spacing={1} sx={{ mt: 1.5 }}>
-                    <Typography variant="body2">
-                      Open{" "}
-                      <a
-                        href={
-                          codexDeviceFlow.verification_uri_complete ||
-                          codexDeviceFlow.verification_uri
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {codexDeviceFlow.verification_uri}
-                      </a>{" "}
-                      and enter:
-                    </Typography>
-                    <Typography
-                      variant="h5"
-                      component="code"
-                      sx={{ letterSpacing: ".08em" }}
-                    >
-                      {codexDeviceFlow.user_code}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Expires at{" "}
-                      {new Date(codexDeviceFlow.expires_at).toLocaleString()}.
-                    </Typography>
-                  </Stack>
-                )}
                 {codexBrowserFlow && (
                   <Stack spacing={1} sx={{ mt: 1.5 }}>
                     <Button
@@ -2479,7 +2355,7 @@ export default function SettingsPage() {
                 isCustom
                   ? "Inserted into the auth header template as {api_key}; never put secrets in URLs."
                   : isCodex
-                    ? "Optional fallback only. Prefer device login above; pasted JSON is still encrypted at rest."
+                    ? "Optional emergency fallback only; pasted JSON is still encrypted at rest."
                     : `Use the ${setup?.title || "key"} described above.`
               }
             />
@@ -2895,7 +2771,7 @@ export default function SettingsPage() {
               <Box className="homepage-guide api-token-guide">
                 <Typography variant="body2" color="text.secondary">
                   For expired Codex OAuth tokens, reauthenticate this exact
-                  provider row with device login or browser login. The backend
+                  provider row with browser login. The backend
                   stores the refreshed OAuth secret directly; browser JavaScript
                   never receives the access or refresh token.
                 </Typography>
@@ -2906,42 +2782,18 @@ export default function SettingsPage() {
                   sx={{ mt: 1.5, flexWrap: "wrap" }}
                 >
                   <Button
-                    variant="outlined"
-                    onClick={startCodexDeviceLogin}
-                    disabled={codexDeviceBusy}
-                  >
-                    Start Codex device reauth
-                  </Button>
-                  <Button
-                    variant="outlined"
+                    variant="contained"
                     onClick={startCodexBrowserLogin}
                     disabled={codexDeviceBusy}
+                    startIcon={
+                      codexDeviceBusy ? (
+                        <CircularProgress size={16} color="inherit" />
+                      ) : null
+                    }
                   >
-                    Start browser reauth
+                    Reconnect Codex
                   </Button>
                 </Stack>
-                {codexDeviceFlow && (
-                  <Stack spacing={1.25} sx={{ mt: 1.5 }}>
-                    <Alert severity="info">
-                      Visit {" "}
-                      <a
-                        href={codexDeviceFlow.verification_uri_complete || codexDeviceFlow.verification_uri}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        {codexDeviceFlow.verification_uri}
-                      </a>{" "}
-                      and enter code <strong>{codexDeviceFlow.user_code}</strong>.
-                    </Alert>
-                    <Button
-                      variant="contained"
-                      onClick={pollCodexDeviceLogin}
-                      disabled={codexDeviceBusy}
-                    >
-                      {codexDeviceBusy ? "Checking…" : "I authorized Codex"}
-                    </Button>
-                  </Stack>
-                )}
                 {codexBrowserFlow && (
                   <Stack spacing={1.25} sx={{ mt: 1.5 }}>
                     <Button
@@ -2966,7 +2818,7 @@ export default function SettingsPage() {
                       onClick={completeCodexBrowserLogin}
                       disabled={codexDeviceBusy || !codexCallback.trim()}
                     >
-                      {codexDeviceBusy ? "Completing…" : "Complete browser reauth"}
+                      {codexDeviceBusy ? "Completing…" : "Complete reconnect"}
                     </Button>
                   </Stack>
                 )}
