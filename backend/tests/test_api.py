@@ -1929,3 +1929,97 @@ async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
     assert item["health"]["consecutive_failures"] == 250
     assert item["last_good"] is not None
     assert item["last_good"]["metrics"][0]["value"] == 42
+
+@pytest.mark.asyncio
+async def test_codex_browser_oauth_status_callback_completion_and_replay(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.providers.codex import CodexCredentials
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        assert code == "browser-code"
+        assert code_verifier
+        return CodexCredentials(
+            access_token="auto-access-token",
+            refresh_token="auto-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            account_id="acct_auto",
+        ).to_secret_json()
+
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post(
+            "/api/v1/codex/oauth/browser/start",
+            json={"label": "codex-auto"},
+            headers=auth,
+        )
+        assert started.status_code == 200, started.text
+        payload = started.json()
+        assert payload["callback_available"] is True
+        flow = routes._codex_browser_flows[payload["flow_id"]]
+        assert "code_verifier" not in started.text
+
+        pending = await client.get(f"/api/v1/codex/oauth/browser/{payload['flow_id']}/status", headers=auth)
+        assert pending.json() == {"status": "pending", "error": None, "config": None}
+
+        ok, message = await routes._complete_codex_browser_callback(
+            flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+        )
+        assert ok is True, message
+        assert "Codex connected" in message
+
+        completed = await client.get(f"/api/v1/codex/oauth/browser/{payload['flow_id']}/status", headers=auth)
+        assert completed.status_code == 200, completed.text
+        completed_payload = completed.json()
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["config"]["label"] == "codex-auto"
+        assert "auto-access-token" not in completed.text
+        assert "auto-refresh-token" not in completed.text
+        assert "code_verifier" not in completed.text
+
+        replay_ok, replay_message = await routes._complete_codex_browser_callback(
+            flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+        )
+        assert replay_ok is False
+        assert "already finished" in replay_message
+
+@pytest.mark.asyncio
+async def test_codex_browser_callback_rejects_mismatched_flow_state(sqlite_db, monkeypatch):
+    from app.api import routes
+
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        second = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_flow = routes._codex_browser_flows[first.json()["flow_id"]]
+        second_flow = routes._codex_browser_flows[second.json()["flow_id"]]
+
+        ok, message = await routes._complete_codex_browser_callback(
+            first_flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={second_flow.state}",
+        )
+        assert ok is False
+        assert "state mismatch" in message
+
+@pytest.mark.asyncio
+async def test_codex_browser_listener_startup_failure_keeps_manual_fallback(monkeypatch):
+    from app.api import routes
+
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (False, "port_busy"))
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert started.status_code == 200, started.text
+        payload = started.json()
+        assert payload["callback_available"] is False
+        assert payload["fallback_reason"] == "port_busy"
+        assert payload["authorization_url"].startswith("https://auth.openai.com/oauth/authorize?")
+        assert "code_verifier" not in started.text

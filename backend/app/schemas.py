@@ -230,6 +230,8 @@ class CodexBrowserStartRead(BaseModel):
     authorization_url: str
     redirect_uri: str
     expires_at: str
+    callback_available: bool = False
+    fallback_reason: str | None = None
 
 
 class CodexBrowserCompleteRequest(BaseModel):
@@ -247,6 +249,11 @@ class CodexBrowserCompleteRequest(BaseModel):
 
 
 class CodexBrowserCompleteRead(BaseModel):
+    status: str
+    error: str | None = None
+    config: ProviderConfigRead | None = None
+
+class CodexBrowserStatusRead(BaseModel):
     status: str
     error: str | None = None
     config: ProviderConfigRead | None = None
