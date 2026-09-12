@@ -1222,7 +1222,7 @@ export default function SettingsPage() {
         codexPopupRef.current.close();
       }
       const isLoopbackDashboard = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-      const automaticCaptureAvailable = flow.callback_available && isLoopbackDashboard;
+      const automaticCaptureAvailable = flow.callback_available && isLoopbackDashboard && flow.fallback_reason !== "auto_capture_not_enabled";
       const popup = automaticCaptureAvailable
         ? window.open(flow.authorization_url, "codex_oauth", "width=600,height=720")
         : null;
@@ -1260,7 +1260,7 @@ export default function SettingsPage() {
         },
       );
       if (result.status === "completed") {
-        const label = result.config?.label || "codex";
+        const label = result.label || "codex";
         setCodexDeviceStatus(
           credentialTarget
             ? `Codex reauthenticated for ${label}.`
@@ -1295,18 +1295,23 @@ export default function SettingsPage() {
     const isLoopbackDashboard = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
     if (!codexBrowserFlow?.flow_id || !codexBrowserFlow.callback_available || !isLoopbackDashboard) return undefined;
     let cancelled = false;
-    let attempts = 0;
+    const expiresAt = new Date(codexBrowserFlow.expires_at).getTime();
     clearInterval(codexPollRef.current);
     codexPollRef.current = setInterval(async () => {
       if (cancelled) return;
-      attempts += 1;
+      if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
+        clearInterval(codexPollRef.current);
+        codexPollRef.current = null;
+        setCodexDeviceStatus("Automatic callback capture expired. Paste the callback URL below to complete manually if you still have it.");
+        return;
+      }
       try {
         const result = await api.codexBrowserOAuthStatus(codexBrowserFlow.flow_id);
         if (cancelled || result.status === "pending") return;
         clearInterval(codexPollRef.current);
         codexPollRef.current = null;
         if (result.status === "completed") {
-          const label = result.config?.label || "codex";
+          const label = result.label || "codex";
           setCodexDeviceStatus(
             credentialTarget ? `Codex reauthenticated for ${label}.` : `Codex connected as ${label}.`,
           );
@@ -1328,10 +1333,10 @@ export default function SettingsPage() {
           setCodexDeviceStatus("Automatic callback capture failed. Paste the callback URL below to complete manually.");
         }
       } catch {
-        if (attempts > 200) {
+        if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
           clearInterval(codexPollRef.current);
           codexPollRef.current = null;
-          setCodexDeviceStatus("Automatic callback capture timed out. Paste the callback URL below to complete manually.");
+          setCodexDeviceStatus("Automatic callback capture expired. Paste the callback URL below to complete manually if you still have it.");
         }
       }
     }, 1500);
@@ -1340,7 +1345,7 @@ export default function SettingsPage() {
       clearInterval(codexPollRef.current);
       codexPollRef.current = null;
     };
-  }, [codexBrowserFlow?.flow_id, codexBrowserFlow?.callback_available, credentialTarget, load]);
+  }, [codexBrowserFlow?.flow_id, codexBrowserFlow?.callback_available, codexBrowserFlow?.expires_at, credentialTarget, load]);
 
   async function pollCodexDeviceLogin() {
     if (!codexDeviceFlow?.flow_id) return;
@@ -1353,7 +1358,7 @@ export default function SettingsPage() {
         config_id: credentialTarget?.id || null,
       });
       if (result.status === "completed") {
-        const label = result.config?.label || "codex";
+        const label = result.label || "codex";
         setCodexDeviceStatus(
           credentialTarget
             ? `Codex reauthenticated for ${label}.`

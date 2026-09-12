@@ -256,7 +256,8 @@ class CodexBrowserCompleteRead(BaseModel):
 class CodexBrowserStatusRead(BaseModel):
     status: str
     error: str | None = None
-    config: ProviderConfigRead | None = None
+    config_id: int | None = None
+    label: str | None = None
 
 
 class UsageMetric(BaseModel):
