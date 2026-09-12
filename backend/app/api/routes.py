@@ -1,5 +1,10 @@
 import asyncio
-from dataclasses import asdict
+import errno
+import html
+import threading
+from dataclasses import asdict, dataclass
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
@@ -19,7 +24,7 @@ from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.errors import classify_exception, log_provider_failure
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexBrowserStatusRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -27,7 +32,33 @@ _auto_poll_task: asyncio.Task | None = None
 _last_auto_polled_at: datetime | None = None
 _next_auto_poll_at: datetime | None = None
 _codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
-_codex_browser_flows: dict[str, codex_oauth.CodexBrowserStart] = {}
+
+@dataclass(slots=True)
+class CodexBrowserFlowState:
+    browser: codex_oauth.CodexBrowserStart
+    status: str = "pending"
+    error: str | None = None
+    config_id_result: int | None = None
+    label_result: str | None = None
+    label: str | None = None
+    config_id: int | None = None
+    completed_at: datetime | None = None
+
+    @property
+    def state(self) -> str:
+        return self.browser.state
+
+    @property
+    def code_verifier(self) -> str:
+        return self.browser.code_verifier
+
+    @property
+    def expires_at(self) -> datetime:
+        return self.browser.expires_at
+
+_codex_browser_flows: dict[str, CodexBrowserFlowState] = {}
+_codex_browser_listener: ThreadingHTTPServer | None = None
+_codex_browser_listener_thread: threading.Thread | None = None
 _codex_device_lock = asyncio.Lock()
 
 
@@ -60,10 +91,142 @@ def _prune_codex_device_flows(now: datetime | None = None) -> None:
     expired = [flow_id for flow_id, flow in _codex_device_flows.items() if flow.expires_at <= current]
     for flow_id in expired:
         _codex_device_flows.pop(flow_id, None)
-    expired_browser = [flow_id for flow_id, flow in _codex_browser_flows.items() if flow.expires_at <= current]
+    expired_browser = []
+    for flow_id, flow in _codex_browser_flows.items():
+        if flow.status == "pending" and flow.browser.expires_at <= current:
+            flow.status = "expired"
+            flow.error = "Codex browser login expired. Start a new connection."
+            flow.completed_at = current
+        if flow.status in {"completed", "failed", "expired"} and (flow.completed_at or flow.browser.expires_at) + timedelta(minutes=2) <= current:
+            expired_browser.append(flow_id)
     for flow_id in expired_browser:
         _codex_browser_flows.pop(flow_id, None)
+    if not any(flow.status in {"pending", "processing"} for flow in _codex_browser_flows.values()):
+        _stop_codex_browser_listener()
 
+
+def _codex_browser_result_page(success: bool, message: str) -> str:
+    title = "Codex connected" if success else "Codex authorization failed"
+    color = "#16a34a" if success else "#dc2626"
+    safe_message = html.escape(message, quote=True)
+    mark = "✓" if success else "✕"
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>{title}</title><style>body{{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f6f7f9}}.card{{max-width:460px;padding:32px;border-radius:12px;background:white;box-shadow:0 8px 32px #0002;text-align:center}}.mark{{font-size:44px;color:{color}}}p{{color:#4b5563}}</style></head><body><main class="card"><div class="mark">{mark}</div><h1>{title}</h1><p>{safe_message}</p><p>This window will close automatically if your browser allows it.</p></main><script>setTimeout(() => window.close(), 1800);</script></body></html>"""
+
+def _safe_browser_error(exc: Exception) -> str:
+    message = str(exc).lower()
+    if "expired" in message:
+        return "Codex authorization expired."
+    if "access_denied" in message or "denied" in message or "rejected" in message:
+        return "OpenAI rejected the authorization request."
+    return "Unable to exchange the Codex authorization code."
+
+def _browser_status_payload(flow: CodexBrowserFlowState) -> dict[str, object]:
+    return {"status": flow.status, "error": flow.error, "config_id": flow.config_id_result, "label": flow.label_result}
+
+async def _claim_codex_browser_flow(flow_id: str | None, callback: str, *, allow_failed_retry: bool = False) -> tuple[str | None, CodexBrowserFlowState | None, str | None, str | None]:
+    async with _codex_device_lock:
+        _prune_codex_device_flows()
+        candidates = [(fid, flow) for fid, flow in _codex_browser_flows.items() if flow_id is None or fid == flow_id]
+        matched_by_id = _codex_browser_flows.get(flow_id) if flow_id else None
+        for candidate_id, flow in candidates:
+            try:
+                code = codex_oauth.authorization_code_from_callback(callback, expected_state=flow.browser.state)
+            except Exception:
+                continue
+            if flow.status != "pending" and not (allow_failed_retry and flow.status == "failed"):
+                return None, flow, None, "This Codex authorization flow is already being processed or has finished. Start a new login if needed."
+            if flow.browser.expires_at <= datetime.now(UTC):
+                flow.status = "expired"
+                flow.error = "Codex authorization expired."
+                flow.completed_at = datetime.now(UTC)
+                return None, flow, None, flow.error
+            flow.status = "processing"
+            return candidate_id, flow, code, None
+        return None, matched_by_id, None, "Codex authorization failed."
+
+async def _finish_codex_browser_flow(flow_id: str, flow: CodexBrowserFlowState, code: str, session: AsyncSession | None = None) -> tuple[bool, str, ProviderConfigRead | None]:
+    try:
+        secret = await codex_oauth.exchange_browser_authorization_code(code, flow.browser.code_verifier, timeout=settings.request_timeout_seconds)
+        if session is None:
+            session_factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with session_factory() as local_session:
+                config = await _save_codex_secret(local_session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id)
+                config_read = _config_read(config)
+        else:
+            config = await _save_codex_secret(session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id)
+            config_read = _config_read(config)
+        async with _codex_device_lock:
+            current = _codex_browser_flows.get(flow_id)
+            if current and current.status == "processing":
+                current.status = "completed"
+                current.config_id_result = config_read.id
+                current.label_result = config_read.label
+                current.completed_at = datetime.now(UTC)
+        return True, "Codex connected successfully. You can close this window.", config_read
+    except Exception as exc:
+        message = _safe_browser_error(exc)
+        async with _codex_device_lock:
+            current = _codex_browser_flows.get(flow_id)
+            if current and current.status == "processing":
+                current.status = "failed"
+                current.error = message
+                current.completed_at = datetime.now(UTC)
+        return False, message, None
+    finally:
+        async with _codex_device_lock:
+            if not any(item.status in {"pending", "processing"} for item in _codex_browser_flows.values()):
+                _stop_codex_browser_listener()
+
+async def _complete_codex_browser_callback(state: str | None, callback_url: str) -> tuple[bool, str]:
+    if state:
+        try:
+            codex_oauth.authorization_code_from_callback(callback_url, expected_state=state)
+        except Exception:
+            return False, "Codex authorization failed."
+    flow_id, flow, code, error = await _claim_codex_browser_flow(None, callback_url)
+    if not flow_id or not flow or not code:
+        return False, error or "Codex authorization failed."
+    ok, message, _ = await _finish_codex_browser_flow(flow_id, flow, code)
+    return ok, message
+
+def _start_codex_browser_listener(loop: asyncio.AbstractEventLoop) -> tuple[bool, str | None]:
+    global _codex_browser_listener, _codex_browser_listener_thread
+    if _codex_browser_listener:
+        return True, None
+    class CodexCallbackHandler(BaseHTTPRequestHandler):
+        def log_message(self, format, *args):
+            return
+        def do_GET(self):
+            parsed = urlparse(self.path)
+            if parsed.path != "/auth/callback":
+                self.send_response(404); self.end_headers(); self.wfile.write(b"Not found"); return
+            origin = self.headers.get("Origin")
+            if origin and not origin.startswith(("http://localhost", "http://127.0.0.1")):
+                self.send_response(403); self.end_headers(); self.wfile.write(b"Forbidden"); return
+            state = parse_qs(parsed.query, keep_blank_values=False).get("state", [None])[0]
+            future = asyncio.run_coroutine_threadsafe(_complete_codex_browser_callback(state, f"http://localhost:1455{self.path}"), loop)
+            try:
+                success, message = future.result(timeout=settings.request_timeout_seconds + 5)
+            except Exception:
+                success, message = False, "Codex authorization failed. Return to Usage Dashboard and use manual callback fallback."
+            body = _codex_browser_result_page(success, message).encode()
+            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", 1455), CodexCallbackHandler)
+    except OSError as exc:
+        return False, "port_busy" if getattr(exc, "errno", None) == errno.EADDRINUSE else "listener_unavailable"
+    _codex_browser_listener = server
+    _codex_browser_listener_thread = threading.Thread(target=server.serve_forever, name="codex-oauth-callback", daemon=True)
+    _codex_browser_listener_thread.start()
+    return True, None
+
+def _stop_codex_browser_listener() -> None:
+    global _codex_browser_listener, _codex_browser_listener_thread
+    server = _codex_browser_listener
+    if not server:
+        return
+    _codex_browser_listener = None; _codex_browser_listener_thread = None
+    threading.Thread(target=server.shutdown, daemon=True).start()
 
 def _format_homepage_number(value: float | int | str | bool | None) -> str:
     if isinstance(value, bool) or value is None:
@@ -393,42 +556,45 @@ async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest 
 
 
 @router.post("/codex/oauth/browser/start", response_model=CodexBrowserStartRead, dependencies=[Depends(require_admin_auth)])
-async def start_codex_browser_oauth():
+async def start_codex_browser_oauth(payload: CodexDevicePollRequest | None = None):
     browser = codex_oauth.start_browser_authorization()
     flow_id = token_urlsafe(32)
+    if settings.codex_browser_oauth_auto_capture_enabled:
+        listener_started, fallback_reason = _start_codex_browser_listener(asyncio.get_running_loop())
+    else:
+        listener_started, fallback_reason = False, "auto_capture_not_enabled"
     async with _codex_device_lock:
         _prune_codex_device_flows()
-        _codex_browser_flows[flow_id] = browser
-    return codex_oauth.public_browser_payload(flow_id, browser)
-
+        _codex_browser_flows[flow_id] = CodexBrowserFlowState(browser=browser, label=payload.label if payload else None, config_id=payload.config_id if payload else None)
+    data = codex_oauth.public_browser_payload(flow_id, browser)
+    data["callback_available"] = listener_started
+    data["fallback_reason"] = fallback_reason
+    return data
 
 @router.post("/codex/oauth/browser/{flow_id}/complete", response_model=CodexBrowserCompleteRead, dependencies=[Depends(require_admin_auth)])
 async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserCompleteRequest, session: AsyncSession = Depends(get_session)):
+    claimed_id, flow, code, error = await _claim_codex_browser_flow(flow_id, payload.callback, allow_failed_retry=True)
+    if not flow:
+        raise HTTPException(status_code=404, detail="Codex browser authorization flow was not found or expired")
+    if not claimed_id or not code:
+        return {"status": flow.status, "error": error or flow.error, "config": None}
+    ok, message, config = await _finish_codex_browser_flow(claimed_id, flow, code, session)
+    if not ok:
+        raise HTTPException(status_code=400, detail=message)
+    return {"status": "completed", "error": None, "config": config}
+
+@router.get("/codex/oauth/browser/{flow_id}/status", response_model=CodexBrowserStatusRead, dependencies=[Depends(require_admin_auth)])
+async def codex_browser_oauth_status(flow_id: str):
     async with _codex_device_lock:
         _prune_codex_device_flows()
-        browser = _codex_browser_flows.get(flow_id)
-    if not browser:
-        raise HTTPException(status_code=404, detail="Codex browser authorization flow was not found or expired")
-    if browser.expires_at <= datetime.now(UTC):
-        async with _codex_device_lock:
-            _codex_browser_flows.pop(flow_id, None)
-        return {"status": "expired", "error": "Codex browser login expired. Start a new connection.", "config": None}
-    try:
-        code = codex_oauth.authorization_code_from_callback(payload.callback, expected_state=browser.state)
-        secret = await codex_oauth.exchange_browser_authorization_code(code, browser.code_verifier, timeout=settings.request_timeout_seconds)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    config = await _save_codex_secret(
-        session,
-        secret,
-        auth_method="browser_pkce",
-        label=payload.label,
-        config_id=payload.config_id,
-    )
-    async with _codex_device_lock:
-        _codex_browser_flows.pop(flow_id, None)
-    return {"status": "completed", "error": None, "config": _config_read(config)}
+        flow = _codex_browser_flows.get(flow_id)
+        if not flow:
+            return {"status": "expired", "error": "Codex authorization expired.", "config_id": None, "label": None}
+        if flow.status == "pending" and flow.browser.expires_at <= datetime.now(UTC):
+            flow.status = "expired"
+            flow.error = "Codex authorization expired."
+            flow.completed_at = datetime.now(UTC)
+        return _browser_status_payload(flow)
 
 
 @router.patch("/configs/order", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])

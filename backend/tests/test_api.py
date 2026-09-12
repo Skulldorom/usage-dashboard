@@ -1081,7 +1081,7 @@ async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_enc
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
-        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        started = await client.post("/api/v1/codex/oauth/browser/start", json={"label": "codex-browser"}, headers=auth)
         assert started.status_code == 200, started.text
         start_payload = started.json()
         assert start_payload["flow_id"]
@@ -1165,7 +1165,7 @@ async def test_codex_browser_oauth_can_replace_existing_provider_secret(
         assert created.status_code == 201, created.text
         config_id = created.json()["id"]
 
-        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        started = await client.post("/api/v1/codex/oauth/browser/start", json={"config_id": config_id}, headers=auth)
         assert started.status_code == 200, started.text
         start_payload = started.json()
         flow = routes._codex_browser_flows[start_payload["flow_id"]]
@@ -1929,3 +1929,238 @@ async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
     assert item["health"]["consecutive_failures"] == 250
     assert item["last_good"] is not None
     assert item["last_good"]["metrics"][0]["value"] == 42
+
+@pytest.mark.asyncio
+async def test_codex_browser_oauth_status_callback_completion_and_replay(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.providers.codex import CodexCredentials
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        assert code == "browser-code"
+        assert code_verifier
+        return CodexCredentials(
+            access_token="auto-access-token",
+            refresh_token="auto-refresh-token",
+            expires_at=datetime.now(UTC) + timedelta(hours=1),
+            account_id="acct_auto",
+        ).to_secret_json()
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post(
+            "/api/v1/codex/oauth/browser/start",
+            json={"label": "codex-auto"},
+            headers=auth,
+        )
+        assert started.status_code == 200, started.text
+        payload = started.json()
+        assert payload["callback_available"] is True
+        flow = routes._codex_browser_flows[payload["flow_id"]]
+        assert "code_verifier" not in started.text
+
+        pending = await client.get(f"/api/v1/codex/oauth/browser/{payload['flow_id']}/status", headers=auth)
+        assert pending.json() == {"status": "pending", "error": None, "config_id": None, "label": None}
+
+        ok, message = await routes._complete_codex_browser_callback(
+            flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+        )
+        assert ok is True, message
+        assert "Codex connected" in message
+
+        completed = await client.get(f"/api/v1/codex/oauth/browser/{payload['flow_id']}/status", headers=auth)
+        assert completed.status_code == 200, completed.text
+        completed_payload = completed.json()
+        assert completed_payload["status"] == "completed"
+        assert completed_payload["label"] == "codex-auto"
+        assert "auto-access-token" not in completed.text
+        assert "auto-refresh-token" not in completed.text
+        assert "code_verifier" not in completed.text
+
+        replay_ok, replay_message = await routes._complete_codex_browser_callback(
+            flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+        )
+        assert replay_ok is False
+        assert "has finished" in replay_message
+
+@pytest.mark.asyncio
+async def test_codex_browser_callback_rejects_mismatched_flow_state(sqlite_db, monkeypatch):
+    from app.api import routes
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        first = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        second = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert first.status_code == 200
+        assert second.status_code == 200
+        first_flow = routes._codex_browser_flows[first.json()["flow_id"]]
+        second_flow = routes._codex_browser_flows[second.json()["flow_id"]]
+
+        ok, message = await routes._complete_codex_browser_callback(
+            first_flow.state,
+            f"http://localhost:1455/auth/callback?code=browser-code&state={second_flow.state}",
+        )
+        assert ok is False
+        assert "authorization failed" in message
+
+@pytest.mark.asyncio
+async def test_codex_browser_listener_startup_failure_keeps_manual_fallback(monkeypatch):
+    from app.api import routes
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (False, "port_busy"))
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        assert started.status_code == 200, started.text
+        payload = started.json()
+        assert payload["callback_available"] is False
+        assert payload["fallback_reason"] == "port_busy"
+        assert payload["authorization_url"].startswith("https://auth.openai.com/oauth/authorize?")
+        assert "code_verifier" not in started.text
+
+@pytest.mark.asyncio
+async def test_codex_browser_default_disables_auto_capture_for_unknown_topology(monkeypatch):
+    from app.api import routes
+
+    called = False
+    def fake_listener(loop):
+        nonlocal called
+        called = True
+        return True, None
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", False)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", fake_listener)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+    assert started.status_code == 200
+    assert started.json()["callback_available"] is False
+    assert started.json()["fallback_reason"] == "auto_capture_not_enabled"
+    assert called is False
+
+@pytest.mark.asyncio
+async def test_codex_browser_duplicate_callbacks_only_exchange_once(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.providers.codex import CodexCredentials
+
+    calls = 0
+    release = asyncio.Event()
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        await release.wait()
+        return CodexCredentials(access_token="race-access", refresh_token="race-refresh").to_secret_json()
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", json={"label": "race"}, headers=auth)
+        flow = routes._codex_browser_flows[started.json()["flow_id"]]
+        callback = f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"
+        first = asyncio.create_task(routes._complete_codex_browser_callback(flow.state, callback))
+        await asyncio.sleep(0)
+        second = await routes._complete_codex_browser_callback(flow.state, callback)
+        release.set()
+        first_result = await first
+        assert first_result[0] is True
+        assert second[0] is False
+        assert calls == 1
+
+@pytest.mark.asyncio
+async def test_codex_browser_manual_cannot_retarget_flow(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.core.crypto import CryptoService
+    from app.providers.codex import CodexCredentials
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        return CodexCredentials(access_token="target-access", refresh_token="target-refresh").to_secret_json()
+
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        a = await client.post("/api/v1/configs", json={"provider": "codex", "label": "a", "api_key": CodexCredentials(access_token="a", refresh_token="a").to_secret_json()}, headers=auth)
+        b = await client.post("/api/v1/configs", json={"provider": "codex", "label": "b", "api_key": CodexCredentials(access_token="b", refresh_token="b").to_secret_json()}, headers=auth)
+        flow_start = await client.post("/api/v1/codex/oauth/browser/start", json={"config_id": a.json()["id"]}, headers=auth)
+        flow = routes._codex_browser_flows[flow_start.json()["flow_id"]]
+        completed = await client.post(f"/api/v1/codex/oauth/browser/{flow_start.json()['flow_id']}/complete", json={"config_id": b.json()["id"], "callback": f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"}, headers=auth)
+        assert completed.status_code == 200
+        assert completed.json()["config"]["id"] == a.json()["id"]
+    async with sqlite_db() as session:
+        rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.id))).scalars().all()
+        secrets = [json.loads(CryptoService(settings.encryption_key).decrypt(row.encrypted_api_key))["refresh_token"] for row in rows]
+        assert secrets == ["target-refresh", "b"]
+
+@pytest.mark.asyncio
+async def test_codex_browser_raw_exception_is_sanitized(sqlite_db, monkeypatch):
+    from app.api import routes
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        raise ValueError("boom code=SECRET_CODE access_token=SECRET_TOKEN")
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
+        flow = routes._codex_browser_flows[started.json()["flow_id"]]
+        ok, message = await routes._complete_codex_browser_callback(flow.state, f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}")
+        assert ok is False
+        status_response = await client.get(f"/api/v1/codex/oauth/browser/{started.json()['flow_id']}/status", headers=auth)
+    html_page = routes._codex_browser_result_page(False, message)
+    combined = message + status_response.text + html_page
+    assert "SECRET_CODE" not in combined
+    assert "SECRET_TOKEN" not in combined
+    assert "Unable to exchange" in combined
+
+@pytest.mark.asyncio
+async def test_codex_browser_manual_retry_after_automatic_exchange_failure(sqlite_db, monkeypatch):
+    from app.api import routes
+    from app.providers.codex import CodexCredentials
+
+    calls = 0
+
+    async def fake_exchange(code: str, code_verifier: str, *, timeout: float):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ValueError("temporary exchange failure code=SECRET_CODE access_token=SECRET_TOKEN")
+        return CodexCredentials(access_token="retry-access", refresh_token="retry-refresh").to_secret_json()
+
+    monkeypatch.setattr(settings, "codex_browser_oauth_auto_capture_enabled", True)
+    monkeypatch.setattr(routes, "_start_codex_browser_listener", lambda loop: (True, None))
+    monkeypatch.setattr(routes, "engine", sqlite_db.kw["bind"])
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        started = await client.post("/api/v1/codex/oauth/browser/start", json={"label": "retry"}, headers=auth)
+        flow = routes._codex_browser_flows[started.json()["flow_id"]]
+        callback = f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"
+
+        automatic_ok, automatic_message = await routes._complete_codex_browser_callback(flow.state, callback)
+        assert automatic_ok is False
+        assert automatic_message == "Unable to exchange the Codex authorization code."
+
+        manual = await client.post(
+            f"/api/v1/codex/oauth/browser/{started.json()['flow_id']}/complete",
+            json={"callback": callback},
+            headers=auth,
+        )
+        assert manual.status_code == 200, manual.text
+        assert manual.json()["status"] == "completed"
+        assert manual.json()["config"]["label"] == "retry"
+        assert calls == 2

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     auto_poll_interval_minutes: int = Field(default=60, ge=1)
     custom_http_allowed_hosts_raw: str = Field(default="", alias="CUSTOM_HTTP_ALLOWED_HOSTS")
     homepage_allowed_hosts_raw: str = Field(default="", alias="HOMEPAGE_ALLOWED_HOSTS")
+    codex_browser_oauth_auto_capture_enabled: bool = Field(default=False, alias="CODEX_BROWSER_OAUTH_AUTO_CAPTURE_ENABLED")
 
     @staticmethod
     def _parse_hosts(value: str) -> set[str]:

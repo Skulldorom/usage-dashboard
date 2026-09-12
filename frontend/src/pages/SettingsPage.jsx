@@ -395,6 +395,8 @@ export default function SettingsPage() {
   const [codexDeviceFlow, setCodexDeviceFlow] = useState(null);
   const [codexBrowserFlow, setCodexBrowserFlow] = useState(null);
   const [codexCallback, setCodexCallback] = useState("");
+  const codexPopupRef = useRef(null);
+  const codexPollRef = useRef(null);
   const [codexDeviceStatus, setCodexDeviceStatus] = useState("");
   const [codexDeviceBusy, setCodexDeviceBusy] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -1209,14 +1211,32 @@ export default function SettingsPage() {
     setCodexDeviceStatus("Creating browser login link…");
     setCodexDeviceBusy(true);
     try {
-      const flow = await api.startCodexBrowserOAuth();
+      const flow = await api.startCodexBrowserOAuth({
+        label: credentialTarget ? credentialTarget.label : form.label.trim() || null,
+        config_id: credentialTarget?.id || null,
+      });
       setCodexBrowserFlow(flow);
       setCodexDeviceFlow(null);
       setCodexCallback("");
-      setCodexDeviceStatus(
-        "Open the login link. After OpenAI redirects to localhost, copy the full browser URL and paste it below.",
-      );
-      window.open(flow.authorization_url, "_blank", "noopener,noreferrer");
+      if (codexPopupRef.current && !codexPopupRef.current.closed) {
+        codexPopupRef.current.close();
+      }
+      const isLoopbackDashboard = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+      const automaticCaptureAvailable = flow.callback_available && isLoopbackDashboard && flow.fallback_reason !== "auto_capture_not_enabled";
+      const popup = automaticCaptureAvailable
+        ? window.open(flow.authorization_url, "codex_oauth", "width=600,height=720")
+        : null;
+      codexPopupRef.current = popup;
+      if (automaticCaptureAvailable && popup) {
+        setCodexDeviceStatus("Waiting for Codex authorization…");
+      } else {
+        setCodexDeviceStatus(
+          popup
+            ? "Automatic callback capture is unavailable here. Complete login, then paste the localhost callback URL below."
+            : "Popup was blocked or automatic callback capture is unavailable. Open the login link, then paste the localhost callback URL below.",
+        );
+        if (!popup) window.open(flow.authorization_url, "_blank", "noopener,noreferrer");
+      }
     } catch (err) {
       setCodexDeviceStatus("");
       setTestError(err.message);
@@ -1270,6 +1290,66 @@ export default function SettingsPage() {
       setCodexDeviceBusy(false);
     }
   }
+
+  useEffect(() => {
+    const isLoopbackDashboard = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+    if (!codexBrowserFlow?.flow_id || !codexBrowserFlow.callback_available || !isLoopbackDashboard) return undefined;
+    let cancelled = false;
+    const expiresAt = new Date(codexBrowserFlow.expires_at).getTime();
+    clearInterval(codexPollRef.current);
+    codexPollRef.current = setInterval(async () => {
+      if (cancelled) return;
+      if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
+        clearInterval(codexPollRef.current);
+        codexPollRef.current = null;
+        setCodexDeviceStatus("Automatic callback capture expired. Paste the callback URL below to complete manually if you still have it.");
+        return;
+      }
+      try {
+        const result = await api.codexBrowserOAuthStatus(codexBrowserFlow.flow_id);
+        if (cancelled || result.status === "pending") return;
+        if (result.status === "processing") {
+          setCodexDeviceStatus("Completing Codex authorization…");
+          return;
+        }
+        clearInterval(codexPollRef.current);
+        codexPollRef.current = null;
+        if (result.status === "completed") {
+          const label = result.label || "codex";
+          setCodexDeviceStatus(
+            credentialTarget ? `Codex reauthenticated for ${label}.` : `Codex connected as ${label}.`,
+          );
+          setCredentialStatus(
+            credentialTarget
+              ? "Codex credential replaced. The previous OAuth token was overwritten and never displayed."
+              : "",
+          );
+          setCodexBrowserFlow(null);
+          setCodexCallback("");
+          if (codexPopupRef.current && !codexPopupRef.current.closed) codexPopupRef.current.close();
+          if (!credentialTarget) {
+            setOpen(false);
+            setForm(initialForm);
+          }
+          await load();
+        } else {
+          setTestError(result.error || "Codex browser authorization did not complete.");
+          setCodexDeviceStatus("Automatic callback capture failed. Paste the callback URL below to complete manually.");
+        }
+      } catch {
+        if (Number.isFinite(expiresAt) && Date.now() >= expiresAt) {
+          clearInterval(codexPollRef.current);
+          codexPollRef.current = null;
+          setCodexDeviceStatus("Automatic callback capture expired. Paste the callback URL below to complete manually if you still have it.");
+        }
+      }
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(codexPollRef.current);
+      codexPollRef.current = null;
+    };
+  }, [codexBrowserFlow?.flow_id, codexBrowserFlow?.callback_available, codexBrowserFlow?.expires_at, credentialTarget, load]);
 
   async function pollCodexDeviceLogin() {
     if (!codexDeviceFlow?.flow_id) return;
@@ -2351,9 +2431,9 @@ export default function SettingsPage() {
                       Open OpenAI browser login
                     </Button>
                     <Typography variant="caption" color="text.secondary">
-                      When your browser lands on a localhost error page, copy
-                      the full address bar URL and paste it here. The one-time
-                      code is exchanged server-side.
+                      Automatic capture is attempted first. If it is unavailable,
+                      blocked, or times out, paste the localhost callback URL here.
+                      The one-time code is exchanged server-side.
                     </Typography>
                     <TextField
                       label="OpenAI localhost callback URL"
