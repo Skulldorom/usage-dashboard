@@ -117,6 +117,7 @@ describe("Codex browser OAuth settings flow", () => {
     expect(staleCloseIndex).toBeGreaterThan(-1);
     expect(popupOpenIndex).toBeGreaterThan(staleCloseIndex);
     expect(startBody).toContain("codexPopupRef.current = popup");
+    expect(startBody).toContain("if (codexPopupRef.current === popup) {");
     expect(settingsSource).toContain("if (codexPopupRef.current && !codexPopupRef.current.closed) {");
     expect(settingsSource).toContain("codexPopupRef.current = null");
     expect(settingsSource).not.toContain("window.close(");

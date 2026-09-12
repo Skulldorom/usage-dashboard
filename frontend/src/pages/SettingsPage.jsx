@@ -1222,6 +1222,8 @@ export default function SettingsPage() {
     } catch (err) {
       if (popup && !popup.closed) {
         popup.close();
+      }
+      if (codexPopupRef.current === popup) {
         codexPopupRef.current = null;
       }
       setCodexDeviceStatus("");
