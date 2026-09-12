@@ -1191,6 +1191,7 @@ export default function SettingsPage() {
     setCodexDeviceBusy(true);
     if (codexPopupRef.current && !codexPopupRef.current.closed) {
       codexPopupRef.current.close();
+      codexPopupRef.current = null;
     }
     const popup = window.open(
       "about:blank",

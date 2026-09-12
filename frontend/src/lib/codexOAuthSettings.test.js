@@ -113,9 +113,11 @@ describe("Codex browser OAuth settings flow", () => {
   it("closes stale and completed Codex popups only through the stored popup ref", () => {
     const startBody = functionBody("startCodexBrowserLogin");
     const staleCloseIndex = startBody.indexOf("codexPopupRef.current.close()");
+    const staleClearIndex = startBody.indexOf("codexPopupRef.current = null", staleCloseIndex);
     const popupOpenIndex = startBody.indexOf('window.open(\n      "about:blank",\n      "codex_oauth"');
     expect(staleCloseIndex).toBeGreaterThan(-1);
-    expect(popupOpenIndex).toBeGreaterThan(staleCloseIndex);
+    expect(staleClearIndex).toBeGreaterThan(staleCloseIndex);
+    expect(popupOpenIndex).toBeGreaterThan(staleClearIndex);
     expect(startBody).toContain("codexPopupRef.current = popup");
     expect(startBody).toContain("if (codexPopupRef.current === popup) {");
     expect(settingsSource).toContain("if (codexPopupRef.current && !codexPopupRef.current.closed) {");
