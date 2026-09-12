@@ -101,7 +101,7 @@ def _prune_codex_device_flows(now: datetime | None = None) -> None:
             expired_browser.append(flow_id)
     for flow_id in expired_browser:
         _codex_browser_flows.pop(flow_id, None)
-    if not any(flow.status == "pending" for flow in _codex_browser_flows.values()):
+    if not any(flow.status in {"pending", "processing"} for flow in _codex_browser_flows.values()):
         _stop_codex_browser_listener()
 
 

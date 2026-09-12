@@ -1260,7 +1260,7 @@ export default function SettingsPage() {
         },
       );
       if (result.status === "completed") {
-        const label = result.label || "codex";
+        const label = result.config?.label || "codex";
         setCodexDeviceStatus(
           credentialTarget
             ? `Codex reauthenticated for ${label}.`
@@ -1308,6 +1308,10 @@ export default function SettingsPage() {
       try {
         const result = await api.codexBrowserOAuthStatus(codexBrowserFlow.flow_id);
         if (cancelled || result.status === "pending") return;
+        if (result.status === "processing") {
+          setCodexDeviceStatus("Completing Codex authorization…");
+          return;
+        }
         clearInterval(codexPollRef.current);
         codexPollRef.current = null;
         if (result.status === "completed") {
@@ -1358,7 +1362,7 @@ export default function SettingsPage() {
         config_id: credentialTarget?.id || null,
       });
       if (result.status === "completed") {
-        const label = result.label || "codex";
+        const label = result.config?.label || "codex";
         setCodexDeviceStatus(
           credentialTarget
             ? `Codex reauthenticated for ${label}.`
