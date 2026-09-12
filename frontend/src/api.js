@@ -89,8 +89,6 @@ export const api = {
   providers: () => request('/providers'),
   configs: () => request('/configs'),
   testConfig: (payload) => request('/configs/test', { method: 'POST', body: JSON.stringify(payload) }),
-  startCodexDeviceOAuth: () => request('/codex/oauth/device/start', { method: 'POST' }),
-  pollCodexDeviceOAuth: (flowId, payload = {}) => request(`/codex/oauth/device/${encodeURIComponent(flowId)}/poll`, { method: 'POST', body: JSON.stringify(payload) }),
   startCodexBrowserOAuth: (payload = {}) => request('/codex/oauth/browser/start', { method: 'POST', body: JSON.stringify(payload) }),
   codexBrowserOAuthStatus: (flowId) => request(`/codex/oauth/browser/${encodeURIComponent(flowId)}/status`),
   completeCodexBrowserOAuth: (flowId, payload) => request(`/codex/oauth/browser/${encodeURIComponent(flowId)}/complete`, { method: 'POST', body: JSON.stringify(payload) }),
