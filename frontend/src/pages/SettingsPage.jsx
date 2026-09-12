@@ -361,6 +361,17 @@ function ApiTokenCreationForm({
   );
 }
 
+
+function centeredPopupFeatures(width = 600, height = 720) {
+  const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
+  const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
+  const viewportWidth = window.innerWidth ?? document.documentElement.clientWidth ?? screen.width;
+  const viewportHeight = window.innerHeight ?? document.documentElement.clientHeight ?? screen.height;
+  const left = Math.max(0, Math.round(dualScreenLeft + (viewportWidth - width) / 2));
+  const top = Math.max(0, Math.round(dualScreenTop + (viewportHeight - height) / 2));
+  return `popup=yes,width=${width},height=${height},left=${left},top=${top}`;
+}
+
 const initialForm = {
   provider: "firecrawl",
   label: "",
@@ -1178,6 +1189,15 @@ export default function SettingsPage() {
     setTestResult(null);
     setCodexDeviceStatus("Creating browser login link…");
     setCodexDeviceBusy(true);
+    if (codexPopupRef.current && !codexPopupRef.current.closed) {
+      codexPopupRef.current.close();
+    }
+    const popup = window.open(
+      "about:blank",
+      "codex_oauth",
+      centeredPopupFeatures(600, 720),
+    );
+    codexPopupRef.current = popup;
     try {
       const flow = await api.startCodexBrowserOAuth({
         label: credentialTarget ? credentialTarget.label : form.label.trim() || null,
@@ -1185,26 +1205,25 @@ export default function SettingsPage() {
       });
       setCodexBrowserFlow(flow);
       setCodexCallback("");
-      if (codexPopupRef.current && !codexPopupRef.current.closed) {
-        codexPopupRef.current.close();
-      }
+      if (popup) popup.location.href = flow.authorization_url;
       const isLoopbackDashboard = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
       const automaticCaptureAvailable = flow.callback_available && isLoopbackDashboard && flow.fallback_reason !== "auto_capture_not_enabled";
-      const popup = automaticCaptureAvailable
-        ? window.open(flow.authorization_url, "codex_oauth", "width=600,height=720")
-        : null;
-      codexPopupRef.current = popup;
-      if (automaticCaptureAvailable && popup) {
-        setCodexDeviceStatus("Waiting for Codex authorization…");
+      if (popup) {
+        setCodexDeviceStatus(
+          automaticCaptureAvailable
+            ? "Waiting for browser authorization…"
+            : "Waiting for browser authorization… Automatic callback capture is unavailable here. Complete login in the popup, then paste the localhost callback URL below.",
+        );
       } else {
         setCodexDeviceStatus(
-          popup
-            ? "Automatic callback capture is unavailable here. Complete login, then paste the localhost callback URL below."
-            : "Popup was blocked or automatic callback capture is unavailable. Open the login link, then paste the localhost callback URL below.",
+          "Popup was blocked. Open or copy the login link below, complete OpenAI login, then paste the localhost callback URL below.",
         );
-        if (!popup) window.open(flow.authorization_url, "_blank", "noopener,noreferrer");
       }
     } catch (err) {
+      if (popup && !popup.closed) {
+        popup.close();
+        codexPopupRef.current = null;
+      }
       setCodexDeviceStatus("");
       setTestError(err.message);
     } finally {
@@ -1293,7 +1312,10 @@ export default function SettingsPage() {
           );
           setCodexBrowserFlow(null);
           setCodexCallback("");
-          if (codexPopupRef.current && !codexPopupRef.current.closed) codexPopupRef.current.close();
+          if (codexPopupRef.current && !codexPopupRef.current.closed) {
+            codexPopupRef.current.close();
+            codexPopupRef.current = null;
+          }
           if (!credentialTarget) {
             setOpen(false);
             setForm(initialForm);
