@@ -134,11 +134,12 @@ def _resource_group(entry: dict[str, Any]) -> dict[str, Any]:
         ("five_hour", "current_interval_remaining_percent", "current_interval_status", "end_time"),
         ("weekly", "current_weekly_remaining_percent", "current_weekly_status", "weekly_end_time"),
     ):
-        remaining = _percent(entry.get(remaining_key))
+        status = _integer(entry.get(status_key))
+        remaining = None if status == 3 else _percent(entry.get(remaining_key))
         group[f"{prefix}_remaining_percent"] = remaining
         group[f"{prefix}_used_percent"] = 100 - remaining if remaining is not None else None
-        group[f"{prefix}_status"] = _integer(entry.get(status_key))
-        group[f"{prefix}_reset_at"] = _timestamp(entry.get(reset_key))
+        group[f"{prefix}_status"] = status
+        group[f"{prefix}_reset_at"] = None if status == 3 else _timestamp(entry.get(reset_key))
     return group
 
 

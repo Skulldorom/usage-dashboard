@@ -67,8 +67,16 @@ def test_parser_handles_exhausted_and_unlimited_statuses():
 
     assert exhausted.status == "degraded"
     assert metrics_by_label(exhausted)["exhausted"].value is True
+    unlimited_metrics = metrics_by_label(unlimited)
     assert unlimited.status == "healthy"
-    assert metrics_by_label(unlimited)["exhausted"].value is False
+    assert unlimited_metrics["exhausted"].value is False
+    assert "five_hour_used_percent" not in unlimited_metrics
+    assert "five_hour_remaining_percent" not in unlimited_metrics
+    assert "five_hour_reset_at" not in unlimited_metrics
+    unlimited_group = unlimited_metrics["resource_groups"].value[0]
+    assert unlimited_group["five_hour_used_percent"] is None
+    assert unlimited_group["five_hour_remaining_percent"] is None
+    assert unlimited_group["five_hour_reset_at"] is None
 
 
 def test_parser_tolerates_optional_fields_and_unknown_resource_group():
