@@ -2,7 +2,7 @@
 
 # Usage Dashboard
 
-Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, and custom HTTP endpoints. It tracks current quota and health, retains history, analyzes cost and value, attributes Hermes-observed workload by provider/model/profile, stores provider credentials encrypted at rest, and exposes integrations for Homepage Dashboard and the browser extension.
+Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, MiniMax Token Plan, and custom HTTP endpoints. It tracks current quota and health, retains history, analyzes cost and value, attributes Hermes-observed workload by provider/model/profile, stores provider credentials encrypted at rest, and exposes integrations for Homepage Dashboard and the browser extension.
 
 <p align="center">
   <a href="https://ko-fi.com/skulldorom"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support me on Ko-fi" /></a>

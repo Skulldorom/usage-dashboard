@@ -41,6 +41,7 @@ describe('providerNameWithLabel', () => {
   it('keeps canonical provider name primary for a single config', () => {
     expect(providerNameWithLabel('codex', 'Work')).toBe('OpenAI Codex')
     expect(providerNameWithLabel('opencode-go', 'main')).toBe('OpenCode Go')
+    expect(providerNameWithLabel('minimax', 'main')).toBe('MiniMax')
   })
 
   it('uses labels only as secondary disambiguation for duplicate provider configs', () => {

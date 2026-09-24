@@ -21,6 +21,7 @@ import ProviderIcon from "../components/ProviderIcon.jsx";
 import { providerNameWithLabel } from "../lib/analyticsFormat.js";
 import {
   CODEX_LIMIT_METRIC_LABELS,
+  MINIMAX_LIMIT_METRIC_LABELS,
   OPENCODEGO_LIMIT_METRIC_LABELS,
   PROVIDER_USAGE_URLS,
   alertMessage,
@@ -33,6 +34,7 @@ import {
   healthMeta,
   healthText,
   metricPercent,
+  minimaxLimitSections,
   numericMetric,
   opencodeGoLimitSections,
   overallUsageGroups,
@@ -444,12 +446,16 @@ function UsageCard({ item, icon, disambiguate }) {
     config.provider === "firecrawl" ? firecrawlSummary(metrics) : null;
   const isCodex = config.provider === "codex";
   const isOpenCodeGo = config.provider === "opencode-go";
+  const isMiniMax = config.provider === "minimax";
   const codexSections = isCodex ? codexLimitSections(metrics) : [];
   const opencodeGoSections = isOpenCodeGo ? opencodeGoLimitSections(metrics) : [];
+  const minimaxSections = isMiniMax ? minimaxLimitSections(metrics) : [];
   const sectionLabels = new Set(
-    isOpenCodeGo ? OPENCODEGO_LIMIT_METRIC_LABELS : CODEX_LIMIT_METRIC_LABELS,
+    isMiniMax
+      ? MINIMAX_LIMIT_METRIC_LABELS
+      : isOpenCodeGo ? OPENCODEGO_LIMIT_METRIC_LABELS : CODEX_LIMIT_METRIC_LABELS,
   );
-  const listMetrics = isCodex || isOpenCodeGo
+  const listMetrics = isCodex || isOpenCodeGo || isMiniMax
     ? metrics.filter((metric) => !sectionLabels.has(metric.label))
     : metrics;
 
@@ -569,6 +575,42 @@ function UsageCard({ item, icon, disambiguate }) {
                   {section.remaining !== null && (
                     <GraphProgress
                       value={section.remaining}
+                      title={`${displayName} · ${section.title}: ${section.remainingLabel}`}
+                      sx={{ mt: 1 }}
+                    />
+                  )}
+                  {section.resetLabel && (
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{ display: "block", mt: 0.75 }}
+                    >
+                      Resets {section.resetLabel}
+                      {section.relativeLabel ? ` · ${section.relativeLabel}` : ""}
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+              {minimaxSections.map((section) => (
+                <Box className="metric-row minimax-limit-section" key={section.key}>
+                  <Stack
+                    className="metric-header"
+                    direction="row"
+                    spacing={2}
+                    sx={{ justifyContent: "space-between" }}
+                  >
+                    <Typography className="metric-label" variant="body2">
+                      {section.title}
+                    </Typography>
+                    {section.remainingLabel && (
+                      <Typography className="metric-value" variant="body2">
+                        {section.remainingLabel}
+                      </Typography>
+                    )}
+                  </Stack>
+                  {section.percent !== null && (
+                    <GraphProgress
+                      value={section.percent}
                       title={`${displayName} · ${section.title}: ${section.remainingLabel}`}
                       sx={{ mt: 1 }}
                     />

@@ -121,6 +121,17 @@ const PROVIDER_SETUP = {
     linkLabel: "Open OpenRouter Keys",
     keyPlaceholder: "sk-or-v1-…",
   },
+  minimax: {
+    title: "MiniMax Token Plan Subscription Key",
+    steps: [
+      "Sign in to MiniMax and open the Token Plan/subscription area.",
+      "Create or copy a Token Plan Subscription Key. This is not a normal PAYG API key.",
+      "Paste the Subscription Key below; the dashboard reads only Token Plan 5-hour and weekly quota windows.",
+    ],
+    url: "https://platform.minimax.io/subscribe/token-plan",
+    linkLabel: "Open MiniMax Token Plan",
+    keyPlaceholder: "••••••••••••••••",
+  },
   "opencode-go": {
     title: "OpenCode Go API key",
     steps: [
@@ -2248,7 +2259,11 @@ export default function SettingsPage() {
                 label="Provider"
                 value={form.provider}
                 onChange={(event) =>
-                  setForm({ ...initialForm, provider: event.target.value })
+                  setForm({
+                    ...initialForm,
+                    provider: event.target.value,
+                    pricing_model: event.target.value === "minimax" ? "subscription" : initialForm.pricing_model,
+                  })
                 }
               >
                 {providers.map((provider) => (

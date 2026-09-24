@@ -1,6 +1,6 @@
 # Providers
 
-Usage Dashboard ships with eight provider adapters. Provider support differs:
+Usage Dashboard ships with nine provider adapters. Provider support differs:
 some expose historical usage/cost, while others expose only a current balance
 or quota. Hermes can supplement workload detail but does not change what the
 provider API authoritatively reports.
@@ -14,6 +14,7 @@ provider API authoritatively reports.
 | [Firecrawl](/providers/firecrawl) | Team credit state and historical credit periods | Credit history, not monetary billing | Match actual plan | Credits are not assumed to equal currency; token pricing does not apply. |
 | [OpenAI Codex](/providers/codex) | ChatGPT OAuth session/weekly quotas | No | Subscription | Hermes can price attributed model/token workload as API-equivalent value. |
 | [OpenCode Go](/providers/opencode-go) | Subscription 5h/weekly/monthly windows and model usage | No | Subscription | Allowance values are not PAYG spend; Hermes pricing depends on model coverage. |
+| [MiniMax Token Plan](/providers/minimax) | Token Plan `general` 5-hour and weekly percentage quota | No | Subscription | Requires a Token Plan Subscription Key, not PAYG; monthly marketing allowances are not live quota telemetry. |
 | [Custom HTTP](/providers/custom-http) | Operator-defined JSON metrics | Only when compatible monetary deltas are returned | Match upstream | Generic point history; advanced semantics are limited. |
 
 Credentials are encrypted at rest with Fernet before being written to the
