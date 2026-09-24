@@ -74,6 +74,7 @@ export default defineConfig({
           { text: 'Firecrawl', link: '/providers/firecrawl' },
           { text: 'OpenAI Codex', link: '/providers/codex' },
           { text: 'OpenCode Go', link: '/providers/opencode-go' },
+          { text: 'MiniMax Token Plan', link: '/providers/minimax' },
           { text: 'Custom HTTP', link: '/providers/custom-http' },
         ],
       },

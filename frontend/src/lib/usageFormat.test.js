@@ -16,6 +16,8 @@ import {
   healthText,
   metricPercent,
   numericMetric,
+  MINIMAX_LIMIT_METRIC_LABELS,
+  minimaxLimitSections,
   OPENCODEGO_LIMIT_METRIC_LABELS,
   opencodeGoLimitSections,
   overallUsageGroups,
@@ -638,5 +640,29 @@ describe('stageLabel', () => {
   it('returns null for missing stage', () => {
     expect(stageLabel(null)).toBeNull()
     expect(stageLabel(undefined)).toBeNull()
+  })
+})
+
+
+describe('minimaxLimitSections', () => {
+  it('formats consumed 5-hour and weekly quota percentages without a monthly row', () => {
+    expect(minimaxLimitSections([
+      { label: 'five_hour_used_percent', value: 37, unit: '%' },
+      { label: 'five_hour_remaining_percent', value: 63, unit: '%' },
+      { label: 'five_hour_reset_at', value: '2026-06-25T15:00:00+00:00' },
+      { label: 'weekly_used_percent', value: 4, unit: '%' },
+      { label: 'weekly_remaining_percent', value: 96, unit: '%' },
+    ])).toMatchObject([
+      { key: 'five_hour', title: '5-hour Usage', percent: 37, remaining: 63, remainingLabel: '37% used / 63% remaining' },
+      { key: 'weekly', title: 'Weekly Usage', percent: 4, remaining: 96, remainingLabel: '4% used / 96% remaining' },
+    ])
+  })
+
+  it('uses only dedicated MiniMax metric labels', () => {
+    expect(MINIMAX_LIMIT_METRIC_LABELS).toEqual([
+      'five_hour_used_percent', 'five_hour_remaining_percent', 'five_hour_reset_at',
+      'weekly_used_percent', 'weekly_remaining_percent', 'weekly_reset_at',
+      'exhausted', 'resource_groups',
+    ])
   })
 })

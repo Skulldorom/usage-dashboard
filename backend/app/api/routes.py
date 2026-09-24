@@ -256,6 +256,10 @@ def _homepage_usage_text(
             ("Weekly", "weekly_remaining_percent"),
             ("Monthly", "monthly_remaining_percent"),
         ),
+        "minimax": (
+            ("Session/5h", "five_hour_remaining_percent"),
+            ("Weekly", "weekly_remaining_percent"),
+        ),
     }.get(provider, ())
     window_parts = [
         f"{title} {_format_homepage_number(labeled_metrics[metric_name].get('value'))}%"

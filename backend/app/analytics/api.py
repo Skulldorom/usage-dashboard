@@ -192,6 +192,7 @@ _PROVIDER_DISPLAY_NAMES = {
     "openai": "OpenAI",
     "openrouter": "OpenRouter",
     "opencode-go": "OpenCode Go",
+    "minimax": "MiniMax",
     "custom_http": "Custom HTTP",
 }
 

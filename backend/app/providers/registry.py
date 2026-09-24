@@ -5,6 +5,7 @@ from app.providers.codex import CodexAdapter
 from app.providers.deepseek import DeepSeekAdapter
 from app.providers.firecrawl import FirecrawlAdapter
 from app.providers.icons import PROVIDER_ICONS
+from app.providers.minimax import MiniMaxAdapter
 from app.providers.openai import OpenAIAdapter
 from app.providers.opencode_go import OpenCodeGoAdapter
 from app.providers.openrouter import OpenRouterAdapter
@@ -17,6 +18,7 @@ ADAPTERS: dict[str, type[ProviderAdapter]] = {
     AnthropicAdapter.id: AnthropicAdapter,
     OpenRouterAdapter.id: OpenRouterAdapter,
     OpenCodeGoAdapter.id: OpenCodeGoAdapter,
+    MiniMaxAdapter.id: MiniMaxAdapter,
     CustomHTTPAdapter.id: CustomHTTPAdapter,
 }
 

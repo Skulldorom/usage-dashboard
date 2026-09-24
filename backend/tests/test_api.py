@@ -149,6 +149,7 @@ async def test_providers_include_icons():
     assert by_id["firecrawl"]["icon"]["viewBox"] == "0 0 50 72"
     assert by_id["opencode-go"]["icon"]["viewBox"] == "0 0 240 300"
     assert by_id["opencode-go"]["icon"]["path"] == "M180 60H60V120H180V60ZM240 300H0V0H240V300Z"
+    assert by_id["minimax"]["icon"] is None
     assert by_id["custom_http"]["icon"] is None
 
 
@@ -517,6 +518,17 @@ def test_homepage_usage_text_shows_all_opencode_go_quota_windows():
         _homepage_usage_text(metrics, "generic summary", "opencode-go")
         == "Session 91% • Weekly 73.5% • Monthly 48%"
     )
+
+
+def test_homepage_usage_text_shows_minimax_session_and_weekly_quota():
+    from app.api.routes import _homepage_usage_text
+
+    metrics = [
+        {"label": "five_hour_remaining_percent", "value": 63},
+        {"label": "weekly_remaining_percent", "value": 96},
+    ]
+
+    assert _homepage_usage_text(metrics, "generic summary", "minimax") == "Session/5h 63% • Weekly 96%"
 
 
 def test_homepage_usage_text_omits_unavailable_quota_windows():
@@ -1720,6 +1732,9 @@ async def test_providers_endpoint_exposes_alert_metrics_catalog():
 
     assert response.status_code == 200, response.text
     by_id = {provider["id"]: provider for provider in response.json()}
+
+    minimax = by_id["minimax"]
+    assert {metric["metric"] for metric in minimax["alert_metrics"]} == {"five_hour_used_percent", "weekly_used_percent"}
 
     codex = by_id["codex"]["alert_metrics"]
     assert any(

@@ -847,6 +847,23 @@ async def test_overview_capacity_gaps_remain_null_not_zero(sqlite_db):
 
 
 @pytest.mark.asyncio
+async def test_minimax_analytics_exposes_five_hour_and_weekly_utilization(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="minimax")
+    await _seed_observations(Session, config, [
+        {"metric": "five_hour_used_percent", "value": 37, "unit": "%", "kind": "point", "observed_at": datetime.now(UTC)},
+        {"metric": "weekly_used_percent", "value": 4, "unit": "%", "kind": "point", "observed_at": datetime.now(UTC)},
+    ])
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/analytics/providers/{config.id}", headers=ADMIN_AUTH)
+
+    assert response.status_code == 200, response.text
+    metric_ids = {metric["label"] for metric in response.json()["metrics"]}
+    assert {"five_hour_used_percent", "weekly_used_percent"}.issubset(metric_ids)
+
+
+@pytest.mark.asyncio
 async def test_overview_maps_hermes_activity_to_provider_without_double_counting(sqlite_db):
     Session = sqlite_db
     anthropic = await _create_config(Session, provider="anthropic")

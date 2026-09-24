@@ -10,7 +10,19 @@ export const PREFERRED_METRICS = {
   openai: ['cost_30d'],
   openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
   'opencode-go': ['five_hour_used_percent', 'weekly_used_percent', 'monthly_used_percent', 'exhausted'],
+  minimax: ['five_hour_used_percent', 'weekly_used_percent', 'exhausted'],
 }
+
+export const MINIMAX_LIMIT_METRIC_LABELS = [
+  'five_hour_used_percent',
+  'five_hour_remaining_percent',
+  'five_hour_reset_at',
+  'weekly_used_percent',
+  'weekly_remaining_percent',
+  'weekly_reset_at',
+  'exhausted',
+  'resource_groups',
+]
 
 // OpenCode Go metric labels consumed by the limit-window sections rather than
 // the generic metric list. The 5-hour window is the provider's rolling session limit.
@@ -57,6 +69,7 @@ export const PROVIDER_USAGE_URLS = {
   openai: 'https://platform.openai.com/settings/organization/usage',
   openrouter: 'https://openrouter.ai/settings/credits',
   'opencode-go': 'https://opencode.ai/auth',
+  minimax: 'https://platform.minimax.io/subscribe/token-plan',
 }
 
 export function isCodexPercentMetric(provider, metric) {
@@ -198,6 +211,39 @@ export function opencodeGoLimitSections(metrics) {
     }
   }).filter(Boolean)
 }
+
+export function minimaxLimitSections(metrics) {
+  const byLabel = new Map((metrics || []).map((metric) => [metric.label, metric]))
+  return [
+    { prefix: 'five_hour', title: '5-hour Usage', includeDate: false },
+    { prefix: 'weekly', title: 'Weekly Usage', includeDate: true },
+  ].map(({ prefix, title, includeDate }) => {
+    const used = byLabel.get(`${prefix}_used_percent`)
+    const remaining = byLabel.get(`${prefix}_remaining_percent`)
+    const resetAt = byLabel.get(`${prefix}_reset_at`)
+    const usedValue = typeof used?.value === 'number' ? Math.min(100, Math.max(0, used.value)) : null
+    const remainingValue = typeof remaining?.value === 'number'
+      ? Math.min(100, Math.max(0, remaining.value))
+      : usedValue === null ? null : 100 - usedValue
+    const resetValue = typeof resetAt?.value === 'string' && resetAt.value ? resetAt.value : null
+    if (usedValue === null && remainingValue === null && resetValue === null) return null
+    const usageLabel = usedValue !== null && remainingValue !== null
+      ? `${formatPercent(usedValue)} used / ${formatPercent(remainingValue)} remaining`
+      : usedValue === null ? null : `${formatPercent(usedValue)} used`
+    return {
+      key: prefix,
+      title,
+      remaining: remainingValue,
+      remainingLabel: usageLabel,
+      usageLabel,
+      percent: usedValue,
+      resetAt: resetValue,
+      resetLabel: resetValue ? formatResetTime(resetValue, { includeDate }) : null,
+      relativeLabel: resetValue ? formatRelativeReset(resetValue) : null,
+    }
+  }).filter(Boolean)
+}
+
 
 function displaySnapshot(item) {
   return item?.last_good || item?.latest || null
