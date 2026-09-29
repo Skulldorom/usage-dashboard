@@ -1,15 +1,31 @@
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.mutable import MutableDict, MutableList
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
+
 def json_type():
     return JSON().with_variant(JSONB, "postgresql")
 
+
 class Base(DeclarativeBase):
     pass
+
 
 class AdminCredential(Base):
     __tablename__ = "admin_credentials"
@@ -21,7 +37,10 @@ class AdminCredential(Base):
     reset_code_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     reset_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
 
 class ApiToken(Base):
     __tablename__ = "api_tokens"
@@ -34,7 +53,10 @@ class ApiToken(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
 
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
@@ -55,8 +77,11 @@ class ProviderConfig(Base):
     billing_cadence: Mapped[str | None] = mapped_column(String(16), nullable=True)
     billing_anchor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     snapshots: Mapped[list["UsageSnapshot"]] = relationship(back_populates="config", cascade="all, delete-orphan")
+
 
 class UsageSnapshot(Base):
     __tablename__ = "usage_snapshots"
@@ -100,8 +125,12 @@ class UsageObservation(Base):
     # Provider-backed observations link to a provider config; data-source
     # observations (source="hermes") link to a data source instead and leave
     # provider_config_id null.
-    provider_config_id: Mapped[int | None] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True, nullable=True)
-    data_source_id: Mapped[int | None] = mapped_column(ForeignKey("data_source_configs.id", ondelete="CASCADE"), index=True, nullable=True)
+    provider_config_id: Mapped[int | None] = mapped_column(
+        ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True, nullable=True
+    )
+    data_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("data_source_configs.id", ondelete="CASCADE"), index=True, nullable=True
+    )
     provider: Mapped[str] = mapped_column(String(32), index=True)
     metric: Mapped[str] = mapped_column(String(120), index=True)
     value: Mapped[float] = mapped_column(Float)
@@ -115,7 +144,7 @@ class UsageObservation(Base):
     # Telemetry provenance (Hermes and future data sources).
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     profile: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    session_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    session_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -145,4 +174,6 @@ class DataSourceConfig(Base):
     consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
     latest_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

@@ -1,4 +1,5 @@
 """admin password authentication"""
+
 from alembic import op
 import sqlalchemy as sa
 

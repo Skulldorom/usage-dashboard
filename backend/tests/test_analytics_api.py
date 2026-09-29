@@ -42,7 +42,10 @@ async def sqlite_db(monkeypatch):
             AdminCredential(
                 password_hash="test-only",
                 session_tokens=[
-                    {"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}
+                    {
+                        "token_hash": _hash_secret("test-admin-session-token-123"),
+                        "expires_at": "2999-01-01T00:00:00+00:00",
+                    }
                 ],
             )
         )
@@ -153,7 +156,13 @@ async def test_timeseries_sums_counter_deltas(sqlite_db):
         config,
         [
             {"metric": "usage_daily", "value": 10.0, "observed_at": base, "kind": "delta", "source": "snapshot"},
-            {"metric": "usage_daily", "value": 15.0, "observed_at": base + timedelta(hours=6), "kind": "delta", "source": "snapshot"},
+            {
+                "metric": "usage_daily",
+                "value": 15.0,
+                "observed_at": base + timedelta(hours=6),
+                "kind": "delta",
+                "source": "snapshot",
+            },
         ],
     )
 
@@ -181,7 +190,15 @@ async def test_forecast_endpoint_reports_confidence(sqlite_db):
         {"metric": "total_balance", "value": 100.0, "observed_at": base, "kind": "point", "source": "snapshot"},
     ]
     for day in range(1, 5):
-        observations.append({"metric": "total_balance", "value": 2.0, "observed_at": base + timedelta(days=day), "kind": "delta", "source": "snapshot"})
+        observations.append(
+            {
+                "metric": "total_balance",
+                "value": 2.0,
+                "observed_at": base + timedelta(days=day),
+                "kind": "delta",
+                "source": "snapshot",
+            }
+        )
     await _seed_observations(Session, config, observations)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -256,7 +273,11 @@ async def test_poll_ingests_observations(sqlite_db, monkeypatch):
         assert first.status_code == 200, first.text
 
     async with Session() as session:
-        rows = (await session.execute(select(UsageObservation).where(UsageObservation.provider_config_id == config.id))).scalars().all()
+        rows = (
+            (await session.execute(select(UsageObservation).where(UsageObservation.provider_config_id == config.id)))
+            .scalars()
+            .all()
+        )
         kinds = sorted({row.kind for row in rows})
     assert kinds == ["point"]
 
@@ -267,7 +288,11 @@ async def test_poll_ingests_observations(sqlite_db, monkeypatch):
         assert second.status_code == 200, second.text
 
     async with Session() as session:
-        rows = (await session.execute(select(UsageObservation).where(UsageObservation.provider_config_id == config.id))).scalars().all()
+        rows = (
+            (await session.execute(select(UsageObservation).where(UsageObservation.provider_config_id == config.id)))
+            .scalars()
+            .all()
+        )
         deltas = [row.value for row in rows if row.kind == "delta"]
     assert deltas == [40.0]
 
@@ -327,13 +352,17 @@ async def test_native_history_upsert_persists_dedupes_and_updates(sqlite_db, mon
 
     async with Session() as session:
         rows = (
-            await session.execute(
-                select(UsageObservation).where(
-                    UsageObservation.provider_config_id == config.id,
-                    UsageObservation.source == "native",
+            (
+                await session.execute(
+                    select(UsageObservation).where(
+                        UsageObservation.provider_config_id == config.id,
+                        UsageObservation.source == "native",
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
     naive_base = base.replace(tzinfo=None)
     by_start = {row.window_start: row.value for row in rows}
@@ -358,15 +387,27 @@ async def test_overview_totals_and_like_unit_share(sqlite_db):
     openrouter = await _create_config(Session, provider="openrouter")
     base = datetime.now(UTC) - timedelta(days=2)
 
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
-    ])
-    await _seed_observations(Session, openai, [
-        {"metric": "daily_cost", "value": 5.0, "unit": "USD", "kind": "delta", "observed_at": base},
-    ])
-    await _seed_observations(Session, openrouter, [
-        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+        ],
+    )
+    await _seed_observations(
+        Session,
+        openai,
+        [
+            {"metric": "daily_cost", "value": 5.0, "unit": "USD", "kind": "delta", "observed_at": base},
+        ],
+    )
+    await _seed_observations(
+        Session,
+        openrouter,
+        [
+            {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -395,18 +436,30 @@ async def test_overview_activity_dimensions_group_and_share(sqlite_db):
     base = datetime.now(UTC) - timedelta(days=2)
 
     # Anthropic tokens: input 100 + output 50 = 150 tokens; requests = 30.
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
-        {"metric": "output_tokens", "value": 50.0, "unit": "tokens", "kind": "delta", "observed_at": base},
-        {"metric": "num_requests", "value": 30.0, "unit": "requests", "kind": "delta", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+            {"metric": "output_tokens", "value": 50.0, "unit": "tokens", "kind": "delta", "observed_at": base},
+            {"metric": "num_requests", "value": 30.0, "unit": "requests", "kind": "delta", "observed_at": base},
+        ],
+    )
     # OpenRouter credits: 10; Firecrawl credits: 40 (both credits → shared).
-    await _seed_observations(Session, openrouter, [
-        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
-    ])
-    await _seed_observations(Session, firecrawl, [
-        {"metric": "credits_used", "value": 40.0, "unit": "credits", "kind": "delta", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        openrouter,
+        [
+            {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        ],
+    )
+    await _seed_observations(
+        Session,
+        firecrawl,
+        [
+            {"metric": "credits_used", "value": 40.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -447,12 +500,27 @@ async def test_overview_activity_excludes_state_and_percent(sqlite_db):
     codex = await _create_config(Session, provider="codex")
     base = datetime.now(UTC) - timedelta(days=2)
 
-    await _seed_observations(Session, deepseek, [
-        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
-    ])
-    await _seed_observations(Session, codex, [
-        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=5)},
-    ])
+    await _seed_observations(
+        Session,
+        deepseek,
+        [
+            {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
+        ],
+    )
+    await _seed_observations(
+        Session,
+        codex,
+        [
+            {
+                "metric": "weekly_remaining_percent",
+                "value": 50.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": base + timedelta(days=5),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -470,10 +538,30 @@ async def test_provider_capacity_summary_and_history(sqlite_db):
     codex = await _create_config(Session, provider="codex")
     base = datetime.now(UTC) - timedelta(days=2)
     reset = base + timedelta(days=5)
-    await _seed_observations(Session, codex, [
-        {"metric": "weekly_remaining_percent", "value": -28.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base, "reset_at": reset},
-        {"metric": "weekly_remaining_percent", "value": -30.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base + timedelta(hours=1), "reset_at": reset},
-    ])
+    await _seed_observations(
+        Session,
+        codex,
+        [
+            {
+                "metric": "weekly_remaining_percent",
+                "value": -28.0,
+                "unit": "%",
+                "kind": "point",
+                "source": "native",
+                "observed_at": base,
+                "reset_at": reset,
+            },
+            {
+                "metric": "weekly_remaining_percent",
+                "value": -30.0,
+                "unit": "%",
+                "kind": "point",
+                "source": "native",
+                "observed_at": base + timedelta(hours=1),
+                "reset_at": reset,
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(f"/api/v1/analytics/providers/{codex.id}/capacity", headers=ADMIN_AUTH)
@@ -497,9 +585,20 @@ async def test_provider_capacity_graceful_for_non_quota_provider(sqlite_db):
     Session = sqlite_db
     anthropic = await _create_config(Session, provider="anthropic")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 100.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(f"/api/v1/analytics/providers/{anthropic.id}/capacity", headers=ADMIN_AUTH)
@@ -526,15 +625,17 @@ async def test_provider_capacity_quota_impact_with_history(sqlite_db):
         reset = base + timedelta(days=7 * (window + 1))
         peak = 10.0 * (window + 1)
         for offset in (0, 2, 5):
-            util.append({
-                "metric": "weekly_remaining_percent",
-                "value": peak * (0.2 if offset == 0 else 0.6 if offset == 2 else 1.0),
-                "unit": "%",
-                "kind": "point",
-                "source": "native",
-                "observed_at": base + timedelta(days=7 * window + offset),
-                "reset_at": reset,
-            })
+            util.append(
+                {
+                    "metric": "weekly_remaining_percent",
+                    "value": peak * (0.2 if offset == 0 else 0.6 if offset == 2 else 1.0),
+                    "unit": "%",
+                    "kind": "point",
+                    "source": "native",
+                    "observed_at": base + timedelta(days=7 * window + offset),
+                    "reset_at": reset,
+                }
+            )
     await _seed_observations(Session, codex, util)
 
     # Hermes tokens in each window (token deltas map to codex).
@@ -576,10 +677,20 @@ async def test_overview_utilization_comparison(sqlite_db):
     Session = sqlite_db
     codex = await _create_config(Session, provider="codex")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, codex, [
-        {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(hours=24)},
-    ])
+    await _seed_observations(
+        Session,
+        codex,
+        [
+            {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+            {
+                "metric": "weekly_remaining_percent",
+                "value": 50.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(hours=24),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -601,9 +712,21 @@ async def test_overview_preserves_over_limit_utilization_and_audit_source(sqlite
     codex = await _create_config(Session, provider="codex")
     base = datetime.now(UTC) - timedelta(days=2)
     reset = base + timedelta(days=5)
-    await _seed_observations(Session, codex, [
-        {"metric": "weekly_remaining_percent", "value": -28.0, "unit": "%", "kind": "point", "source": "native", "observed_at": base, "reset_at": reset},
-    ])
+    await _seed_observations(
+        Session,
+        codex,
+        [
+            {
+                "metric": "weekly_remaining_percent",
+                "value": -28.0,
+                "unit": "%",
+                "kind": "point",
+                "source": "native",
+                "observed_at": base,
+                "reset_at": reset,
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -635,11 +758,15 @@ async def test_overview_uses_declared_headline_not_sum(sqlite_db):
     base = datetime.now(UTC) - timedelta(days=2)
     # daily + weekly + monthly all report credits but overlap; only usage_monthly
     # is declared the overview metric, so it alone should count.
-    await _seed_observations(Session, openrouter, [
-        {"metric": "usage_daily", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
-        {"metric": "usage_weekly", "value": 20.0, "unit": "credits", "kind": "delta", "observed_at": base},
-        {"metric": "usage_monthly", "value": 30.0, "unit": "credits", "kind": "delta", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        openrouter,
+        [
+            {"metric": "usage_daily", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+            {"metric": "usage_weekly", "value": 20.0, "unit": "credits", "kind": "delta", "observed_at": base},
+            {"metric": "usage_monthly", "value": 30.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -660,17 +787,43 @@ async def test_overview_provider_pressure_excludes_unknown_utilization(sqlite_db
     deepseek = await _create_config(Session, provider="deepseek")
     base = datetime.now(UTC) - timedelta(days=2)
 
-    await _seed_observations(Session, codex, [
-        {"metric": "weekly_remaining_percent", "value": 50.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=5)},
-    ])
-    await _seed_observations(Session, openrouter, [
-        {"metric": "limit", "value": 100.0, "unit": "credits", "kind": "point", "observed_at": base},
-        {"metric": "limit_remaining", "value": 25.0, "unit": "credits", "kind": "point", "observed_at": base, "reset_at": base + timedelta(days=28)},
-        {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
-    ])
-    await _seed_observations(Session, deepseek, [
-        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        codex,
+        [
+            {
+                "metric": "weekly_remaining_percent",
+                "value": 50.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": base + timedelta(days=5),
+            },
+        ],
+    )
+    await _seed_observations(
+        Session,
+        openrouter,
+        [
+            {"metric": "limit", "value": 100.0, "unit": "credits", "kind": "point", "observed_at": base},
+            {
+                "metric": "limit_remaining",
+                "value": 25.0,
+                "unit": "credits",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": base + timedelta(days=28),
+            },
+            {"metric": "usage_monthly", "value": 10.0, "unit": "credits", "kind": "delta", "observed_at": base},
+        ],
+    )
+    await _seed_observations(
+        Session,
+        deepseek,
+        [
+            {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -703,14 +856,57 @@ async def test_overview_comparison_includes_each_capacity_window(sqlite_db):
     five_hour_reset = base + timedelta(hours=5)
     weekly_reset = base + timedelta(days=7)
     monthly_reset = base + timedelta(days=30)
-    await _seed_observations(Session, config, [
-        {"metric": "five_hour_used_percent", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": five_hour_reset},
-        {"metric": "weekly_used_percent", "value": 40.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": weekly_reset},
-        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base, "reset_at": monthly_reset},
-        {"metric": "five_hour_used_percent", "value": 25.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-        {"metric": "weekly_used_percent", "value": 45.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-        {"metric": "monthly_used_percent", "value": 65.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "five_hour_used_percent",
+                "value": 20.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": five_hour_reset,
+            },
+            {
+                "metric": "weekly_used_percent",
+                "value": 40.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": weekly_reset,
+            },
+            {
+                "metric": "monthly_used_percent",
+                "value": 60.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base,
+                "reset_at": monthly_reset,
+            },
+            {
+                "metric": "five_hour_used_percent",
+                "value": 25.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+            {
+                "metric": "weekly_used_percent",
+                "value": 45.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+            {
+                "metric": "monthly_used_percent",
+                "value": 65.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/overview", headers=ADMIN_AUTH)
@@ -736,15 +932,35 @@ async def test_overview_comparison_includes_codex_session_and_weekly_windows(sql
     Session = sqlite_db
     config = await _create_config(Session, provider="codex")
     base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
-    await _seed_observations(Session, config, [
-        {"metric": "session_remaining_percent", "value": 80.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "session_remaining_percent", "value": 75.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-        {"metric": "weekly_remaining_percent", "value": 55.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {"metric": "session_remaining_percent", "value": 80.0, "unit": "%", "kind": "point", "observed_at": base},
+            {"metric": "weekly_remaining_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+            {
+                "metric": "session_remaining_percent",
+                "value": 75.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+            {
+                "metric": "weekly_remaining_percent",
+                "value": 55.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/overview",
+            params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()},
+            headers=ADMIN_AUTH,
+        )
 
     assert response.status_code == 200, response.text
     series = [item for item in response.json()["comparison"] if item["provider"] == "codex"]
@@ -765,8 +981,18 @@ async def test_overview_comparison_supports_generic_multiple_capacity_windows(sq
         analytics = analytics_spec(
             supported=True,
             metrics={
-                "short_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="short"),
-                "long_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="long", overview=True),
+                "short_used": metric_spec(
+                    type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="short"
+                ),
+                "long_used": metric_spec(
+                    type_="gauge",
+                    unit="%",
+                    direction="increasing",
+                    maximum=100,
+                    utilization=True,
+                    window="long",
+                    overview=True,
+                ),
             },
         )
 
@@ -777,15 +1003,35 @@ async def test_overview_comparison_supports_generic_multiple_capacity_windows(sq
     Session = sqlite_db
     config = await _create_config(Session, provider="multiwindowfake")
     base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
-    await _seed_observations(Session, config, [
-        {"metric": "short_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "long_used", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "short_used", "value": 15.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
-        {"metric": "long_used", "value": 25.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {"metric": "short_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
+            {"metric": "long_used", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base},
+            {
+                "metric": "short_used",
+                "value": 15.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=2),
+            },
+            {
+                "metric": "long_used",
+                "value": 25.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=2),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/overview",
+            params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()},
+            headers=ADMIN_AUTH,
+        )
 
     assert response.status_code == 200, response.text
     series = [item for item in response.json()["comparison"] if item["provider"] == "multiwindowfake"]
@@ -802,7 +1048,17 @@ async def test_overview_comparison_preserves_single_window_behavior(sqlite_db, m
         metric_names = ["quota_used"]
         analytics = analytics_spec(
             supported=True,
-            metrics={"quota_used": metric_spec(type_="gauge", unit="%", direction="increasing", maximum=100, utilization=True, window="month", overview=True)},
+            metrics={
+                "quota_used": metric_spec(
+                    type_="gauge",
+                    unit="%",
+                    direction="increasing",
+                    maximum=100,
+                    utilization=True,
+                    window="month",
+                    overview=True,
+                )
+            },
         )
 
         async def fetch_usage(self):  # pragma: no cover - not used by this test
@@ -812,13 +1068,27 @@ async def test_overview_comparison_preserves_single_window_behavior(sqlite_db, m
     Session = sqlite_db
     config = await _create_config(Session, provider="singlewindowfake")
     base = (datetime.now(UTC) - timedelta(days=3)).replace(hour=0, minute=0, second=0, microsecond=0)
-    await _seed_observations(Session, config, [
-        {"metric": "quota_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "quota_used", "value": 20.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=1)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {"metric": "quota_used", "value": 10.0, "unit": "%", "kind": "point", "observed_at": base},
+            {
+                "metric": "quota_used",
+                "value": 20.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=1),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=2)).isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/overview",
+            params={"from": base.isoformat(), "to": (base + timedelta(days=2)).isoformat()},
+            headers=ADMIN_AUTH,
+        )
 
     assert response.status_code == 200, response.text
     series = [item for item in response.json()["comparison"] if item["provider"] == "singlewindowfake"]
@@ -832,16 +1102,34 @@ async def test_overview_capacity_gaps_remain_null_not_zero(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="opencode-go")
     base = (datetime.now(UTC) - timedelta(days=4)).replace(hour=0, minute=0, second=0, microsecond=0)
-    await _seed_observations(Session, config, [
-        {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
-        {"metric": "monthly_used_percent", "value": 65.0, "unit": "%", "kind": "point", "observed_at": base + timedelta(days=2)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {"metric": "monthly_used_percent", "value": 60.0, "unit": "%", "kind": "point", "observed_at": base},
+            {
+                "metric": "monthly_used_percent",
+                "value": 65.0,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": base + timedelta(days=2),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/overview", params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/overview",
+            params={"from": base.isoformat(), "to": (base + timedelta(days=3)).isoformat()},
+            headers=ADMIN_AUTH,
+        )
 
     assert response.status_code == 200, response.text
-    monthly = next(item for item in response.json()["comparison"] if item["provider"] == "opencode-go" and item["metric"] == "monthly_used_percent")
+    monthly = next(
+        item
+        for item in response.json()["comparison"]
+        if item["provider"] == "opencode-go" and item["metric"] == "monthly_used_percent"
+    )
     assert any(bucket["samples"] == 0 and bucket["value"] is None for bucket in monthly["buckets"])
     assert not any(bucket["samples"] == 0 and bucket["value"] == 0 for bucket in monthly["buckets"])
 
@@ -850,10 +1138,26 @@ async def test_overview_capacity_gaps_remain_null_not_zero(sqlite_db):
 async def test_minimax_analytics_exposes_five_hour_and_weekly_utilization(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="minimax")
-    await _seed_observations(Session, config, [
-        {"metric": "five_hour_used_percent", "value": 37, "unit": "%", "kind": "point", "observed_at": datetime.now(UTC)},
-        {"metric": "weekly_used_percent", "value": 4, "unit": "%", "kind": "point", "observed_at": datetime.now(UTC)},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "five_hour_used_percent",
+                "value": 37,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": datetime.now(UTC),
+            },
+            {
+                "metric": "weekly_used_percent",
+                "value": 4,
+                "unit": "%",
+                "kind": "point",
+                "observed_at": datetime.now(UTC),
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(f"/api/v1/analytics/providers/{config.id}", headers=ADMIN_AUTH)
@@ -868,36 +1172,49 @@ async def test_overview_maps_hermes_activity_to_provider_without_double_counting
     Session = sqlite_db
     anthropic = await _create_config(Session, provider="anthropic")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 2000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 2000.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
     async with Session() as session:
-        session.add_all([
-            UsageObservation(
-                provider="claude",
-                provider_mapping="anthropic",
-                metric="input_tokens",
-                value=900.0,
-                unit="tokens",
-                kind="delta",
-                source="hermes",
-                observed_at=base + timedelta(hours=1),
-                model="claude-sonnet-4",
-                session_id="s1",
-            ),
-            UsageObservation(
-                provider="claude",
-                provider_mapping="anthropic",
-                metric="requests",
-                value=7.0,
-                unit="count",
-                kind="delta",
-                source="hermes",
-                observed_at=base + timedelta(hours=1),
-                model="claude-sonnet-4",
-                session_id="s1",
-            ),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider="claude",
+                    provider_mapping="anthropic",
+                    metric="input_tokens",
+                    value=900.0,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=base + timedelta(hours=1),
+                    model="claude-sonnet-4",
+                    session_id="s1",
+                ),
+                UsageObservation(
+                    provider="claude",
+                    provider_mapping="anthropic",
+                    metric="requests",
+                    value=7.0,
+                    unit="count",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=base + timedelta(hours=1),
+                    model="claude-sonnet-4",
+                    session_id="s1",
+                ),
+            ]
+        )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -940,32 +1257,34 @@ async def test_hermes_breakdown_includes_source_diagnostics_and_keeps_totals_sup
         session.add(source)
         await session.commit()
         await session.refresh(source)
-        session.add_all([
-            UsageObservation(
-                data_source_id=source.id,
-                provider="claude",
-                provider_mapping="anthropic",
-                metric="input_tokens",
-                value=900.0,
-                unit="tokens",
-                kind="delta",
-                source="hermes",
-                observed_at=now - timedelta(hours=2),
-                profile="coder",
-                model="claude-sonnet-4",
-                session_id="s1",
-            ),
-            UsageObservation(
-                provider_config_id=provider.id,
-                provider="anthropic",
-                metric="input_tokens",
-                value=2000.0,
-                unit="tokens",
-                kind="delta",
-                source="native",
-                observed_at=now - timedelta(hours=2),
-            ),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    data_source_id=source.id,
+                    provider="claude",
+                    provider_mapping="anthropic",
+                    metric="input_tokens",
+                    value=900.0,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=now - timedelta(hours=2),
+                    profile="coder",
+                    model="claude-sonnet-4",
+                    session_id="s1",
+                ),
+                UsageObservation(
+                    provider_config_id=provider.id,
+                    provider="anthropic",
+                    metric="input_tokens",
+                    value=2000.0,
+                    unit="tokens",
+                    kind="delta",
+                    source="native",
+                    observed_at=now - timedelta(hours=2),
+                ),
+            ]
+        )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -1098,13 +1417,27 @@ async def test_timeseries_hermes_overlay_compatible(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="anthropic")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, config, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
-    await _seed_hermes_observations(Session, [
-        {"provider": "anthropic", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
-        {"provider": "anthropic", "metric": "output_tokens", "value": 10.0, "unit": "tokens", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 100.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
+    await _seed_hermes_observations(
+        Session,
+        [
+            {"provider": "anthropic", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
+            {"provider": "anthropic", "metric": "output_tokens", "value": 10.0, "unit": "tokens", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
@@ -1130,12 +1463,26 @@ async def test_timeseries_hermes_overlay_unmapped_provider(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="anthropic")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, config, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
-    await _seed_hermes_observations(Session, [
-        {"provider": "mystery", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 100.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
+    await _seed_hermes_observations(
+        Session,
+        [
+            {"provider": "mystery", "metric": "input_tokens", "value": 40.0, "unit": "tokens", "observed_at": base},
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
@@ -1157,9 +1504,20 @@ async def test_timeseries_hermes_overlay_no_data(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="anthropic")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, config, [
-        {"metric": "input_tokens", "value": 100.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 100.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
@@ -1180,9 +1538,20 @@ async def test_timeseries_hermes_overlay_incompatible_metric(sqlite_db):
     Session = sqlite_db
     config = await _create_config(Session, provider="deepseek")
     base = datetime.now(UTC) - timedelta(days=2)
-    await _seed_observations(Session, config, [
-        {"metric": "total_balance", "value": 42.0, "unit": "USD", "kind": "point", "source": "snapshot", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "total_balance",
+                "value": 42.0,
+                "unit": "USD",
+                "kind": "point",
+                "source": "snapshot",
+                "observed_at": base,
+            },
+        ],
+    )
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
@@ -1207,9 +1576,20 @@ async def test_overview_reconciliation_flags_activity_disagreement(sqlite_db):
     base = now - timedelta(hours=2)
 
     # Native headline: 1000 input tokens (authoritative).
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 1000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 1000.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
 
     # Hermes observed 2000 input tokens for the same provider/window.
     async with Session() as session:
@@ -1256,9 +1636,20 @@ async def test_overview_reconciliation_clean_when_hermes_agrees(sqlite_db):
     now = datetime.now(UTC)
     base = now - timedelta(hours=2)
 
-    await _seed_observations(Session, anthropic, [
-        {"metric": "input_tokens", "value": 1000.0, "unit": "tokens", "kind": "delta", "source": "native", "observed_at": base},
-    ])
+    await _seed_observations(
+        Session,
+        anthropic,
+        [
+            {
+                "metric": "input_tokens",
+                "value": 1000.0,
+                "unit": "tokens",
+                "kind": "delta",
+                "source": "native",
+                "observed_at": base,
+            },
+        ],
+    )
     async with Session() as session:
         source = DataSourceConfig(kind="hermes", name="Hermes rec", base_url="http://hermes.local", is_enabled=True)
         session.add(source)

@@ -46,5 +46,5 @@ class HermesDataSource(DataSource):
             raise ValueError("Hermes returned a non-JSON response") from exc
         records = payload.get("observations") if isinstance(payload, dict) else payload
         if not isinstance(records, list):
-            raise ValueError("Hermes payload must be a list or {\"observations\": [...]}")
+            raise ValueError('Hermes payload must be a list or {"observations": [...]}')
         return records

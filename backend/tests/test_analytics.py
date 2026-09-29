@@ -32,6 +32,7 @@ def _obs(metric, value, observed_at, kind="delta", unit=None):
 
 # --- reset detection -------------------------------------------------------
 
+
 def test_detect_reset_decreasing_jump_up_is_reset():
     assert detect_reset(5.0, 98.0, direction="decreasing") is True
 
@@ -68,7 +69,11 @@ def test_window_changed_requires_distinct_known_timestamps():
 
 CODECX_CAPS = analytics_spec(
     supported=True,
-    metrics={"session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="session_reset_at")},
+    metrics={
+        "session_remaining_percent": metric_spec(
+            type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="session_reset_at"
+        )
+    },
 )
 
 
@@ -91,8 +96,20 @@ def test_remaining_percent_delta_and_reset_detection():
 def test_known_reset_timestamp_prevents_cross_window_delta():
     base = datetime(2026, 8, 21, 14, tzinfo=UTC)
     snapshots = [
-        _snap(base, [_metric("session_remaining_percent", 80, "%"), {"label": "session_reset_at", "value": "2026-08-21T18:00:00Z"}]),
-        _snap(base + timedelta(hours=1), [_metric("session_remaining_percent", 71, "%"), {"label": "session_reset_at", "value": "2026-08-22T18:00:00Z"}]),
+        _snap(
+            base,
+            [
+                _metric("session_remaining_percent", 80, "%"),
+                {"label": "session_reset_at", "value": "2026-08-21T18:00:00Z"},
+            ],
+        ),
+        _snap(
+            base + timedelta(hours=1),
+            [
+                _metric("session_remaining_percent", 71, "%"),
+                {"label": "session_reset_at", "value": "2026-08-22T18:00:00Z"},
+            ],
+        ),
     ]
     observations = normalize_snapshots(snapshots, capabilities=CODECX_CAPS)
     deltas = [o for o in observations if o.kind == "delta"]
@@ -124,6 +141,7 @@ def test_undeclared_metric_falls_back_to_generic_gauge_point():
 
 
 # --- aggregation -----------------------------------------------------------
+
 
 def test_counter_aggregation_sums_deltas():
     base = datetime(2026, 8, 21, 14, tzinfo=UTC)
@@ -179,6 +197,7 @@ def test_series_coverage_detects_gaps():
 
 # --- forecasting -----------------------------------------------------------
 
+
 def test_rates_from_deltas_daily_average():
     base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
     observations = []
@@ -219,8 +238,12 @@ def test_forecast_pace_ratio_under_pace():
     for day in range(4):
         observations.append(_obs("pct", 2.0, base + timedelta(days=day)))
     result = forecast_for_metric(
-        observations, metric_type="remaining", now=now, reset_at=reset,
-        window_start=base, capacity=100,
+        observations,
+        metric_type="remaining",
+        now=now,
+        reset_at=reset,
+        window_start=base,
+        capacity=100,
     )
     assert "pace_ratio" in result
     assert result["pacing"]["status"] in {"under", "on_pace", "over"}
@@ -238,8 +261,12 @@ def test_forecast_pace_ratio_burning_hot_is_over():
     for day in range(4):
         observations.append(_obs("pct", 15.0, base + timedelta(days=day)))
     result = forecast_for_metric(
-        observations, metric_type="remaining", now=now, reset_at=reset,
-        window_start=base, capacity=100,
+        observations,
+        metric_type="remaining",
+        now=now,
+        reset_at=reset,
+        window_start=base,
+        capacity=100,
     )
     assert result["pace_ratio"] > 1.0
     assert result["pacing"]["status"] == "over"
@@ -262,7 +289,11 @@ def test_forecast_counter_projects_total_window_end():
     now = base + timedelta(days=15)
     observations = [_obs("credits", 10.0, base + timedelta(days=day)) for day in range(15)]
     result = forecast_for_metric(
-        observations, metric_type="counter", now=now, reset_at=reset, window_start=base,
+        observations,
+        metric_type="counter",
+        now=now,
+        reset_at=reset,
+        window_start=base,
     )
     assert result["spent_this_window"] == 150.0
     assert result["projected_additional_usage"] == pytest.approx(150.0)
@@ -278,6 +309,7 @@ def test_sustainable_pacing():
 
 # --- confidence ------------------------------------------------------------
 
+
 def test_confidence_low_with_few_observations():
     base = datetime(2026, 8, 21, 0, 0, tzinfo=UTC)
     observations = [_obs("tokens", 1.0, base), _obs("tokens", 1.0, base + timedelta(hours=1))]
@@ -291,7 +323,14 @@ def test_confidence_high_with_rich_native_history():
     observations = []
     for hour in range(24 * 20):
         observations.append(
-            Observation(metric="tokens", value=5.0, unit="tokens", observed_at=base + timedelta(hours=hour), kind="delta", source="native")
+            Observation(
+                metric="tokens",
+                value=5.0,
+                unit="tokens",
+                observed_at=base + timedelta(hours=hour),
+                kind="delta",
+                source="native",
+            )
         )
     level = confidence_level(observations, coverage=0.95)
     assert level["level"] == "high"
@@ -299,11 +338,24 @@ def test_confidence_high_with_rich_native_history():
 
 # --- native history normalization -----------------------------------------
 
+
 def test_anthropic_native_observations_flat_records():
     raw = {
         "data": [
-            {"start_time": "2026-08-21T14:00:00Z", "end_time": "2026-08-21T15:00:00Z", "input_tokens": 10, "output_tokens": 20, "num_requests": 3},
-            {"start_time": "2026-08-21T15:00:00Z", "end_time": "2026-08-21T16:00:00Z", "input_tokens": 15, "output_tokens": 5, "num_requests": 1},
+            {
+                "start_time": "2026-08-21T14:00:00Z",
+                "end_time": "2026-08-21T15:00:00Z",
+                "input_tokens": 10,
+                "output_tokens": 20,
+                "num_requests": 3,
+            },
+            {
+                "start_time": "2026-08-21T15:00:00Z",
+                "end_time": "2026-08-21T16:00:00Z",
+                "input_tokens": 15,
+                "output_tokens": 5,
+                "num_requests": 1,
+            },
         ]
     }
     observations = AnthropicAdapter.native_observations(raw)
@@ -320,7 +372,10 @@ def test_openai_native_observations_daily_buckets():
             {
                 "start_time": int(base.timestamp()),
                 "end_time": int((base + timedelta(days=1)).timestamp()),
-                "results": [{"amount": {"value": 1.5, "currency": "usd"}}, {"amount": {"value": 0.5, "currency": "usd"}}],
+                "results": [
+                    {"amount": {"value": 1.5, "currency": "usd"}},
+                    {"amount": {"value": 0.5, "currency": "usd"}},
+                ],
             }
         ]
     }
@@ -341,6 +396,7 @@ def test_normalize_native_wraps_into_observations():
 
 
 # --- utilization -----------------------------------------------------------
+
 
 def test_utilization_value_counter_percent():
     assert utilization_value(40.0, spec={"type": "counter", "maximum": 100}) == 40.0
@@ -380,13 +436,22 @@ def test_utilization_capacity_joined_at_or_before():
     base = datetime(2026, 8, 21, 14, 0, tzinfo=UTC)
     spec = {"type": "remaining", "capacity_metric": "limit"}
     point_obs = [
-        Observation(metric="limit_remaining", value=80.0, unit="credits", observed_at=base + timedelta(seconds=2), kind="point", source="snapshot"),
+        Observation(
+            metric="limit_remaining",
+            value=80.0,
+            unit="credits",
+            observed_at=base + timedelta(seconds=2),
+            kind="point",
+            source="snapshot",
+        ),
     ]
     capacity_obs = [
         Observation(metric="limit", value=100.0, unit="credits", observed_at=base, kind="point", source="snapshot"),
     ]
     # Capacity persisted ~2s before the usage observation - must still pair.
-    result = utilization_observations(point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs)
+    result = utilization_observations(
+        point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs
+    )
     assert len(result) == 1
     assert result[0].value == 20.0
 
@@ -395,10 +460,21 @@ def test_utilization_ignores_capacity_from_after_observation():
     base = datetime(2026, 8, 21, 14, 0, tzinfo=UTC)
     spec = {"type": "remaining", "capacity_metric": "limit"}
     point_obs = [
-        Observation(metric="limit_remaining", value=80.0, unit="credits", observed_at=base, kind="point", source="snapshot"),
+        Observation(
+            metric="limit_remaining", value=80.0, unit="credits", observed_at=base, kind="point", source="snapshot"
+        ),
     ]
     capacity_obs = [
-        Observation(metric="limit", value=100.0, unit="credits", observed_at=base + timedelta(seconds=10), kind="point", source="snapshot"),
+        Observation(
+            metric="limit",
+            value=100.0,
+            unit="credits",
+            observed_at=base + timedelta(seconds=10),
+            kind="point",
+            source="snapshot",
+        ),
     ]
-    result = utilization_observations(point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs)
+    result = utilization_observations(
+        point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs
+    )
     assert result == []

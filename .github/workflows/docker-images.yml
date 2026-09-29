@@ -29,7 +29,7 @@ concurrency:
 
 jobs:
   test-backend:
-    name: Test backend (pytest)
+    name: Test backend (pytest + Ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,7 +46,60 @@ jobs:
         run: pip install -r backend/requirements.txt
 
       - name: Run tests
+        working-directory: backend
         run: pytest
+
+      - name: Lint backend
+        run: ruff check backend
+
+      - name: Check backend formatting
+        run: ruff format --check backend
+
+  test-backend-migrations:
+    name: Test backend migrations (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_DB: usage_dashboard
+          POSTGRES_USER: usage_dashboard
+          POSTGRES_PASSWORD: change-me
+        options: >-
+          --health-cmd "pg_isready -U usage_dashboard -d usage_dashboard"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://usage_dashboard:change-me@localhost:5432/usage_dashboard
+      ENCRYPTION_KEY: 1VlOu4U4FQvXf7z_UTd68N2IsJo87NZzxnqE6o-Wovs=
+      POSTGRES_MIGRATION_TEST: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt
+
+      - name: Validate Alembic migration chain
+        working-directory: backend
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+
+      - name: Verify long session ID round trip
+        working-directory: backend
+        run: pytest tests/test_postgres_migrations.py
 
   test-frontend:
     name: Test frontend (test + lint + build)
@@ -81,7 +134,7 @@ jobs:
   build:
     name: Build ${{ matrix.component }} image
     if: github.event_name != 'pull_request'
-    needs: [test-backend, test-frontend]
+    needs: [test-backend, test-backend-migrations, test-frontend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

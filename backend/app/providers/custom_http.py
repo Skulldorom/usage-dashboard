@@ -12,6 +12,7 @@ from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 _PATH_TOKEN_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_-]*)(?:\[(\d+)\])?")
 _BLOCKED_HOSTNAMES = {"localhost", "localhost.localdomain"}
 
+
 class CustomHTTPAdapter(ProviderAdapter):
     id = "custom_http"
     name = "Custom HTTP"
@@ -88,14 +89,16 @@ class CustomHTTPAdapter(ProviderAdapter):
 
     @staticmethod
     def _reject_internal_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> None:
-        if any((
-            ip.is_loopback,
-            ip.is_link_local,
-            ip.is_private,
-            ip.is_reserved,
-            ip.is_unspecified,
-            ip.is_multicast,
-        )):
+        if any(
+            (
+                ip.is_loopback,
+                ip.is_link_local,
+                ip.is_private,
+                ip.is_reserved,
+                ip.is_unspecified,
+                ip.is_multicast,
+            )
+        ):
             raise ValueError("Custom HTTP base URL host resolves to a private or internal IP address")
 
     @staticmethod
@@ -120,7 +123,7 @@ class CustomHTTPAdapter(ProviderAdapter):
                     return None
                 idx = int(index)
                 current = current[idx] if idx < len(current) else None
-            remainder = remainder[match.end():]
+            remainder = remainder[match.end() :]
         return current
 
     @staticmethod
@@ -134,8 +137,18 @@ class CustomHTTPAdapter(ProviderAdapter):
             if not label or not path:
                 raise ValueError("Custom metric config requires label and path")
             value = CustomHTTPAdapter.extract_json_path(data, path)
-            maximum = CustomHTTPAdapter.extract_json_path(data, item["maximum_path"]) if item.get("maximum_path") else None
-            metrics.append(Metric(str(label), value, item.get("unit") or None, maximum if isinstance(maximum, (int, float)) else None))
+            maximum = (
+                CustomHTTPAdapter.extract_json_path(data, item["maximum_path"]) if item.get("maximum_path") else None
+            )
+            metrics.append(
+                Metric(
+                    str(label), value, item.get("unit") or None, maximum if isinstance(maximum, (int, float)) else None
+                )
+            )
         healthy = any(metric.value is not None for metric in metrics)
-        summary = f"{len(metrics)} custom metrics fetched" if healthy else "Custom HTTP response did not match configured paths"
+        summary = (
+            f"{len(metrics)} custom metrics fetched"
+            if healthy
+            else "Custom HTTP response did not match configured paths"
+        )
         return ProviderUsage(status="healthy" if healthy else "degraded", summary=summary, metrics=metrics, raw=data)

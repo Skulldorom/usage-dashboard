@@ -126,9 +126,21 @@ def test_estimate_prices_token_classes_separately():
 def test_estimate_uses_effective_date_for_historical_pricing():
     observations = [
         # Before the 2025-01-01 price cut: $5 input
-        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2024, 6, 1, tzinfo=UTC)),
+        Obs(
+            "input_tokens",
+            1_000_000,
+            model="gpt-4o",
+            provider_mapping="openai",
+            observed_at=datetime(2024, 6, 1, tzinfo=UTC),
+        ),
         # After the cut: $2.50 input
-        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2025, 6, 1, tzinfo=UTC)),
+        Obs(
+            "input_tokens",
+            1_000_000,
+            model="gpt-4o",
+            provider_mapping="openai",
+            observed_at=datetime(2025, 6, 1, tzinfo=UTC),
+        ),
     ]
     cat = PricingCatalogue(_catalogue_with_history())
     result = estimate_cost(observations, catalogue=cat)
@@ -200,7 +212,9 @@ def test_estimate_uses_provider_fallback_when_mapping_missing():
 
 
 def test_estimate_version_is_present():
-    result = estimate_cost([Obs("input_tokens", 1_000_000, model="claude-sonnet-4", provider_mapping="anthropic", observed_at=_t())])
+    result = estimate_cost(
+        [Obs("input_tokens", 1_000_000, model="claude-sonnet-4", provider_mapping="anthropic", observed_at=_t())]
+    )
     assert result["pricing_version"] == PRICING_VERSION
     assert result["currency"] == "USD"
 
@@ -255,10 +269,26 @@ def test_lookup_falls_back_to_default_rate_outside_window():
 
 
 def test_lookup_window_wrapping_midnight():
-    cat = PricingCatalogue([
-        PriceEntry(provider="p", model="m", effective_from=date(2025, 1, 1), rates={"input_tokens": 9.0}, source="late-night", time_window=(21, 27)),
-        PriceEntry(provider="p", model="m", effective_from=date(2025, 1, 1), rates={"input_tokens": 1.0}, source="default", time_window=None),
-    ])
+    cat = PricingCatalogue(
+        [
+            PriceEntry(
+                provider="p",
+                model="m",
+                effective_from=date(2025, 1, 1),
+                rates={"input_tokens": 9.0},
+                source="late-night",
+                time_window=(21, 27),
+            ),
+            PriceEntry(
+                provider="p",
+                model="m",
+                effective_from=date(2025, 1, 1),
+                rates={"input_tokens": 1.0},
+                source="default",
+                time_window=None,
+            ),
+        ]
+    )
     assert cat.lookup("p", "m", datetime(2025, 2, 1, 23, 0, tzinfo=UTC)).rates["input_tokens"] == 9.0
     assert cat.lookup("p", "m", datetime(2025, 2, 1, 2, 0, tzinfo=UTC)).rates["input_tokens"] == 9.0
     assert cat.lookup("p", "m", datetime(2025, 2, 1, 12, 0, tzinfo=UTC)).rates["input_tokens"] == 1.0
@@ -280,8 +310,20 @@ def test_lookup_non_windowed_entries_unchanged():
 def test_estimate_prices_observations_on_opposite_sides_of_price_change():
     # gpt-4o input drops from $5.00 to $2.50 per 1M on 2025-01-01.
     observations = [
-        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2024, 12, 31, 23, 0, tzinfo=UTC)),
-        Obs("input_tokens", 1_000_000, model="gpt-4o", provider_mapping="openai", observed_at=datetime(2025, 1, 1, 1, 0, tzinfo=UTC)),
+        Obs(
+            "input_tokens",
+            1_000_000,
+            model="gpt-4o",
+            provider_mapping="openai",
+            observed_at=datetime(2024, 12, 31, 23, 0, tzinfo=UTC),
+        ),
+        Obs(
+            "input_tokens",
+            1_000_000,
+            model="gpt-4o",
+            provider_mapping="openai",
+            observed_at=datetime(2025, 1, 1, 1, 0, tzinfo=UTC),
+        ),
     ]
     result = estimate_cost(observations, catalogue=PricingCatalogue(_catalogue_with_history()))
     assert result["total_cost"] == 7.5  # 5.00 + 2.50
@@ -325,7 +367,11 @@ def test_deepseek_v4_uses_weekday_peak_windows_and_weekend_off_peak():
     peak = cat.lookup("deepseek", "deepseek-v4-pro", datetime(2026, 8, 17, 2, tzinfo=UTC))
     off_peak = cat.lookup("deepseek", "deepseek-v4-pro", datetime(2026, 8, 23, 2, tzinfo=UTC))
     assert peak is not None and peak.rates == {"input_tokens": 1.32, "cache_read_tokens": 0.044, "output_tokens": 3.96}
-    assert off_peak is not None and off_peak.rates == {"input_tokens": 0.66, "cache_read_tokens": 0.022, "output_tokens": 1.98}
+    assert off_peak is not None and off_peak.rates == {
+        "input_tokens": 0.66,
+        "cache_read_tokens": 0.022,
+        "output_tokens": 1.98,
+    }
 
 
 def test_deepseek_v4_exact_effective_timestamp_is_respected():
@@ -336,9 +382,21 @@ def test_deepseek_v4_exact_effective_timestamp_is_respected():
 
 def test_deepseek_v4_prices_cache_miss_hit_and_output_separately():
     observed = datetime(2026, 8, 23, 12, tzinfo=UTC)  # weekend/off-peak
-    result = estimate_cost([
-        Obs("input_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
-        Obs("cache_read_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
-        Obs("output_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed),
-    ])
+    result = estimate_cost(
+        [
+            Obs(
+                "input_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed
+            ),
+            Obs(
+                "cache_read_tokens",
+                1_000_000,
+                model="deepseek-v4-flash",
+                provider_mapping="deepseek",
+                observed_at=observed,
+            ),
+            Obs(
+                "output_tokens", 1_000_000, model="deepseek-v4-flash", provider_mapping="deepseek", observed_at=observed
+            ),
+        ]
+    )
     assert result["total_cost"] == 0.887

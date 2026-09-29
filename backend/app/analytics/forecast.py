@@ -119,7 +119,9 @@ def forecast_for_metric(
                         # Solve time when cumulative usage reaches capacity.
                         excess = capacity - window_usage
                         seconds_to_limit = (excess / avg_7d) * _SECONDS_PER_DAY if avg_7d > 0 else None
-                        result["exhaustion_in_seconds"] = round(seconds_to_limit) if seconds_to_limit is not None else None
+                        result["exhaustion_in_seconds"] = (
+                            round(seconds_to_limit) if seconds_to_limit is not None else None
+                        )
                         result["exhaustion_at"] = (
                             (current + timedelta(seconds=seconds_to_limit)).isoformat()
                             if seconds_to_limit is not None

@@ -1,7 +1,14 @@
 import httpx
 import pytest
 
-from app.providers.errors import AUTHENTICATION, CONFIGURATION, INVALID_RESPONSE, RATE_LIMIT, SCHEMA_CHANGED, ProviderError
+from app.providers.errors import (
+    AUTHENTICATION,
+    CONFIGURATION,
+    INVALID_RESPONSE,
+    RATE_LIMIT,
+    SCHEMA_CHANGED,
+    ProviderError,
+)
 from app.providers.minimax import MiniMaxAdapter
 
 
@@ -11,19 +18,22 @@ def metrics_by_label(usage):
 
 def current_response(groups=None):
     return {
-        "model_remains": groups or [{
-            "model_name": "general",
-            "current_interval_total_count": 0,
-            "current_interval_usage_count": 0,
-            "current_interval_remaining_percent": 63,
-            "current_interval_status": 1,
-            "current_weekly_total_count": 0,
-            "current_weekly_usage_count": 0,
-            "current_weekly_remaining_percent": 96,
-            "current_weekly_status": 1,
-            "end_time": 1782399600000,
-            "weekly_end_time": 1782691200000,
-        }],
+        "model_remains": groups
+        or [
+            {
+                "model_name": "general",
+                "current_interval_total_count": 0,
+                "current_interval_usage_count": 0,
+                "current_interval_remaining_percent": 63,
+                "current_interval_status": 1,
+                "current_weekly_total_count": 0,
+                "current_weekly_usage_count": 0,
+                "current_weekly_remaining_percent": 96,
+                "current_weekly_status": 1,
+                "end_time": 1782399600000,
+                "weekly_end_time": 1782691200000,
+            }
+        ],
         "base_resp": {"status_code": 0, "status_msg": "success"},
     }
 
@@ -43,10 +53,18 @@ def test_parser_uses_remaining_percentages_and_normalizes_resets():
 
 
 def test_parser_uses_general_without_aggregating_other_resource_groups():
-    response = current_response([
-        {"model_name": "video", "current_interval_remaining_percent": 10, "current_interval_status": 2},
-        {"model_name": "general", "current_interval_remaining_percent": 75, "current_interval_status": 1, "current_weekly_remaining_percent": 50, "current_weekly_status": 1},
-    ])
+    response = current_response(
+        [
+            {"model_name": "video", "current_interval_remaining_percent": 10, "current_interval_status": 2},
+            {
+                "model_name": "general",
+                "current_interval_remaining_percent": 75,
+                "current_interval_status": 1,
+                "current_weekly_remaining_percent": 50,
+                "current_weekly_status": 1,
+            },
+        ]
+    )
     usage = MiniMaxAdapter.parse_usage(response)
     metrics = metrics_by_label(usage)
 
@@ -57,13 +75,30 @@ def test_parser_uses_general_without_aggregating_other_resource_groups():
 
 
 def test_parser_handles_exhausted_and_unlimited_statuses():
-    exhausted = MiniMaxAdapter.parse_usage(current_response([{
-        "model_name": "general", "current_interval_remaining_percent": 0, "current_interval_status": 2,
-    }]))
-    unlimited = MiniMaxAdapter.parse_usage(current_response([{
-        "model_name": "general", "current_interval_total_count": 0, "current_interval_usage_count": 0,
-        "current_interval_remaining_percent": 0, "current_interval_status": 3,
-    }]))
+    exhausted = MiniMaxAdapter.parse_usage(
+        current_response(
+            [
+                {
+                    "model_name": "general",
+                    "current_interval_remaining_percent": 0,
+                    "current_interval_status": 2,
+                }
+            ]
+        )
+    )
+    unlimited = MiniMaxAdapter.parse_usage(
+        current_response(
+            [
+                {
+                    "model_name": "general",
+                    "current_interval_total_count": 0,
+                    "current_interval_usage_count": 0,
+                    "current_interval_remaining_percent": 0,
+                    "current_interval_status": 3,
+                }
+            ]
+        )
+    )
 
     assert exhausted.status == "degraded"
     assert metrics_by_label(exhausted)["exhausted"].value is True
@@ -80,9 +115,16 @@ def test_parser_handles_exhausted_and_unlimited_statuses():
 
 
 def test_parser_tolerates_optional_fields_and_unknown_resource_group():
-    usage = MiniMaxAdapter.parse_usage(current_response([{
-        "model_name": "future-resource", "current_interval_remaining_percent": 45,
-    }]))
+    usage = MiniMaxAdapter.parse_usage(
+        current_response(
+            [
+                {
+                    "model_name": "future-resource",
+                    "current_interval_remaining_percent": 45,
+                }
+            ]
+        )
+    )
     metrics = metrics_by_label(usage)
 
     assert usage.status == "healthy"
@@ -113,7 +155,10 @@ async def test_fetch_classifies_http_authentication_and_rate_limits(monkeypatch,
         return httpx.Response(status_code, request=request, json={"message": "not authorized"})
 
     original = httpx.AsyncClient
-    monkeypatch.setattr("app.providers.minimax.httpx.AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    monkeypatch.setattr(
+        "app.providers.minimax.httpx.AsyncClient",
+        lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs),
+    )
     with pytest.raises(ProviderError) as error:
         await MiniMaxAdapter("subscription-key").fetch_usage()
     assert error.value.category == category
@@ -125,7 +170,10 @@ async def test_fetch_rejects_malformed_json(monkeypatch):
         return httpx.Response(200, request=request, content=b"not json", headers={"content-type": "application/json"})
 
     original = httpx.AsyncClient
-    monkeypatch.setattr("app.providers.minimax.httpx.AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs))
+    monkeypatch.setattr(
+        "app.providers.minimax.httpx.AsyncClient",
+        lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs),
+    )
     with pytest.raises(ProviderError) as error:
         await MiniMaxAdapter("subscription-key").fetch_usage()
     assert error.value.category == INVALID_RESPONSE

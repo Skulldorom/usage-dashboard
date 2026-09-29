@@ -68,7 +68,10 @@ MAX_BODY_LENGTH = 1024
 # or error messages.
 _SECRET_PATTERNS: list[re.Pattern] = [
     re.compile(r"(?i)\b(bearer\s+)[a-z0-9._~+/=-]+", re.IGNORECASE),
-    re.compile(r"(?i)\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth[_-]?token)\b\s*[:=]\s*[\"']?[a-z0-9._~+/=-]{6,}", re.IGNORECASE),
+    re.compile(
+        r"(?i)\b(access[_-]?token|refresh[_-]?token|id[_-]?token|api[_-]?key|apikey|auth[_-]?token)\b\s*[:=]\s*[\"']?[a-z0-9._~+/=-]{6,}",
+        re.IGNORECASE,
+    ),
     re.compile(r"(?i)(sk-[a-z0-9]{8,})"),
     re.compile(r"(?i)(sk-ant-[a-z0-9]{8,})"),
     re.compile(r"(?i)(fc-[a-z0-9]{8,})"),
@@ -284,7 +287,12 @@ def classify_exception(exc: BaseException, *, stage: str | None = None) -> Provi
         return ProviderError(category=NETWORK, message="Network error reaching provider", stage=stage, retryable=True)
 
     if isinstance(exc, json.JSONDecodeError):
-        return ProviderError(category=PARSE_ERROR, message="Provider returned malformed JSON", stage=stage or "parse_response", retryable=False)
+        return ProviderError(
+            category=PARSE_ERROR,
+            message="Provider returned malformed JSON",
+            stage=stage or "parse_response",
+            retryable=False,
+        )
 
     # Fallback: treat as an unknown provider error with a sanitized message.
     return ProviderError(category=UNKNOWN, message=str(exc) or "Provider request failed", stage=stage, retryable=None)

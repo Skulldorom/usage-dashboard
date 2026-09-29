@@ -3,6 +3,7 @@ import httpx
 from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
+
 class OpenRouterAdapter(ProviderAdapter):
     id = "openrouter"
     name = "OpenRouter"
@@ -19,10 +20,14 @@ class OpenRouterAdapter(ProviderAdapter):
         supported=True,
         native_history=False,
         metrics={
-            "limit_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing", capacity_metric="limit", utilization=True),
+            "limit_remaining": metric_spec(
+                type_="remaining", unit="credits", direction="decreasing", capacity_metric="limit", utilization=True
+            ),
             "usage_daily": metric_spec(type_="counter", unit="credits", direction="increasing", window="24h"),
             "usage_weekly": metric_spec(type_="counter", unit="credits", direction="increasing", window="7d"),
-            "usage_monthly": metric_spec(type_="counter", unit="credits", direction="increasing", window="30d", overview=True),
+            "usage_monthly": metric_spec(
+                type_="counter", unit="credits", direction="increasing", window="30d", overview=True
+            ),
             "limit": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
         },
     )

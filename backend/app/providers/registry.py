@@ -22,11 +22,13 @@ ADAPTERS: dict[str, type[ProviderAdapter]] = {
     CustomHTTPAdapter.id: CustomHTTPAdapter,
 }
 
+
 def get_adapter_class(provider: str) -> type[ProviderAdapter]:
     try:
         return ADAPTERS[provider]
     except KeyError as exc:
         raise ValueError(f"Unsupported provider: {provider}") from exc
+
 
 def list_providers() -> list[dict]:
     return [

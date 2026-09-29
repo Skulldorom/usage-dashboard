@@ -3,15 +3,19 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+
 class AuthStatusRead(BaseModel):
     is_configured: bool
     setup_required: bool
 
+
 class AuthPasswordRequest(BaseModel):
     password: str = Field(..., min_length=12, max_length=1024)
 
+
 class AuthCodePasswordRequest(AuthPasswordRequest):
     code: str = Field(..., min_length=1, max_length=128)
+
 
 class AuthTokenRead(BaseModel):
     access_token: str
@@ -19,8 +23,8 @@ class AuthTokenRead(BaseModel):
     expires_at: datetime
 
 
-
 API_TOKEN_SCOPES = {"usage:read", "poll:write", "configs:read", "history:read", "analytics:read", "datasources:read"}
+
 
 class ApiTokenCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
@@ -46,6 +50,7 @@ class ApiTokenCreate(BaseModel):
             raise ValueError("At least one scope is required")
         return scopes
 
+
 class ApiTokenRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -57,8 +62,10 @@ class ApiTokenRead(BaseModel):
     last_used_at: datetime | None
     created_at: datetime
 
+
 class ApiTokenCreated(ApiTokenRead):
     token: str
+
 
 class ProviderAlertMetric(BaseModel):
     metric: str
@@ -66,9 +73,11 @@ class ProviderAlertMetric(BaseModel):
     unit: str | None = None
     direction: Literal["increasing", "decreasing"] = "increasing"
 
+
 class ProviderIcon(BaseModel):
     viewBox: str
     path: str
+
 
 class ProviderInfo(BaseModel):
     id: str
@@ -77,6 +86,7 @@ class ProviderInfo(BaseModel):
     metrics: list[str]
     alert_metrics: list[ProviderAlertMetric] = Field(default_factory=list)
     icon: ProviderIcon | None = None
+
 
 class ThresholdRule(BaseModel):
     metric: str = Field(..., min_length=1, max_length=120)
@@ -98,6 +108,7 @@ class ThresholdRule(BaseModel):
         if self.warning is None and self.critical is None and self.exhausted is None:
             raise ValueError("At least one threshold (warning, critical, or exhausted) is required")
         return self
+
 
 PRICING_MODELS = {"subscription", "payg", "free"}
 BILLING_CADENCES = {"monthly", "yearly"}
@@ -149,6 +160,7 @@ class ProviderConfigCreate(ProviderBillingMixin):
             return stripped or None
         return value
 
+
 class ProviderConfigUpdate(ProviderBillingMixin):
     pricing_model: Literal["subscription", "payg", "free"] | None = None
     subscription_currency: str | None = Field(default=None, min_length=3, max_length=3)
@@ -172,6 +184,7 @@ class ProviderConfigUpdate(ProviderBillingMixin):
     def has_update_for(self, field_name: str) -> bool:
         return field_name in self.model_fields_set
 
+
 class ProviderConfigRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -191,6 +204,7 @@ class ProviderConfigRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     api_key_masked: str = "••••••••"
+
 
 class ProviderConfigOrderUpdate(BaseModel):
     config_ids: list[int] = Field(..., min_length=1)
@@ -253,6 +267,7 @@ class CodexBrowserCompleteRead(BaseModel):
     error: str | None = None
     config: ProviderConfigRead | None = None
 
+
 class CodexBrowserStatusRead(BaseModel):
     status: str
     error: str | None = None
@@ -266,6 +281,7 @@ class UsageMetric(BaseModel):
     unit: str | None = None
     maximum: float | int | None = None
 
+
 class UsageSnapshotRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -278,11 +294,13 @@ class UsageSnapshotRead(BaseModel):
     error: str | None
     checked_at: datetime
 
+
 class ProviderUsageRead(BaseModel):
     status: str
     summary: str
     metrics: list[UsageMetric]
     raw: dict
+
 
 class AlertStateRead(BaseModel):
     metric: str
@@ -292,6 +310,7 @@ class AlertStateRead(BaseModel):
     direction: str
     alert_state: str
     thresholds: dict[str, float | None]
+
 
 class ProviderHealth(BaseModel):
     status: str
@@ -313,12 +332,14 @@ class DashboardConfigUsage(BaseModel):
     alerts: list[AlertStateRead] = Field(default_factory=list)
     alert_state: str = "normal"
 
+
 class HomepageProviderRow(BaseModel):
     provider: str
     config_id: int
     label: str
     value: str
     status: str
+
 
 class HomepagePayload(BaseModel):
     configured_providers: int

@@ -108,9 +108,7 @@ class ParallelProbeAdapter(FakeAdapter):
 
 @pytest.mark.asyncio
 async def test_config_crud_and_homepage():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         providers = await client.get("/api/v1/providers")
         assert providers.status_code == 200
         auth = {"Authorization": "Bearer test-admin-session-token-123"}
@@ -134,9 +132,7 @@ async def test_config_crud_and_homepage():
 
 @pytest.mark.asyncio
 async def test_providers_include_icons():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/providers")
     assert response.status_code == 200
     by_id = {provider["id"]: provider for provider in response.json()}
@@ -156,9 +152,7 @@ async def test_providers_include_icons():
 @pytest.mark.asyncio
 async def test_create_config_auto_fills_blank_labels():
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post(
             "/api/v1/configs",
             json={"provider": "deepseek", "label": "", "api_key": "sk-test"},
@@ -182,17 +176,11 @@ async def test_poll_status_reports_auto_poll_schedule(monkeypatch):
 
     monkeypatch.setattr(settings, "auto_poll_enabled", True)
     monkeypatch.setattr(settings, "auto_poll_interval_minutes", 15)
-    monkeypatch.setattr(
-        routes, "_last_auto_polled_at", datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
-    )
-    monkeypatch.setattr(
-        routes, "_next_auto_poll_at", datetime(2026, 8, 14, 12, 15, tzinfo=UTC)
-    )
+    monkeypatch.setattr(routes, "_last_auto_polled_at", datetime(2026, 8, 14, 12, 0, tzinfo=UTC))
+    monkeypatch.setattr(routes, "_next_auto_poll_at", datetime(2026, 8, 14, 12, 15, tzinfo=UTC))
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/poll/status", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -205,9 +193,7 @@ async def test_poll_status_reports_auto_poll_schedule(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_patch_config_base_url_null_clears_override(sqlite_db):
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         auth = {"Authorization": "Bearer test-admin-session-token-123"}
         created = await client.post(
             "/api/v1/configs",
@@ -222,25 +208,19 @@ async def test_patch_config_base_url_null_clears_override(sqlite_db):
         assert created.status_code == 201, created.text
         config_id = created.json()["id"]
 
-        updated = await client.patch(
-            f"/api/v1/configs/{config_id}", json={"base_url": None}, headers=auth
-        )
+        updated = await client.patch(f"/api/v1/configs/{config_id}", json={"base_url": None}, headers=auth)
         assert updated.status_code == 200, updated.text
         assert updated.json()["base_url"] is None
 
     async with sqlite_db() as session:
-        db_base_url = await session.scalar(
-            select(ProviderConfig.base_url).where(ProviderConfig.id == config_id)
-        )
+        db_base_url = await session.scalar(select(ProviderConfig.base_url).where(ProviderConfig.id == config_id))
     assert db_base_url is None
 
 
 @pytest.mark.asyncio
 async def test_patch_config_rotates_secret_without_exposing_token(sqlite_db):
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
             json={"provider": "deepseek", "label": "main", "api_key": "old-secret-token"},
@@ -267,34 +247,25 @@ async def test_patch_config_rotates_secret_without_exposing_token(sqlite_db):
         assert "new-secret-token" not in listed.text
 
     async with sqlite_db() as session:
-        encrypted = await session.scalar(
-            select(ProviderConfig.encrypted_api_key).where(ProviderConfig.id == config_id)
-        )
+        encrypted = await session.scalar(select(ProviderConfig.encrypted_api_key).where(ProviderConfig.id == config_id))
     from app.api import routes
 
     crypto = routes._crypto()
     assert crypto.decrypt(encrypted) == "new-secret-token"
 
 
-
 def test_admin_token_env_is_ignored_by_settings():
-    configured = Settings(
-        ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="legacy-static-admin-token-123"
-    )
+    configured = Settings(ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="legacy-static-admin-token-123")
     assert not hasattr(configured, "admin_token")
 
 
 @pytest.mark.asyncio
 async def test_protected_routes_require_admin_auth():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         unauthorized = await client.get("/api/v1/configs")
         assert unauthorized.status_code == 401
 
-        bad_token = await client.get(
-            "/api/v1/usage", headers={"Authorization": "Bearer wrong-token"}
-        )
+        bad_token = await client.get("/api/v1/usage", headers={"Authorization": "Bearer wrong-token"})
         assert bad_token.status_code == 401
 
         homepage_without_auth = await client.get("/api/v1/homepage")
@@ -309,9 +280,7 @@ async def test_protected_routes_require_admin_auth():
 
 @pytest.mark.asyncio
 async def test_static_admin_token_is_not_accepted():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             "/api/v1/configs",
             headers={"Authorization": "Bearer legacy-static-admin-token-123"},
@@ -323,9 +292,7 @@ async def test_static_admin_token_is_not_accepted():
 @pytest.mark.asyncio
 async def test_homepage_allows_usage_read_api_token_from_untrusted_host():
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={"name": "Homepage", "scopes": ["usage:read"]},
@@ -342,9 +309,7 @@ async def test_homepage_allows_usage_read_api_token_from_untrusted_host():
 @pytest.mark.asyncio
 async def test_homepage_rejects_api_token_without_usage_read_scope():
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={"name": "History", "scopes": ["history:read"]},
@@ -360,28 +325,18 @@ async def test_homepage_rejects_api_token_without_usage_read_scope():
 
 @pytest.mark.asyncio
 async def test_homepage_allows_configured_hosts_without_admin_auth(monkeypatch):
-    monkeypatch.setattr(
-        settings, "homepage_allowed_hosts_raw", "usage.example.com,status.local"
-    )
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://usage.example.com"
-    ) as client:
+    monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com,status.local")
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://usage.example.com") as client:
         whitelisted = await client.get("/api/v1/homepage")
         assert whitelisted.status_code == 200, whitelisted.text
 
-        with_port = await client.get(
-            "/api/v1/homepage", headers={"host": "status.local:3000"}
-        )
+        with_port = await client.get("/api/v1/homepage", headers={"host": "status.local:3000"})
         assert with_port.status_code == 200, with_port.text
 
-        not_whitelisted = await client.get(
-            "/api/v1/homepage", headers={"host": "private.example.com"}
-        )
+        not_whitelisted = await client.get("/api/v1/homepage", headers={"host": "private.example.com"})
         assert not_whitelisted.status_code == 401
 
-        configs = await client.get(
-            "/api/v1/configs", headers={"host": "usage.example.com"}
-        )
+        configs = await client.get("/api/v1/configs", headers={"host": "usage.example.com"})
         assert configs.status_code == 401
 
 
@@ -460,9 +415,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
                     provider="deepseek",
                     status="healthy",
                     summary="should not render",
-                    metrics=[
-                        {"label": "credits_remaining", "value": 999, "unit": "credits"}
-                    ],
+                    metrics=[{"label": "credits_remaining", "value": 999, "unit": "credits"}],
                     raw={},
                     checked_at=now,
                 ),
@@ -471,9 +424,7 @@ async def test_homepage_provider_list_has_enabled_rows_with_preferred_usage(sqli
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/homepage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -514,10 +465,7 @@ def test_homepage_usage_text_shows_all_opencode_go_quota_windows():
         {"label": "monthly_remaining_percent", "value": 48, "unit": "%"},
     ]
 
-    assert (
-        _homepage_usage_text(metrics, "generic summary", "opencode-go")
-        == "Session 91% • Weekly 73.5% • Monthly 48%"
-    )
+    assert _homepage_usage_text(metrics, "generic summary", "opencode-go") == "Session 91% • Weekly 73.5% • Monthly 48%"
 
 
 def test_homepage_usage_text_shows_minimax_session_and_weekly_quota():
@@ -538,10 +486,7 @@ def test_homepage_usage_text_omits_unavailable_quota_windows():
         {"label": "weekly_remaining_percent", "value": 64, "unit": "%"},
     ]
 
-    assert (
-        _homepage_usage_text(metrics, "generic summary", "opencode-go")
-        == "Weekly 64%"
-    )
+    assert _homepage_usage_text(metrics, "generic summary", "opencode-go") == "Weekly 64%"
 
 
 def test_homepage_usage_text_omits_unavailable_codex_session_window():
@@ -551,10 +496,7 @@ def test_homepage_usage_text_omits_unavailable_codex_session_window():
         {"label": "weekly_remaining_percent", "value": 64, "unit": "%"},
     ]
 
-    assert (
-        _homepage_usage_text(metrics, "generic summary", "codex")
-        == "Weekly 64%"
-    )
+    assert _homepage_usage_text(metrics, "generic summary", "codex") == "Weekly 64%"
 
 
 @pytest.mark.asyncio
@@ -622,9 +564,7 @@ async def test_config_order_and_visibility_controls_dashboard_and_homepage(sqlit
         ids = {"first": first.id, "second": second.id, "third": third.id}
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         reordered = await client.patch(
             "/api/v1/configs/order",
             json={"config_ids": [ids["third"], ids["first"], ids["second"]]},
@@ -695,9 +635,7 @@ async def test_homepage_uses_canonical_name_without_repeating_single_config_labe
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/homepage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -711,18 +649,14 @@ async def test_missing_auth_returns_401_but_whitelisted_homepage_still_loads(
     monkeypatch,
 ):
     monkeypatch.setattr(settings, "homepage_allowed_hosts_raw", "usage.example.com")
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://usage.example.com"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://usage.example.com") as client:
         homepage = await client.get("/api/v1/homepage")
         assert homepage.status_code == 200, homepage.text
 
         configs = await client.get("/api/v1/configs")
         assert configs.status_code == 401
 
-        homepage_from_other_host = await client.get(
-            "/api/v1/homepage", headers={"host": "admin.example.com"}
-        )
+        homepage_from_other_host = await client.get("/api/v1/homepage", headers={"host": "admin.example.com"})
         assert homepage_from_other_host.status_code == 401
 
 
@@ -732,9 +666,7 @@ async def test_config_history_returns_recent_snapshots_in_ascending_order():
     engine = create_async_engine(TEST_DATABASE_URL)
     Session = async_sessionmaker(engine, expire_on_commit=False)
     async with Session() as session:
-        config = ProviderConfig(
-            provider="firecrawl", label="main", encrypted_api_key="encrypted"
-        )
+        config = ProviderConfig(provider="firecrawl", label="main", encrypted_api_key="encrypted")
         session.add(config)
         await session.flush()
         snapshots = [
@@ -772,9 +704,7 @@ async def test_config_history_returns_recent_snapshots_in_ascending_order():
     await engine.dispose()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get(
             f"/api/v1/configs/{config_id}/history",
             params={"hours": 24, "limit": 1},
@@ -797,9 +727,7 @@ async def test_config_history_returns_recent_snapshots_in_ascending_order():
 
 @pytest.mark.asyncio
 async def test_config_history_requires_admin_auth():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         unauthorized = await client.get("/api/v1/configs/1/history")
         assert unauthorized.status_code == 401
 
@@ -808,9 +736,7 @@ async def test_config_history_requires_admin_auth():
 async def test_config_test_endpoint_returns_usage_without_persisting(monkeypatch):
     monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         tested = await client.post(
             "/api/v1/configs/test",
             json={"provider": "fake", "label": "scratch", "api_key": "good-key"},
@@ -849,9 +775,7 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
     ).to_secret_json()
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         leaked_extra = await client.post(
             "/api/v1/configs/test",
             json={
@@ -882,14 +806,8 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
         assert payload["extra"] == {"note": "safe metadata"}
 
     async with sqlite_db() as session:
-        config = (
-            await session.execute(
-                select(ProviderConfig).where(ProviderConfig.id == payload["id"])
-            )
-        ).scalar_one()
-        stored_secret = CryptoService(settings.encryption_key).decrypt(
-            config.encrypted_api_key
-        )
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.id == payload["id"]))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
         assert json.loads(stored_secret)["refresh_token"] == "refresh-token"
         assert config.extra == {"note": "safe metadata"}
 
@@ -924,9 +842,7 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
             config = await session.get(ProviderConfig, payload["id"])
             snapshot = await routes._poll_one(config, session)
             assert snapshot.summary == "refreshed"
-            stored_secret = CryptoService(settings.encryption_key).decrypt(
-                config.encrypted_api_key
-            )
+            stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
             assert json.loads(stored_secret)["refresh_token"] == "new-refresh-token"
             assert "refresh_token" not in config.extra
     finally:
@@ -934,9 +850,7 @@ async def test_codex_provider_config_keeps_oauth_tokens_encrypted(sqlite_db):
 
 
 @pytest.mark.asyncio
-async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encrypted_provider(
-    sqlite_db, monkeypatch
-):
+async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encrypted_provider(sqlite_db, monkeypatch):
     from app.api import routes
     from app.core.crypto import CryptoService
     from app.providers.codex import CodexCredentials
@@ -946,9 +860,7 @@ async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encry
         device_code: str = "server-only-device-code"
         user_code: str = "ABCD-1234"
         verification_uri: str = "https://auth.openai.com/codex/device"
-        verification_uri_complete: str | None = (
-            "https://auth.openai.com/codex/device?user_code=ABCD-1234"
-        )
+        verification_uri_complete: str | None = "https://auth.openai.com/codex/device?user_code=ABCD-1234"
         expires_at: datetime = datetime.now(UTC) + timedelta(minutes=15)
         interval_seconds: int = 5
 
@@ -974,22 +886,16 @@ async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encry
         "start_device_authorization",
         fake_start_device_authorization,
     )
-    monkeypatch.setattr(
-        routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization
-    )
+    monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
         assert started.status_code == 200, started.text
         start_payload = started.json()
         assert start_payload["flow_id"]
         assert start_payload["user_code"] == "ABCD-1234"
-        assert (
-            start_payload["verification_uri"] == "https://auth.openai.com/codex/device"
-        )
+        assert start_payload["verification_uri"] == "https://auth.openai.com/codex/device"
         assert "device_code" not in started.text
         assert "access_token" not in started.text
         assert "refresh_token" not in started.text
@@ -1008,14 +914,8 @@ async def test_codex_device_oauth_flow_returns_only_public_code_then_saves_encry
         assert "refresh_token" not in completed.text
 
     async with sqlite_db() as session:
-        config = (
-            await session.execute(
-                select(ProviderConfig).where(ProviderConfig.provider == "codex")
-            )
-        ).scalar_one()
-        stored_secret = CryptoService(settings.encryption_key).decrypt(
-            config.encrypted_api_key
-        )
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.provider == "codex"))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
         assert json.loads(stored_secret)["refresh_token"] == "device-refresh-token"
         assert config.extra == {"auth_method": "device_code"}
 
@@ -1042,19 +942,13 @@ async def test_codex_device_oauth_poll_hides_raw_oauth_errors(monkeypatch):
         "start_device_authorization",
         fake_start_device_authorization,
     )
-    monkeypatch.setattr(
-        routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization
-    )
+    monkeypatch.setattr(routes.codex_oauth, "poll_device_authorization", fake_poll_device_authorization)
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/device/start", headers=auth)
         assert started.status_code == 200, started.text
-        polled = await client.post(
-            f"/api/v1/codex/oauth/device/{started.json()['flow_id']}/poll", headers=auth
-        )
+        polled = await client.post(f"/api/v1/codex/oauth/device/{started.json()['flow_id']}/poll", headers=auth)
 
     assert polled.status_code == 200, polled.text
     assert polled.json() == {
@@ -1067,9 +961,7 @@ async def test_codex_device_oauth_poll_hides_raw_oauth_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_encrypted_provider(
-    sqlite_db, monkeypatch
-):
+async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_encrypted_provider(sqlite_db, monkeypatch):
     from app.api import routes
     from app.core.crypto import CryptoService
     from app.providers.codex import CodexCredentials
@@ -1085,21 +977,15 @@ async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_enc
             account_id="acct_browser",
         ).to_secret_json()
 
-    monkeypatch.setattr(
-        routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange
-    )
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/browser/start", json={"label": "codex-browser"}, headers=auth)
         assert started.status_code == 200, started.text
         start_payload = started.json()
         assert start_payload["flow_id"]
-        assert start_payload["authorization_url"].startswith(
-            "https://auth.openai.com/oauth/authorize?"
-        )
+        assert start_payload["authorization_url"].startswith("https://auth.openai.com/oauth/authorize?")
         assert "code_challenge=" in start_payload["authorization_url"]
         assert "code_verifier" not in started.text
         assert "browser-access-token" not in started.text
@@ -1122,22 +1008,14 @@ async def test_codex_browser_oauth_returns_only_authorization_url_then_saves_enc
         assert "browser-refresh-token" not in completed.text
 
     async with sqlite_db() as session:
-        config = (
-            await session.execute(
-                select(ProviderConfig).where(ProviderConfig.provider == "codex")
-            )
-        ).scalar_one()
-        stored_secret = CryptoService(settings.encryption_key).decrypt(
-            config.encrypted_api_key
-        )
+        config = (await session.execute(select(ProviderConfig).where(ProviderConfig.provider == "codex"))).scalar_one()
+        stored_secret = CryptoService(settings.encryption_key).decrypt(config.encrypted_api_key)
         assert json.loads(stored_secret)["refresh_token"] == "browser-refresh-token"
         assert config.extra == {"auth_method": "browser_pkce"}
 
 
 @pytest.mark.asyncio
-async def test_codex_browser_oauth_can_replace_existing_provider_secret(
-    sqlite_db, monkeypatch
-):
+async def test_codex_browser_oauth_can_replace_existing_provider_secret(sqlite_db, monkeypatch):
     from app.api import routes
     from app.core.crypto import CryptoService
     from app.providers.codex import CodexCredentials
@@ -1161,14 +1039,10 @@ async def test_codex_browser_oauth_can_replace_existing_provider_secret(
         assert timeout == settings.request_timeout_seconds
         return new_secret
 
-    monkeypatch.setattr(
-        routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange
-    )
+    monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
             json={"provider": "codex", "label": "codex", "api_key": old_secret},
@@ -1203,14 +1077,10 @@ async def test_codex_browser_oauth_can_replace_existing_provider_secret(
 
     async with sqlite_db() as session:
         configs = (
-            await session.execute(
-                select(ProviderConfig).where(ProviderConfig.provider == "codex")
-            )
-        ).scalars().all()
-        assert len(configs) == 1
-        stored_secret = CryptoService(settings.encryption_key).decrypt(
-            configs[0].encrypted_api_key
+            (await session.execute(select(ProviderConfig).where(ProviderConfig.provider == "codex"))).scalars().all()
         )
+        assert len(configs) == 1
+        stored_secret = CryptoService(settings.encryption_key).decrypt(configs[0].encrypted_api_key)
         assert json.loads(stored_secret)["refresh_token"] == "new-browser-refresh-token"
         assert configs[0].extra == {"auth_method": "browser_pkce"}
 
@@ -1237,9 +1107,7 @@ async def test_codex_device_oauth_start_403_explains_device_auth_setting(monkeyp
     monkeypatch.setattr(
         codex_oauth.httpx,
         "AsyncClient",
-        lambda **kwargs: original_async_client(
-            transport=httpx.MockTransport(handler), **kwargs
-        ),
+        lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
     )
 
     with pytest.raises(ValueError, match="Enable device code authentication for Codex"):
@@ -1258,14 +1126,10 @@ async def test_codex_device_oauth_poll_403_explains_device_auth_setting(monkeypa
     monkeypatch.setattr(
         codex_oauth.httpx,
         "AsyncClient",
-        lambda **kwargs: original_async_client(
-            transport=httpx.MockTransport(handler), **kwargs
-        ),
+        lambda **kwargs: original_async_client(transport=httpx.MockTransport(handler), **kwargs),
     )
 
-    result = await codex_oauth.poll_device_authorization(
-        "server-only-device-code", timeout=1
-    )
+    result = await codex_oauth.poll_device_authorization("server-only-device-code", timeout=1)
 
     assert result["status"] == "failed"
     assert "Enable device code authentication for Codex" in result["error"]
@@ -1273,9 +1137,7 @@ async def test_codex_device_oauth_poll_403_explains_device_auth_setting(monkeypa
 
 
 async def providers_payload():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/providers")
     assert response.status_code == 200, response.text
     return response.json()
@@ -1287,9 +1149,7 @@ async def test_poll_all_polls_enabled_configs_in_parallel(monkeypatch):
     ParallelProbeAdapter.active = 0
     ParallelProbeAdapter.max_active = 0
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         for idx in range(3):
             created = await client.post(
                 "/api/v1/configs",
@@ -1320,9 +1180,7 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(
     monkeypatch.setitem(ADAPTERS, FakeAdapter.id, FakeAdapter)
     monkeypatch.setattr(settings, "snapshot_retention_days", 0)
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         first = await client.post(
             "/api/v1/configs",
             json={"provider": "fake", "label": "polled", "api_key": "good-key"},
@@ -1370,17 +1228,13 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(
         assert polled.status_code == 200, polled.text
 
         async with Session() as session:
-            snapshot_count = await session.scalar(
-                select(func.count()).select_from(UsageSnapshot)
-            )
+            snapshot_count = await session.scalar(select(func.count()).select_from(UsageSnapshot))
         await engine.dispose()
         assert snapshot_count == 2
 
         usage = await client.get("/api/v1/usage", headers=auth)
         assert usage.status_code == 200, usage.text
-        latest_by_label = {
-            item["config"]["label"]: item["latest"] for item in usage.json()
-        }
+        latest_by_label = {item["config"]["label"]: item["latest"] for item in usage.json()}
         assert latest_by_label["polled"]["summary"] == "good-key ok"
         assert latest_by_label["old-only"]["summary"] == "old only"
 
@@ -1388,9 +1242,7 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(
 @pytest.mark.asyncio
 async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={
@@ -1436,9 +1288,7 @@ async def test_api_tokens_are_hashed_scoped_revocable_and_one_time(sqlite_db):
         denied_history = await client.get("/api/v1/configs/1/history", headers=scoped)
         assert denied_history.status_code == 403
 
-        revoked = await client.post(
-            f"/api/v1/api-tokens/{token_id}/revoke", headers=admin
-        )
+        revoked = await client.post(f"/api/v1/api-tokens/{token_id}/revoke", headers=admin)
         assert revoked.status_code == 204, revoked.text
 
         relisted = await client.get("/api/v1/api-tokens", headers=admin)
@@ -1467,16 +1317,12 @@ async def test_previously_revoked_api_tokens_can_be_deleted(sqlite_db):
         await session.commit()
         token_id = token.id
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         listed = await client.get("/api/v1/api-tokens", headers=admin)
         assert listed.status_code == 200, listed.text
         assert listed.json()[0]["revoked_at"] is not None
 
-        deleted = await client.post(
-            f"/api/v1/api-tokens/{token_id}/revoke", headers=admin
-        )
+        deleted = await client.post(f"/api/v1/api-tokens/{token_id}/revoke", headers=admin)
         assert deleted.status_code == 204, deleted.text
 
         relisted = await client.get("/api/v1/api-tokens", headers=admin)
@@ -1490,9 +1336,7 @@ async def test_previously_revoked_api_tokens_can_be_deleted(sqlite_db):
 @pytest.mark.asyncio
 async def test_api_token_scope_enforcement_and_admin_sessions(sqlite_db):
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={"name": "History only", "scopes": ["history:read"]},
@@ -1505,9 +1349,7 @@ async def test_api_token_scope_enforcement_and_admin_sessions(sqlite_db):
         assert (await client.get("/api/v1/usage", headers=scoped)).status_code == 403
         assert (await client.post("/api/v1/poll", headers=scoped)).status_code == 403
         assert (await client.get("/api/v1/configs", headers=scoped)).status_code == 403
-        assert (
-            await client.get("/api/v1/configs/999/history", headers=scoped)
-        ).status_code == 404
+        assert (await client.get("/api/v1/configs/999/history", headers=scoped)).status_code == 404
 
         admin_usage = await client.get("/api/v1/usage", headers=admin)
         assert admin_usage.status_code == 200, admin_usage.text
@@ -1523,9 +1365,7 @@ async def test_api_token_scope_enforcement_and_admin_sessions(sqlite_db):
 async def test_expired_api_token_is_rejected():
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
     expired_at = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={
@@ -1538,18 +1378,14 @@ async def test_expired_api_token_is_rejected():
         assert created.status_code == 201, created.text
         token = created.json()["token"]
 
-        response = await client.get(
-            "/api/v1/usage", headers={"Authorization": f"Bearer {token}"}
-        )
+        response = await client.get("/api/v1/usage", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 401
 
 
 @pytest.mark.asyncio
 async def test_api_token_management_rejects_non_admin_tokens():
     admin = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/api-tokens",
             json={"name": "Usage only", "scopes": ["usage:read"]},
@@ -1601,9 +1437,7 @@ async def test_usage_includes_alert_state_from_thresholds(sqlite_db):
         )
         await session.commit()
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -1627,9 +1461,7 @@ async def test_usage_without_thresholds_stays_normal(sqlite_db):
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
     now = datetime.now(UTC)
     async with sqlite_db() as session:
-        config = ProviderConfig(
-            provider="deepseek", label="main", encrypted_api_key="encrypted"
-        )
+        config = ProviderConfig(provider="deepseek", label="main", encrypted_api_key="encrypted")
         session.add(config)
         await session.flush()
         session.add(
@@ -1645,9 +1477,7 @@ async def test_usage_without_thresholds_stays_normal(sqlite_db):
         )
         await session.commit()
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -1659,9 +1489,7 @@ async def test_usage_without_thresholds_stays_normal(sqlite_db):
 @pytest.mark.asyncio
 async def test_create_and_update_config_persist_thresholds(sqlite_db):
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
             json={
@@ -1705,18 +1533,14 @@ async def test_create_and_update_config_persist_thresholds(sqlite_db):
 @pytest.mark.asyncio
 async def test_threshold_rule_requires_at_least_one_value():
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         created = await client.post(
             "/api/v1/configs",
             json={
                 "provider": "firecrawl",
                 "label": "main",
                 "api_key": "sk-test",
-                "alert_thresholds": [
-                    {"metric": "usage_percent", "direction": "increasing"}
-                ],
+                "alert_thresholds": [{"metric": "usage_percent", "direction": "increasing"}],
             },
             headers=auth,
         )
@@ -1725,38 +1549,31 @@ async def test_threshold_rule_requires_at_least_one_value():
 
 @pytest.mark.asyncio
 async def test_providers_endpoint_exposes_alert_metrics_catalog():
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/providers")
 
     assert response.status_code == 200, response.text
     by_id = {provider["id"]: provider for provider in response.json()}
 
     minimax = by_id["minimax"]
-    assert {metric["metric"] for metric in minimax["alert_metrics"]} == {"five_hour_used_percent", "weekly_used_percent"}
+    assert {metric["metric"] for metric in minimax["alert_metrics"]} == {
+        "five_hour_used_percent",
+        "weekly_used_percent",
+    }
 
     codex = by_id["codex"]["alert_metrics"]
     assert any(
-        m["metric"] == "session_remaining_percent"
-        and m["direction"] == "decreasing"
-        and m["unit"] == "%"
+        m["metric"] == "session_remaining_percent" and m["direction"] == "decreasing" and m["unit"] == "%"
         for m in codex
     )
 
     deepseek = by_id["deepseek"]["alert_metrics"]
     assert any(
-        m["metric"] == "total_balance"
-        and m["direction"] == "decreasing"
-        and m["unit"] == "USD"
-        for m in deepseek
+        m["metric"] == "total_balance" and m["direction"] == "decreasing" and m["unit"] == "USD" for m in deepseek
     )
 
     firecrawl = by_id["firecrawl"]["alert_metrics"]
-    assert any(
-        m["metric"] == "usage_percent" and m["direction"] == "increasing"
-        for m in firecrawl
-    )
+    assert any(m["metric"] == "usage_percent" and m["direction"] == "increasing" for m in firecrawl)
 
     # Custom HTTP has no static metric catalog - the frontend falls back to free-text entry.
     assert by_id["custom_http"]["alert_metrics"] == []
@@ -1766,9 +1583,7 @@ async def test_providers_endpoint_exposes_alert_metrics_catalog():
 async def test_usage_health_stale_preserves_last_good(sqlite_db):
     now = datetime.now(UTC)
     async with sqlite_db() as session:
-        config = ProviderConfig(
-            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
-        )
+        config = ProviderConfig(provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True)
         session.add(config)
         await session.flush()
         session.add_all(
@@ -1797,9 +1612,7 @@ async def test_usage_health_stale_preserves_last_good(sqlite_db):
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -1819,9 +1632,7 @@ async def test_usage_health_stale_preserves_last_good(sqlite_db):
 async def test_usage_health_healthy_omits_last_good(sqlite_db):
     now = datetime.now(UTC)
     async with sqlite_db() as session:
-        config = ProviderConfig(
-            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
-        )
+        config = ProviderConfig(provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True)
         session.add(config)
         await session.flush()
         session.add(
@@ -1838,9 +1649,7 @@ async def test_usage_health_healthy_omits_last_good(sqlite_db):
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     item = response.json()[0]
@@ -1854,12 +1663,8 @@ async def test_usage_health_healthy_omits_last_good(sqlite_db):
 async def test_usage_health_never_connected_and_error_states(sqlite_db):
     now = datetime.now(UTC)
     async with sqlite_db() as session:
-        empty = ProviderConfig(
-            provider="fake", label="empty", encrypted_api_key="encrypted", is_enabled=True
-        )
-        failing = ProviderConfig(
-            provider="fake", label="failing", encrypted_api_key="encrypted", is_enabled=True
-        )
+        empty = ProviderConfig(provider="fake", label="empty", encrypted_api_key="encrypted", is_enabled=True)
+        failing = ProviderConfig(provider="fake", label="failing", encrypted_api_key="encrypted", is_enabled=True)
         session.add_all([empty, failing])
         await session.flush()
         session.add(
@@ -1877,9 +1682,7 @@ async def test_usage_health_never_connected_and_error_states(sqlite_db):
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     by_label = {item["config"]["label"]: item for item in response.json()}
@@ -1900,9 +1703,7 @@ async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
     """
     now = datetime.now(UTC)
     async with sqlite_db() as session:
-        config = ProviderConfig(
-            provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True
-        )
+        config = ProviderConfig(provider="fake", label="main", encrypted_api_key="encrypted", is_enabled=True)
         session.add(config)
         await session.flush()
         snapshots = [
@@ -1933,9 +1734,7 @@ async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
         await session.commit()
 
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/usage", headers=auth)
 
     assert response.status_code == 200, response.text
@@ -1944,6 +1743,7 @@ async def test_usage_health_is_not_bounded_by_history_window(sqlite_db):
     assert item["health"]["consecutive_failures"] == 250
     assert item["last_good"] is not None
     assert item["last_good"]["metrics"][0]["value"] == 42
+
 
 @pytest.mark.asyncio
 async def test_codex_browser_oauth_status_callback_completion_and_replay(sqlite_db, monkeypatch):
@@ -2004,6 +1804,7 @@ async def test_codex_browser_oauth_status_callback_completion_and_replay(sqlite_
         assert replay_ok is False
         assert "has finished" in replay_message
 
+
 @pytest.mark.asyncio
 async def test_codex_browser_callback_rejects_mismatched_flow_state(sqlite_db, monkeypatch):
     from app.api import routes
@@ -2026,6 +1827,7 @@ async def test_codex_browser_callback_rejects_mismatched_flow_state(sqlite_db, m
         assert ok is False
         assert "authorization failed" in message
 
+
 @pytest.mark.asyncio
 async def test_codex_browser_listener_startup_failure_keeps_manual_fallback(monkeypatch):
     from app.api import routes
@@ -2042,11 +1844,13 @@ async def test_codex_browser_listener_startup_failure_keeps_manual_fallback(monk
         assert payload["authorization_url"].startswith("https://auth.openai.com/oauth/authorize?")
         assert "code_verifier" not in started.text
 
+
 @pytest.mark.asyncio
 async def test_codex_browser_default_disables_auto_capture_for_unknown_topology(monkeypatch):
     from app.api import routes
 
     called = False
+
     def fake_listener(loop):
         nonlocal called
         called = True
@@ -2061,6 +1865,7 @@ async def test_codex_browser_default_disables_auto_capture_for_unknown_topology(
     assert started.json()["callback_available"] is False
     assert started.json()["fallback_reason"] == "auto_capture_not_enabled"
     assert called is False
+
 
 @pytest.mark.asyncio
 async def test_codex_browser_duplicate_callbacks_only_exchange_once(sqlite_db, monkeypatch):
@@ -2094,6 +1899,7 @@ async def test_codex_browser_duplicate_callbacks_only_exchange_once(sqlite_db, m
         assert second[0] is False
         assert calls == 1
 
+
 @pytest.mark.asyncio
 async def test_codex_browser_manual_cannot_retarget_flow(sqlite_db, monkeypatch):
     from app.api import routes
@@ -2106,17 +1912,46 @@ async def test_codex_browser_manual_cannot_retarget_flow(sqlite_db, monkeypatch)
     monkeypatch.setattr(routes.codex_oauth, "exchange_browser_authorization_code", fake_exchange)
     auth = {"Authorization": "Bearer test-admin-session-token-123"}
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        a = await client.post("/api/v1/configs", json={"provider": "codex", "label": "a", "api_key": CodexCredentials(access_token="a", refresh_token="a").to_secret_json()}, headers=auth)
-        b = await client.post("/api/v1/configs", json={"provider": "codex", "label": "b", "api_key": CodexCredentials(access_token="b", refresh_token="b").to_secret_json()}, headers=auth)
-        flow_start = await client.post("/api/v1/codex/oauth/browser/start", json={"config_id": a.json()["id"]}, headers=auth)
+        a = await client.post(
+            "/api/v1/configs",
+            json={
+                "provider": "codex",
+                "label": "a",
+                "api_key": CodexCredentials(access_token="a", refresh_token="a").to_secret_json(),
+            },
+            headers=auth,
+        )
+        b = await client.post(
+            "/api/v1/configs",
+            json={
+                "provider": "codex",
+                "label": "b",
+                "api_key": CodexCredentials(access_token="b", refresh_token="b").to_secret_json(),
+            },
+            headers=auth,
+        )
+        flow_start = await client.post(
+            "/api/v1/codex/oauth/browser/start", json={"config_id": a.json()["id"]}, headers=auth
+        )
         flow = routes._codex_browser_flows[flow_start.json()["flow_id"]]
-        completed = await client.post(f"/api/v1/codex/oauth/browser/{flow_start.json()['flow_id']}/complete", json={"config_id": b.json()["id"], "callback": f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"}, headers=auth)
+        completed = await client.post(
+            f"/api/v1/codex/oauth/browser/{flow_start.json()['flow_id']}/complete",
+            json={
+                "config_id": b.json()["id"],
+                "callback": f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}",
+            },
+            headers=auth,
+        )
         assert completed.status_code == 200
         assert completed.json()["config"]["id"] == a.json()["id"]
     async with sqlite_db() as session:
         rows = (await session.execute(select(ProviderConfig).order_by(ProviderConfig.id))).scalars().all()
-        secrets = [json.loads(CryptoService(settings.encryption_key).decrypt(row.encrypted_api_key))["refresh_token"] for row in rows]
+        secrets = [
+            json.loads(CryptoService(settings.encryption_key).decrypt(row.encrypted_api_key))["refresh_token"]
+            for row in rows
+        ]
         assert secrets == ["target-refresh", "b"]
+
 
 @pytest.mark.asyncio
 async def test_codex_browser_raw_exception_is_sanitized(sqlite_db, monkeypatch):
@@ -2133,14 +1968,19 @@ async def test_codex_browser_raw_exception_is_sanitized(sqlite_db, monkeypatch):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         started = await client.post("/api/v1/codex/oauth/browser/start", headers=auth)
         flow = routes._codex_browser_flows[started.json()["flow_id"]]
-        ok, message = await routes._complete_codex_browser_callback(flow.state, f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}")
+        ok, message = await routes._complete_codex_browser_callback(
+            flow.state, f"http://localhost:1455/auth/callback?code=browser-code&state={flow.state}"
+        )
         assert ok is False
-        status_response = await client.get(f"/api/v1/codex/oauth/browser/{started.json()['flow_id']}/status", headers=auth)
+        status_response = await client.get(
+            f"/api/v1/codex/oauth/browser/{started.json()['flow_id']}/status", headers=auth
+        )
     html_page = routes._codex_browser_result_page(False, message)
     combined = message + status_response.text + html_page
     assert "SECRET_CODE" not in combined
     assert "SECRET_TOKEN" not in combined
     assert "Unable to exchange" in combined
+
 
 @pytest.mark.asyncio
 async def test_codex_browser_manual_retry_after_automatic_exchange_failure(sqlite_db, monkeypatch):

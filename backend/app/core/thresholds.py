@@ -70,11 +70,7 @@ def build_alerts(metrics: list[dict], rules: list[dict]) -> list[dict]:
             continue
         direction = rule.get("direction") or "increasing"
         value = metric.get("value")
-        thresholds = {
-            key: rule.get(key)
-            for key in ("warning", "critical", "exhausted")
-            if rule.get(key) is not None
-        }
+        thresholds = {key: rule.get(key) for key in ("warning", "critical", "exhausted") if rule.get(key) is not None}
         if not thresholds:
             continue
         state = evaluate_alert(value, thresholds, direction)

@@ -22,8 +22,23 @@ class FirecrawlAdapter(ProviderAdapter):
         native_history=True,
         metrics={
             "credits_remaining": metric_spec(type_="remaining", unit="credits", direction="decreasing"),
-            "credits_used": metric_spec(type_="counter", unit="credits", direction="increasing", reset_metric="billing_period_end", window="billing", overview=True),
-            "usage_percent": metric_spec(type_="counter", unit="%", direction="increasing", maximum=100, reset_metric="billing_period_end", window="billing", utilization=True),
+            "credits_used": metric_spec(
+                type_="counter",
+                unit="credits",
+                direction="increasing",
+                reset_metric="billing_period_end",
+                window="billing",
+                overview=True,
+            ),
+            "usage_percent": metric_spec(
+                type_="counter",
+                unit="%",
+                direction="increasing",
+                maximum=100,
+                reset_metric="billing_period_end",
+                window="billing",
+                utilization=True,
+            ),
             "plan_credits": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
         },
     )
@@ -103,7 +118,11 @@ class FirecrawlAdapter(ProviderAdapter):
             latest_period.get("totalCredits"),
             latest_period.get("total_credits"),
         )
-        if credits_used is None and isinstance(plan_credits, (int, float)) and isinstance(credits_remaining, (int, float)):
+        if (
+            credits_used is None
+            and isinstance(plan_credits, (int, float))
+            and isinstance(credits_remaining, (int, float))
+        ):
             credits_used = max(plan_credits - credits_remaining, 0)
 
         usage_percent = None
@@ -124,14 +143,23 @@ class FirecrawlAdapter(ProviderAdapter):
 
         metrics = [
             Metric("credits_remaining", credits_remaining, "credits"),
-            Metric("credits_used", credits_used, "credits", plan_credits if isinstance(plan_credits, (int, float)) else None),
+            Metric(
+                "credits_used",
+                credits_used,
+                "credits",
+                plan_credits if isinstance(plan_credits, (int, float)) else None,
+            ),
             Metric("usage_percent", usage_percent, "%"),
             Metric("plan_credits", plan_credits, "credits"),
             Metric("billing_period_end", billing_period_end),
         ]
         metrics = [metric for metric in metrics if metric.value is not None]
 
-        status = "healthy" if credit_data.get("success", True) and (historical_data or {}).get("success", True) else "degraded"
+        status = (
+            "healthy"
+            if credit_data.get("success", True) and (historical_data or {}).get("success", True)
+            else "degraded"
+        )
         if isinstance(credits_remaining, (int, float)):
             summary = f"{credits_remaining:,.0f} credits remaining"
         else:
@@ -141,7 +169,12 @@ class FirecrawlAdapter(ProviderAdapter):
             plan_label = f"{plan_name} plan" if plan_name else "Plan"
             summary = f"{summary}. {plan_label}: {plan_credits:,.0f} credits being refreshed on {FirecrawlAdapter._format_date(billing_period_end)}"
 
-        return ProviderUsage(status=status, summary=summary, metrics=metrics, raw={"credit_usage": credit_data, "historical_credit_usage": historical_data or {}})
+        return ProviderUsage(
+            status=status,
+            summary=summary,
+            metrics=metrics,
+            raw={"credit_usage": credit_data, "historical_credit_usage": historical_data or {}},
+        )
 
     @staticmethod
     def native_observations(raw: dict) -> list[dict]:
