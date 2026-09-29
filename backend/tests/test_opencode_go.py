@@ -1,4 +1,3 @@
-import pytest
 
 from app.providers.opencode_go import OpenCodeGoAdapter, _canonical_model_id, _extract_model_usage, _extract_windows
 

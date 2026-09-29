@@ -6,7 +6,6 @@ from datetime import UTC, datetime, timedelta
 
 from app.analytics.quota_correlation import (
     CORRELATION_FLOOR,
-    MIN_WINDOWS,
     correlate_quota_impact,
     estimate_quota_impact,
     pearson,

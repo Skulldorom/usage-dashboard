@@ -8,12 +8,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 from datetime import UTC, datetime
 from math import isfinite
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -26,6 +27,32 @@ from app.models import DataSourceConfig, ProviderConfig, UsageObservation
 # Per-source sync locks (keyed by data source id). Shared by the manual sync
 # endpoint and the background poller so neither overlaps the other.
 _locks: dict[int, asyncio.Lock] = {}
+logger = logging.getLogger(__name__)
+
+_BOUNDED_OBSERVATION_FIELDS = {
+    "provider": 32,
+    "metric": 120,
+    "unit": 32,
+    "kind": 16,
+    "source": 16,
+    "model": 128,
+    "profile": 64,
+    "cost_type": 16,
+    "provider_mapping": 32,
+}
+_TEXT_OBSERVATION_FIELDS = ("session_id", "source_event_id")
+
+
+def _invalid_observation_field(row: dict) -> str | None:
+    for field, limit in _BOUNDED_OBSERVATION_FIELDS.items():
+        value = row.get(field)
+        if value is not None and (not isinstance(value, str) or len(value) > limit):
+            return field
+    for field in _TEXT_OBSERVATION_FIELDS:
+        value = row.get(field)
+        if value is not None and not isinstance(value, str):
+            return field
+    return None
 
 
 def _utc(value: datetime) -> datetime:
@@ -45,8 +72,6 @@ def _apply_provider_mappings(obs: dict, extra: dict[str, Any]) -> dict:
     if raw and raw in mappings:
         obs["provider_mapping"] = str(mappings[raw]).strip().lower()
     return obs
-
-
 
 
 def _numeric_metric_count(record: dict) -> tuple[int, int]:
@@ -125,6 +150,7 @@ def _sync_diagnostics(
         "unmapped_providers": [] if mute_unmapped_provider_alerts else sorted(unmapped),
     }
 
+
 def _fallback_event_id(obs: dict) -> str:
     """Deterministic identity for records without an explicit source event ID.
 
@@ -170,14 +196,24 @@ async def _persist_observations(
     observations: list[dict],
 ) -> dict[str, int]:
     if not observations:
-        return {"inserted": 0, "duplicates_skipped": 0}
+        return {"inserted": 0, "duplicates_skipped": 0, "invalid_fields_skipped": 0}
 
     # Every observation gets a stable source event ID (explicit event_id or a
     # deterministic fallback). The database unique index on
     # (data_source_id, source_event_id) is the final protection against dupes.
-    rows: list[dict] = [
-        {**obs, "source_event_id": _source_event_id(obs)} for obs in observations
-    ]
+    valid_rows: list[dict] = []
+    invalid_fields_skipped = 0
+    for observation in observations:
+        invalid_field = _invalid_observation_field(observation)
+        if invalid_field:
+            invalid_fields_skipped += 1
+            logger.warning(
+                "Skipping malformed Hermes observation from source %s: invalid %s field",
+                source.id,
+                invalid_field,
+            )
+            continue
+        valid_rows.append({**observation, "source_event_id": _source_event_id(observation)})
 
     def build(row: dict) -> UsageObservation:
         return UsageObservation(
@@ -203,24 +239,31 @@ async def _persist_observations(
             await session.execute(
                 select(UsageObservation.source_event_id).where(
                     UsageObservation.data_source_id == source.id,
-                    UsageObservation.source_event_id.in_([r["source_event_id"] for r in rows]),
+                    UsageObservation.source_event_id.in_([r["source_event_id"] for r in valid_rows]),
                 )
             )
-        ).scalars().all()
+        )
+        .scalars()
+        .all()
     )
-    to_insert = [r for r in rows if r["source_event_id"] not in existing_ids]
+    to_insert = [r for r in valid_rows if r["source_event_id"] not in existing_ids]
 
     for row in to_insert:
         session.add(build(row))
     try:
         await session.commit()
-        return {"inserted": len(to_insert), "duplicates_skipped": len(rows) - len(to_insert)}
-    except IntegrityError:
-        # Defensive: a concurrent sync inserted the same event ID between our
-        # check and commit. Re-insert one-by-one so a single conflict can't drop
-        # the rest of the batch (the per-source sync lock normally prevents this).
+        return {
+            "inserted": len(to_insert),
+            "duplicates_skipped": len(valid_rows) - len(to_insert),
+            "invalid_fields_skipped": invalid_fields_skipped,
+        }
+    except (DataError, IntegrityError):
+        # A duplicate can arrive between the lookup and commit; a data error
+        # can still arise from a database constraint. Isolate each row while
+        # allowing connection and transaction failures to surface normally.
         await session.rollback()
         inserted = 0
+        duplicates_skipped = len(valid_rows) - len(to_insert)
         for row in to_insert:
             session.add(build(row))
             try:
@@ -228,7 +271,20 @@ async def _persist_observations(
                 inserted += 1
             except IntegrityError:
                 await session.rollback()
-        return {"inserted": inserted, "duplicates_skipped": len(rows) - inserted}
+                duplicates_skipped += 1
+            except DataError:
+                await session.rollback()
+                invalid_fields_skipped += 1
+                logger.warning(
+                    "Skipping database-rejected Hermes observation from source %s: %s",
+                    source.id,
+                    _invalid_observation_field(row) or "data",
+                )
+        return {
+            "inserted": inserted,
+            "duplicates_skipped": duplicates_skipped,
+            "invalid_fields_skipped": invalid_fields_skipped,
+        }
 
 
 async def sync_data_source(
@@ -272,9 +328,9 @@ async def _sync_data_source(
         extra = source.extra or {}
         observations = [_apply_provider_mappings(o, extra) for o in observations]
         configured_providers = set(
-            (
-                await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True)))
-            ).scalars().all()
+            (await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True))))
+            .scalars()
+            .all()
         )
         diagnostics = _sync_diagnostics(
             records,
@@ -297,6 +353,7 @@ async def _sync_data_source(
             "inserted": inserted,
             "observed": len(observations),
             "duplicates_skipped": persist_result["duplicates_skipped"],
+            "observations_skipped_invalid_fields": persist_result["invalid_fields_skipped"],
             **diagnostics,
         }
     except Exception as exc:  # noqa: BLE001 - record any failure, never leak tokens

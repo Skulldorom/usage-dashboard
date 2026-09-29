@@ -199,10 +199,16 @@ def _start_codex_browser_listener(loop: asyncio.AbstractEventLoop) -> tuple[bool
         def do_GET(self):
             parsed = urlparse(self.path)
             if parsed.path != "/auth/callback":
-                self.send_response(404); self.end_headers(); self.wfile.write(b"Not found"); return
+                self.send_response(404)
+                self.end_headers()
+                self.wfile.write(b"Not found")
+                return
             origin = self.headers.get("Origin")
             if origin and not origin.startswith(("http://localhost", "http://127.0.0.1")):
-                self.send_response(403); self.end_headers(); self.wfile.write(b"Forbidden"); return
+                self.send_response(403)
+                self.end_headers()
+                self.wfile.write(b"Forbidden")
+                return
             state = parse_qs(parsed.query, keep_blank_values=False).get("state", [None])[0]
             future = asyncio.run_coroutine_threadsafe(_complete_codex_browser_callback(state, f"http://localhost:1455{self.path}"), loop)
             try:
@@ -210,7 +216,11 @@ def _start_codex_browser_listener(loop: asyncio.AbstractEventLoop) -> tuple[bool
             except Exception:
                 success, message = False, "Codex authorization failed. Return to Usage Dashboard and use manual callback fallback."
             body = _codex_browser_result_page(success, message).encode()
-            self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
     try:
         server = ThreadingHTTPServer(("127.0.0.1", 1455), CodexCallbackHandler)
     except OSError as exc:
@@ -225,7 +235,8 @@ def _stop_codex_browser_listener() -> None:
     server = _codex_browser_listener
     if not server:
         return
-    _codex_browser_listener = None; _codex_browser_listener_thread = None
+    _codex_browser_listener = None
+    _codex_browser_listener_thread = None
     threading.Thread(target=server.shutdown, daemon=True).start()
 
 def _format_homepage_number(value: float | int | str | bool | None) -> str:

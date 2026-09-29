@@ -515,7 +515,6 @@ async def hourly_breakdown(
     if resolved is None:
         raise HTTPException(status_code=404, detail="No analytics data for this provider")
 
-    metric_type = _spec_metric_type(spec)
     metric_obs = [obs for obs in observations if obs.metric == resolved]
     zone = aggregation.resolve_tz(timezone)
 

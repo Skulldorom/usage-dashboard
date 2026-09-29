@@ -18,7 +18,13 @@ from app.database import get_session
 from app.datasources.base import expand_observation_records
 from app.datasources.service import _persist_observations, sync_data_source
 from app.main import app
-from app.models import AdminCredential, Base, DataSourceConfig, ProviderConfig, UsageObservation
+from app.models import (
+    AdminCredential,
+    Base,
+    DataSourceConfig,
+    ProviderConfig,
+    UsageObservation,
+)
 
 DB = Path("/tmp/usage_dashboard_test_datasources.db")
 TEST_DATABASE_URL = f"sqlite+aiosqlite:///{DB}"
@@ -39,7 +45,10 @@ async def sqlite_db(monkeypatch):
             AdminCredential(
                 password_hash="test-only",
                 session_tokens=[
-                    {"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}
+                    {
+                        "token_hash": _hash_secret("test-admin-session-token-123"),
+                        "expires_at": "2999-01-01T00:00:00+00:00",
+                    }
                 ],
             )
         )
@@ -91,8 +100,15 @@ def test_expand_skips_bad_records():
     records = [
         {"timestamp": "not-a-date", "provider": "x", "input_tokens": 1},
         {"provider": "x", "input_tokens": 1},  # no timestamp
-        {"timestamp": "2026-08-22T12:00:00+00:00", "provider": "x", "input_tokens": "NaN"},
-        {"timestamp": "2026-08-22T12:00:00+00:00", "provider": "x"},  # no numeric metrics
+        {
+            "timestamp": "2026-08-22T12:00:00+00:00",
+            "provider": "x",
+            "input_tokens": "NaN",
+        },
+        {
+            "timestamp": "2026-08-22T12:00:00+00:00",
+            "provider": "x",
+        },  # no numeric metrics
     ]
     assert expand_observation_records(records) == []
 
@@ -112,7 +128,12 @@ def test_expand_normalizes_provider_and_epoch():
 async def _seed_source_and_provider(Session):
     async with Session() as session:
         source = DataSourceConfig(kind="hermes", name="main", base_url="http://hermes.local", is_enabled=True)
-        provider = ProviderConfig(provider="anthropic", label="main", encrypted_api_key="encrypted", is_enabled=True)
+        provider = ProviderConfig(
+            provider="anthropic",
+            label="main",
+            encrypted_api_key="encrypted",
+            is_enabled=True,
+        )
         session.add_all([source, provider])
         await session.commit()
         await session.refresh(source)
@@ -268,9 +289,7 @@ async def test_hermes_breakdown_and_attribution(sqlite_db):
         by_provider = {row["key"]: row for row in body["by_provider"]}
         assert by_provider["anthropic"]["estimated_cost"] == 0.0105
 
-        attribution = await client.get(
-            f"/api/v1/analytics/providers/{provider_id}/attribution", headers=AUTH
-        )
+        attribution = await client.get(f"/api/v1/analytics/providers/{provider_id}/attribution", headers=AUTH)
         assert attribution.status_code == 200, attribution.text
         metrics = {m["metric"]: m for m in attribution.json()["metrics"]}
         # input_tokens: provider reported 2000, hermes observed 1000 → 50%
@@ -291,7 +310,12 @@ async def test_sync_result_reports_diagnostics(sqlite_db, monkeypatch):
         async def fetch_observations(self, base_url, token, extra, timeout):
             return [
                 _record(event_id="evt-1", input_tokens=100, output_tokens=50, requests=1),
-                _record(event_id="evt-2", provider="mystery", profile="blocked", input_tokens=9),
+                _record(
+                    event_id="evt-2",
+                    provider="mystery",
+                    profile="blocked",
+                    input_tokens=9,
+                ),
                 _record(timestamp="not-a-date", event_id="bad-time", input_tokens=1),
                 _record(event_id="bad-metric", input_tokens="nope"),
                 _record(event_id="empty", input_tokens=None),
@@ -301,13 +325,27 @@ async def test_sync_result_reports_diagnostics(sqlite_db, monkeypatch):
     source_id = await _make_source(sqlite_db)
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
-        source.extra = {"profiles": ["coder"], "provider_mappings": {"mystery": "missing-provider"}}
-        session.add(ProviderConfig(provider="anthropic", label="main", encrypted_api_key="encrypted", is_enabled=True))
+        source.extra = {
+            "profiles": ["coder"],
+            "provider_mappings": {"mystery": "missing-provider"},
+        }
+        session.add(
+            ProviderConfig(
+                provider="anthropic",
+                label="main",
+                encrypted_api_key="encrypted",
+                is_enabled=True,
+            )
+        )
         await session.commit()
 
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
-        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+        result = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
 
     assert result["status"] == "healthy"
     assert result["records_fetched"] == 5
@@ -326,7 +364,11 @@ async def test_sync_result_reports_diagnostics(sqlite_db, monkeypatch):
 
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
-        duplicate = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+        duplicate = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
     assert duplicate["inserted"] == 0
     assert duplicate["duplicates_skipped"] == 3
 
@@ -342,12 +384,23 @@ async def test_sync_result_can_mute_unmapped_provider_alerts(sqlite_db, monkeypa
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
         source.extra = {"mute_unmapped_provider_alerts": True}
-        session.add(ProviderConfig(provider="anthropic", label="main", encrypted_api_key="encrypted", is_enabled=True))
+        session.add(
+            ProviderConfig(
+                provider="anthropic",
+                label="main",
+                encrypted_api_key="encrypted",
+                is_enabled=True,
+            )
+        )
         await session.commit()
 
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
-        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+        result = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
 
     assert result["status"] == "healthy"
     assert result["providers_discovered"] == ["mystery"]
@@ -360,7 +413,10 @@ async def test_data_source_observations_endpoint_returns_safe_recent_rows(sqlite
     await _seed_observations(sqlite_db, source_id, provider_id)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get(f"/api/v1/datasources/configs/{source_id}/observations?limit=2", headers=AUTH)
+        response = await client.get(
+            f"/api/v1/datasources/configs/{source_id}/observations?limit=2",
+            headers=AUTH,
+        )
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -410,11 +466,15 @@ async def _make_source(Session, name="main"):
         return source.id
 
 
-async def _persist(Session, source_id, records):
+async def _persist_result(Session, source_id, records):
     observations = expand_observation_records(records)
     async with Session() as session:
         source = await session.get(DataSourceConfig, source_id)
-        return (await _persist_observations(session, source, observations))["inserted"]
+        return await _persist_observations(session, source, observations)
+
+
+async def _persist(Session, source_id, records):
+    return (await _persist_result(Session, source_id, records))["inserted"]
 
 
 async def _count(Session, source_id):
@@ -442,7 +502,11 @@ async def test_distinct_observations_at_same_timestamp_preserved(sqlite_db):
 @pytest.mark.asyncio
 async def test_different_models_not_collapsed(sqlite_db):
     source_id = await _make_source(sqlite_db)
-    inserted = await _persist(sqlite_db, source_id, [_record(model="claude-sonnet-4"), _record(model="claude-opus-4")])
+    inserted = await _persist(
+        sqlite_db,
+        source_id,
+        [_record(model="claude-sonnet-4"), _record(model="claude-opus-4")],
+    )
     assert inserted == 2
 
 
@@ -485,10 +549,14 @@ async def test_explicit_event_id_preserves_all_metrics(sqlite_db):
 
     async with sqlite_db() as session:
         ids = (
-            await session.execute(
-                select(UsageObservation.source_event_id).where(UsageObservation.data_source_id == source_id)
+            (
+                await session.execute(
+                    select(UsageObservation.source_event_id).where(UsageObservation.data_source_id == source_id)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
     assert sorted(ids) == ["evt-1:cost", "evt-1:input_tokens", "evt-1:output_tokens"]
 
 
@@ -509,17 +577,29 @@ async def test_db_unique_constraint_blocks_duplicate(sqlite_db):
     async with sqlite_db() as session:
         session.add(
             UsageObservation(
-                data_source_id=source_id, provider="anthropic", metric="input_tokens",
-                value=1.0, unit="tokens", kind="delta", source="hermes",
-                observed_at=now, source_event_id="dup-1",
+                data_source_id=source_id,
+                provider="anthropic",
+                metric="input_tokens",
+                value=1.0,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=now,
+                source_event_id="dup-1",
             )
         )
         await session.commit()
         session.add(
             UsageObservation(
-                data_source_id=source_id, provider="anthropic", metric="input_tokens",
-                value=1.0, unit="tokens", kind="delta", source="hermes",
-                observed_at=now, source_event_id="dup-1",
+                data_source_id=source_id,
+                provider="anthropic",
+                metric="input_tokens",
+                value=1.0,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=now,
+                source_event_id="dup-1",
             )
         )
         with pytest.raises(IntegrityError):
@@ -546,7 +626,11 @@ async def test_sync_failure_rolls_back_before_updating_source_state(sqlite_db, m
 
     async with sqlite_db() as session:
         source = await session.get(DataSourceConfig, source_id)
-        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+        result = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
 
     assert result["status"] == "error"
     assert result["error"] == "synthetic persistence failure"
@@ -556,3 +640,71 @@ async def test_sync_failure_rolls_back_before_updating_source_state(sqlite_db, m
         assert source.consecutive_failures == 1
         assert source.latest_error == "synthetic persistence failure"
         assert source.last_failure_at is not None
+
+
+@pytest.mark.asyncio
+async def test_long_session_id_is_preserved_and_resync_remains_idempotent(sqlite_db):
+    source_id = await _make_source(sqlite_db)
+    session_id = "hermes:company:" + "x" * 140
+    record = _record(event_id="evt-long-session", session_id=session_id)
+
+    assert await _persist(sqlite_db, source_id, [record]) == 1
+    duplicate = await _persist_result(sqlite_db, source_id, [record])
+    assert duplicate == {"inserted": 0, "duplicates_skipped": 1, "invalid_fields_skipped": 0}
+
+    async with sqlite_db() as session:
+        stored_session_id = await session.scalar(
+            select(UsageObservation.session_id).where(UsageObservation.data_source_id == source_id)
+        )
+
+    assert stored_session_id == session_id
+    assert len(stored_session_id) > 128
+
+
+@pytest.mark.asyncio
+async def test_sync_skips_malformed_row_without_blocking_valid_observations(sqlite_db, monkeypatch):
+    class FakeHermes:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return [
+                _record(event_id="evt-valid", input_tokens=100),
+                _record(event_id="evt-malformed", model="x" * 129, input_tokens=50),
+            ]
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeHermes)
+    source_id = await _make_source(sqlite_db)
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
+
+    assert result["status"] == "healthy"
+    assert result["inserted"] == 1
+    assert result["observations_skipped_invalid_fields"] == 1
+
+    async with sqlite_db() as session:
+        valid = await session.scalar(
+            select(UsageObservation).where(UsageObservation.source_event_id == "evt-valid:input_tokens")
+        )
+        assert valid is not None
+        assert valid.value == 100
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        assert source.last_success_at is not None
+        assert source.consecutive_failures == 0
+        assert await _count(sqlite_db, source_id) == 1
+
+        duplicate = await sync_data_source(
+            session,
+            source,
+            crypto=type("C", (), {"decrypt": lambda self, value: value})(),
+        )
+
+    assert duplicate["status"] == "healthy"
+    assert duplicate["inserted"] == 0
+    assert duplicate["duplicates_skipped"] == 1
+    assert duplicate["observations_skipped_invalid_fields"] == 1
