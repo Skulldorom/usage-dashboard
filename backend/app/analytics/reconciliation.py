@@ -169,9 +169,7 @@ def reconcile(
     demote confidence by that many steps).
     """
     corr = list(corroborating or [])
-    disagreements = detect_disagreements(
-        authoritative_value, corr, is_percent=is_percent, tolerance=tolerance
-    )
+    disagreements = detect_disagreements(authoritative_value, corr, is_percent=is_percent, tolerance=tolerance)
     stale = stale_authoritative(authoritative_at, list(corroborating_times or []))
     impact = 0
     if disagreements:

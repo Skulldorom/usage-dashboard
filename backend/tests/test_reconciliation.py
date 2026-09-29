@@ -185,6 +185,11 @@ def test_degrade_confidence_no_impact_preserves_level():
 
 
 def test_priority_ordering():
-    assert SOURCE_PRIORITY["native"] < SOURCE_PRIORITY["snapshot"] < SOURCE_PRIORITY["hermes"] < SOURCE_PRIORITY["estimated"]
+    assert (
+        SOURCE_PRIORITY["native"]
+        < SOURCE_PRIORITY["snapshot"]
+        < SOURCE_PRIORITY["hermes"]
+        < SOURCE_PRIORITY["estimated"]
+    )
     assert CAPACITY_DISAGREEMENT_POINTS > 0
     assert ACTIVITY_DISAGREEMENT_RELATIVE > 0

@@ -100,7 +100,9 @@ async def ensure_setup_code(session: AsyncSession) -> AdminCredential | None:
     code = secrets.token_urlsafe(18)
     expires_at = _code_expiry()
     if credential is None:
-        credential = AdminCredential(password_hash="pending", setup_code_hash=_hash_secret(code), setup_code_expires_at=expires_at)
+        credential = AdminCredential(
+            password_hash="pending", setup_code_hash=_hash_secret(code), setup_code_expires_at=expires_at
+        )
         session.add(credential)
     else:
         credential.setup_code_hash = _hash_secret(code)
@@ -119,7 +121,11 @@ async def auth_status(session: AsyncSession) -> dict[str, bool]:
 async def create_session(credential: AdminCredential, session: AsyncSession) -> tuple[str, datetime]:
     token = secrets.token_urlsafe(32)
     expires_at = _expiry(settings.admin_session_expire_hours)
-    active = [item for item in (credential.session_tokens or []) if _parse_expiry(item.get("expires_at")) and _parse_expiry(item.get("expires_at")) > _now()]
+    active = [
+        item
+        for item in (credential.session_tokens or [])
+        if _parse_expiry(item.get("expires_at")) and _parse_expiry(item.get("expires_at")) > _now()
+    ]
     active.append(_session_payload(token, expires_at))
     credential.session_tokens = active
     await session.commit()
@@ -143,7 +149,11 @@ async def setup_admin_password(code: str, password: str, session: AsyncSession) 
 
 async def login_admin(password: str, session: AsyncSession) -> tuple[str, datetime]:
     credential = await get_admin_credential(session)
-    if not credential or credential.password_hash == "pending" or not _verify_password(password, credential.password_hash):
+    if (
+        not credential
+        or credential.password_hash == "pending"
+        or not _verify_password(password, credential.password_hash)
+    ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
     return await create_session(credential, session)
 
@@ -177,7 +187,9 @@ async def revoke_admin_session(token: str, session: AsyncSession) -> None:
     if not credential:
         return
     token_hash = _hash_secret(token)
-    credential.session_tokens = [item for item in (credential.session_tokens or []) if item.get("token_hash") != token_hash]
+    credential.session_tokens = [
+        item for item in (credential.session_tokens or []) if item.get("token_hash") != token_hash
+    ]
     await session.commit()
 
 
@@ -185,7 +197,9 @@ def _api_token_plaintext() -> str:
     return f"udt_{secrets.token_urlsafe(32)}"
 
 
-async def create_api_token_record(name: str, scopes: list[str], expires_at: datetime | None, session: AsyncSession) -> tuple[ApiToken, str]:
+async def create_api_token_record(
+    name: str, scopes: list[str], expires_at: datetime | None, session: AsyncSession
+) -> tuple[ApiToken, str]:
     token = _api_token_plaintext()
     record = ApiToken(
         name=name,
@@ -284,7 +298,9 @@ def require_scope(required_scope: str):
     async def dependency(principal: AuthPrincipal = Depends(authenticate_bearer)) -> AuthPrincipal:
         if principal.is_admin or required_scope in principal.scopes:
             return principal
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"API token is missing required scope: {required_scope}")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=f"API token is missing required scope: {required_scope}"
+        )
 
     return dependency
 

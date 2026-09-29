@@ -92,13 +92,20 @@ async def data_sources_catalog() -> list[dict]:
     return list_data_sources()
 
 
-@router.get("/configs", response_model=list[DataSourceConfigRead], dependencies=[Depends(require_scope("datasources:read"))])
+@router.get(
+    "/configs", response_model=list[DataSourceConfigRead], dependencies=[Depends(require_scope("datasources:read"))]
+)
 async def list_data_source_configs(session: AsyncSession = Depends(get_session)):
     rows = (await session.execute(select(DataSourceConfig).order_by(asc(DataSourceConfig.id)))).scalars().all()
     return [_read(row) for row in rows]
 
 
-@router.post("/configs", response_model=DataSourceConfigRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/configs",
+    response_model=DataSourceConfigRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_auth)],
+)
 async def create_data_source_config(payload: DataSourceConfigCreate, session: AsyncSession = Depends(get_session)):
     try:
         get_data_source(payload.kind)
@@ -120,13 +127,17 @@ async def create_data_source_config(payload: DataSourceConfigCreate, session: As
         await session.commit()
     except Exception as exc:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="Data source name already exists or the database rejected it") from exc
+        raise HTTPException(
+            status_code=409, detail="Data source name already exists or the database rejected it"
+        ) from exc
     await session.refresh(source)
     return _read(source)
 
 
 @router.patch("/configs/{source_id}", response_model=DataSourceConfigRead, dependencies=[Depends(require_admin_auth)])
-async def update_data_source_config(source_id: int, payload: DataSourceConfigUpdate, session: AsyncSession = Depends(get_session)):
+async def update_data_source_config(
+    source_id: int, payload: DataSourceConfigUpdate, session: AsyncSession = Depends(get_session)
+):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
@@ -136,13 +147,19 @@ async def update_data_source_config(source_id: int, payload: DataSourceConfigUpd
         source.base_url = payload.base_url
     if payload.has_update_for("token"):
         source.encrypted_token = _crypto().encrypt(payload.token) if payload.token else None
-    if payload.has_update_for("profiles") or payload.has_update_for("provider_mappings") or payload.has_update_for("mute_unmapped_provider_alerts"):
+    if (
+        payload.has_update_for("profiles")
+        or payload.has_update_for("provider_mappings")
+        or payload.has_update_for("mute_unmapped_provider_alerts")
+    ):
         extra = dict(source.extra or {})
         extra.update(
             _extra_from(
                 payload.profiles,
                 payload.provider_mappings,
-                payload.mute_unmapped_provider_alerts if payload.has_update_for("mute_unmapped_provider_alerts") else None,
+                payload.mute_unmapped_provider_alerts
+                if payload.has_update_for("mute_unmapped_provider_alerts")
+                else None,
             )
         )
         source.extra = extra
@@ -155,7 +172,9 @@ async def update_data_source_config(source_id: int, payload: DataSourceConfigUpd
     return _read(source)
 
 
-@router.delete("/configs/{source_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)])
+@router.delete(
+    "/configs/{source_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)]
+)
 async def delete_data_source_config(source_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(delete(DataSourceConfig).where(DataSourceConfig.id == source_id))
     if result.rowcount == 0:
@@ -171,13 +190,17 @@ async def test_data_source(source_id: int, session: AsyncSession = Depends(get_s
     try:
         adapter = get_data_source(source.kind)()
         token = _crypto().decrypt(source.encrypted_token) if source.encrypted_token else None
-        records = await adapter.fetch_observations(source.base_url, token, source.extra or {}, settings.request_timeout_seconds)
+        records = await adapter.fetch_observations(
+            source.base_url, token, source.extra or {}, settings.request_timeout_seconds
+        )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "records": len(records)}
 
 
-@router.post("/configs/{source_id}/sync", response_model=DataSourceSyncResult, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/configs/{source_id}/sync", response_model=DataSourceSyncResult, dependencies=[Depends(require_admin_auth)]
+)
 async def sync_data_source_config(source_id: int, session: AsyncSession = Depends(get_session)):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
@@ -188,20 +211,28 @@ async def sync_data_source_config(source_id: int, session: AsyncSession = Depend
     return DataSourceSyncResult(**result)
 
 
-@router.get("/configs/{source_id}/observations", response_model=DataSourceInspection, dependencies=[Depends(require_scope("datasources:read"))])
+@router.get(
+    "/configs/{source_id}/observations",
+    response_model=DataSourceInspection,
+    dependencies=[Depends(require_scope("datasources:read"))],
+)
 async def data_source_observations(source_id: int, limit: int = 50, session: AsyncSession = Depends(get_session)):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
     bounded_limit = max(1, min(int(limit or 50), 200))
     rows = (
-        await session.execute(
-            select(UsageObservation)
-            .where(UsageObservation.data_source_id == source_id, UsageObservation.source == "hermes")
-            .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
-            .limit(bounded_limit)
+        (
+            await session.execute(
+                select(UsageObservation)
+                .where(UsageObservation.data_source_id == source_id, UsageObservation.source == "hermes")
+                .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
+                .limit(bounded_limit)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     observations = [
         DataSourceObservationRead(
             id=row.id,
@@ -222,7 +253,11 @@ async def data_source_observations(source_id: int, limit: int = 50, session: Asy
     return DataSourceInspection(source=_read(source), observations=observations)
 
 
-@router.get("/configs/{source_id}/status", response_model=DataSourceStatus, dependencies=[Depends(require_scope("datasources:read"))])
+@router.get(
+    "/configs/{source_id}/status",
+    response_model=DataSourceStatus,
+    dependencies=[Depends(require_scope("datasources:read"))],
+)
 async def data_source_status(source_id: int, session: AsyncSession = Depends(get_session)):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
@@ -245,14 +280,12 @@ async def _provider_mappings_read(session: AsyncSession, source: DataSourceConfi
     mapped, unmapped, or mapped to an invalid (deleted/disabled) target.
     """
     enabled = set(
-        (
-            await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True)))
-        ).scalars().all()
+        (await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True))))
+        .scalars()
+        .all()
     )
     config_rows = (
-        await session.execute(
-            select(ProviderConfig.provider, ProviderConfig.label).order_by(asc(ProviderConfig.id))
-        )
+        await session.execute(select(ProviderConfig.provider, ProviderConfig.label).order_by(asc(ProviderConfig.id)))
     ).all()
     option_by_provider: dict[str, str] = {}
     for provider, label in config_rows:
@@ -338,7 +371,9 @@ async def _provider_mappings_read(session: AsyncSession, source: DataSourceConfi
 
     return HermesProviderMappingsRead(
         source_id=source.id,
-        configured_providers=[HermesProviderMappingOption(provider=p, label=option_by_provider[p]) for p in sorted(option_by_provider)],
+        configured_providers=[
+            HermesProviderMappingOption(provider=p, label=option_by_provider[p]) for p in sorted(option_by_provider)
+        ],
         mappings=mappings,
         observed=observed,
         mapped_count=mapped_count,
@@ -347,7 +382,11 @@ async def _provider_mappings_read(session: AsyncSession, source: DataSourceConfi
     )
 
 
-@router.get("/configs/{source_id}/provider-mappings", response_model=HermesProviderMappingsRead, dependencies=[Depends(require_admin_auth)])
+@router.get(
+    "/configs/{source_id}/provider-mappings",
+    response_model=HermesProviderMappingsRead,
+    dependencies=[Depends(require_admin_auth)],
+)
 async def get_provider_mappings(source_id: int, session: AsyncSession = Depends(get_session)):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
@@ -355,15 +394,19 @@ async def get_provider_mappings(source_id: int, session: AsyncSession = Depends(
     return await _provider_mappings_read(session, source)
 
 
-@router.put("/configs/{source_id}/provider-mappings", response_model=HermesProviderMappingsRead, dependencies=[Depends(require_admin_auth)])
-async def put_provider_mappings(source_id: int, payload: HermesProviderMappingsUpdate, session: AsyncSession = Depends(get_session)):
+@router.put(
+    "/configs/{source_id}/provider-mappings",
+    response_model=HermesProviderMappingsRead,
+    dependencies=[Depends(require_admin_auth)],
+)
+async def put_provider_mappings(
+    source_id: int, payload: HermesProviderMappingsUpdate, session: AsyncSession = Depends(get_session)
+):
     source = await session.get(DataSourceConfig, source_id)
     if not source:
         raise HTTPException(status_code=404, detail="Data source not found")
 
-    all_provider_ids = set(
-        (await session.execute(select(ProviderConfig.provider))).scalars().all()
-    )
+    all_provider_ids = set((await session.execute(select(ProviderConfig.provider))).scalars().all())
     mappings = dict((source.extra or {}).get("provider_mappings") or {})
     for raw, target in (payload.mappings or {}).items():
         raw_key = str(raw).strip().lower()

@@ -53,13 +53,7 @@ jobs:
         run: ruff check backend
 
       - name: Check backend formatting
-        run: >-
-          ruff format --check
-          backend/app/datasources/service.py
-          backend/app/models.py
-          backend/tests/test_datasources.py
-          backend/tests/test_postgres_migrations.py
-          backend/alembic/versions/0011_session_id_text.py
+        run: ruff format --check backend
 
   test-backend-migrations:
     name: Test backend migrations (PostgreSQL)
@@ -67,6 +61,8 @@ jobs:
     services:
       postgres:
         image: postgres:18-alpine
+        ports:
+          - 5432:5432
         env:
           POSTGRES_DB: usage_dashboard
           POSTGRES_USER: usage_dashboard

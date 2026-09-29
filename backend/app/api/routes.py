@@ -14,7 +14,20 @@ from sqlalchemy import asc, delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.normalizer import normalize_native, normalize_snapshots
-from app.core.auth import auth_status, bearer_scheme, create_api_token_record, homepage_auth, login_admin, request_password_reset, require_admin_auth, require_scope, reset_admin_password, revoke_admin_session, revoke_api_token_record, setup_admin_password
+from app.core.auth import (
+    auth_status,
+    bearer_scheme,
+    create_api_token_record,
+    homepage_auth,
+    login_admin,
+    request_password_reset,
+    require_admin_auth,
+    require_scope,
+    reset_admin_password,
+    revoke_admin_session,
+    revoke_api_token_record,
+    setup_admin_password,
+)
 from app.core.config import settings
 from app.core.crypto import CryptoError, CryptoService
 from app.core.thresholds import build_alerts, provider_alert_state
@@ -24,7 +37,36 @@ from app.models import ApiToken, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.errors import classify_exception, log_provider_failure
 from app.providers.registry import get_adapter_class, list_providers
-from app.schemas import AlertStateRead, ApiTokenCreate, ApiTokenCreated, ApiTokenRead, AuthCodePasswordRequest, AuthPasswordRequest, AuthStatusRead, AuthTokenRead, BILLING_CADENCES, CodexBrowserCompleteRead, CodexBrowserCompleteRequest, CodexBrowserStartRead, CodexBrowserStatusRead, CodexDevicePollRead, CodexDevicePollRequest, CodexDeviceStartRead, DashboardConfigUsage, HomepagePayload, HomepageProviderRow, PollStatusRead, PRICING_MODELS, ProviderConfigCreate, ProviderConfigOrderUpdate, ProviderConfigRead, ProviderConfigUpdate, ProviderInfo, ProviderUsageRead, UsageSnapshotRead
+from app.schemas import (
+    AlertStateRead,
+    ApiTokenCreate,
+    ApiTokenCreated,
+    ApiTokenRead,
+    AuthCodePasswordRequest,
+    AuthPasswordRequest,
+    AuthStatusRead,
+    AuthTokenRead,
+    BILLING_CADENCES,
+    CodexBrowserCompleteRead,
+    CodexBrowserCompleteRequest,
+    CodexBrowserStartRead,
+    CodexBrowserStatusRead,
+    CodexDevicePollRead,
+    CodexDevicePollRequest,
+    CodexDeviceStartRead,
+    DashboardConfigUsage,
+    HomepagePayload,
+    HomepageProviderRow,
+    PollStatusRead,
+    PRICING_MODELS,
+    ProviderConfigCreate,
+    ProviderConfigOrderUpdate,
+    ProviderConfigRead,
+    ProviderConfigUpdate,
+    ProviderInfo,
+    ProviderUsageRead,
+    UsageSnapshotRead,
+)
 
 router = APIRouter()
 _auto_poll_lock = asyncio.Lock()
@@ -32,6 +74,7 @@ _auto_poll_task: asyncio.Task | None = None
 _last_auto_polled_at: datetime | None = None
 _next_auto_poll_at: datetime | None = None
 _codex_device_flows: dict[str, codex_oauth.CodexDeviceStart] = {}
+
 
 @dataclass(slots=True)
 class CodexBrowserFlowState:
@@ -55,6 +98,7 @@ class CodexBrowserFlowState:
     @property
     def expires_at(self) -> datetime:
         return self.browser.expires_at
+
 
 _codex_browser_flows: dict[str, CodexBrowserFlowState] = {}
 _codex_browser_listener: ThreadingHTTPServer | None = None
@@ -97,7 +141,10 @@ def _prune_codex_device_flows(now: datetime | None = None) -> None:
             flow.status = "expired"
             flow.error = "Codex browser login expired. Start a new connection."
             flow.completed_at = current
-        if flow.status in {"completed", "failed", "expired"} and (flow.completed_at or flow.browser.expires_at) + timedelta(minutes=2) <= current:
+        if (
+            flow.status in {"completed", "failed", "expired"}
+            and (flow.completed_at or flow.browser.expires_at) + timedelta(minutes=2) <= current
+        ):
             expired_browser.append(flow_id)
     for flow_id in expired_browser:
         _codex_browser_flows.pop(flow_id, None)
@@ -112,6 +159,7 @@ def _codex_browser_result_page(success: bool, message: str) -> str:
     mark = "✓" if success else "✕"
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>{title}</title><style>body{{font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;background:#f6f7f9}}.card{{max-width:460px;padding:32px;border-radius:12px;background:white;box-shadow:0 8px 32px #0002;text-align:center}}.mark{{font-size:44px;color:{color}}}p{{color:#4b5563}}</style></head><body><main class="card"><div class="mark">{mark}</div><h1>{title}</h1><p>{safe_message}</p><p>This window will close automatically if your browser allows it.</p></main><script>setTimeout(() => window.close(), 1800);</script></body></html>"""
 
+
 def _safe_browser_error(exc: Exception) -> str:
     message = str(exc).lower()
     if "expired" in message:
@@ -120,10 +168,14 @@ def _safe_browser_error(exc: Exception) -> str:
         return "OpenAI rejected the authorization request."
     return "Unable to exchange the Codex authorization code."
 
+
 def _browser_status_payload(flow: CodexBrowserFlowState) -> dict[str, object]:
     return {"status": flow.status, "error": flow.error, "config_id": flow.config_id_result, "label": flow.label_result}
 
-async def _claim_codex_browser_flow(flow_id: str | None, callback: str, *, allow_failed_retry: bool = False) -> tuple[str | None, CodexBrowserFlowState | None, str | None, str | None]:
+
+async def _claim_codex_browser_flow(
+    flow_id: str | None, callback: str, *, allow_failed_retry: bool = False
+) -> tuple[str | None, CodexBrowserFlowState | None, str | None, str | None]:
     async with _codex_device_lock:
         _prune_codex_device_flows()
         candidates = [(fid, flow) for fid, flow in _codex_browser_flows.items() if flow_id is None or fid == flow_id]
@@ -134,7 +186,12 @@ async def _claim_codex_browser_flow(flow_id: str | None, callback: str, *, allow
             except Exception:
                 continue
             if flow.status != "pending" and not (allow_failed_retry and flow.status == "failed"):
-                return None, flow, None, "This Codex authorization flow is already being processed or has finished. Start a new login if needed."
+                return (
+                    None,
+                    flow,
+                    None,
+                    "This Codex authorization flow is already being processed or has finished. Start a new login if needed.",
+                )
             if flow.browser.expires_at <= datetime.now(UTC):
                 flow.status = "expired"
                 flow.error = "Codex authorization expired."
@@ -144,16 +201,25 @@ async def _claim_codex_browser_flow(flow_id: str | None, callback: str, *, allow
             return candidate_id, flow, code, None
         return None, matched_by_id, None, "Codex authorization failed."
 
-async def _finish_codex_browser_flow(flow_id: str, flow: CodexBrowserFlowState, code: str, session: AsyncSession | None = None) -> tuple[bool, str, ProviderConfigRead | None]:
+
+async def _finish_codex_browser_flow(
+    flow_id: str, flow: CodexBrowserFlowState, code: str, session: AsyncSession | None = None
+) -> tuple[bool, str, ProviderConfigRead | None]:
     try:
-        secret = await codex_oauth.exchange_browser_authorization_code(code, flow.browser.code_verifier, timeout=settings.request_timeout_seconds)
+        secret = await codex_oauth.exchange_browser_authorization_code(
+            code, flow.browser.code_verifier, timeout=settings.request_timeout_seconds
+        )
         if session is None:
             session_factory = async_sessionmaker(engine, expire_on_commit=False)
             async with session_factory() as local_session:
-                config = await _save_codex_secret(local_session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id)
+                config = await _save_codex_secret(
+                    local_session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id
+                )
                 config_read = _config_read(config)
         else:
-            config = await _save_codex_secret(session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id)
+            config = await _save_codex_secret(
+                session, secret, auth_method="browser_pkce", label=flow.label, config_id=flow.config_id
+            )
             config_read = _config_read(config)
         async with _codex_device_lock:
             current = _codex_browser_flows.get(flow_id)
@@ -177,6 +243,7 @@ async def _finish_codex_browser_flow(flow_id: str, flow: CodexBrowserFlowState, 
             if not any(item.status in {"pending", "processing"} for item in _codex_browser_flows.values()):
                 _stop_codex_browser_listener()
 
+
 async def _complete_codex_browser_callback(state: str | None, callback_url: str) -> tuple[bool, str]:
     if state:
         try:
@@ -189,13 +256,16 @@ async def _complete_codex_browser_callback(state: str | None, callback_url: str)
     ok, message, _ = await _finish_codex_browser_flow(flow_id, flow, code)
     return ok, message
 
+
 def _start_codex_browser_listener(loop: asyncio.AbstractEventLoop) -> tuple[bool, str | None]:
     global _codex_browser_listener, _codex_browser_listener_thread
     if _codex_browser_listener:
         return True, None
+
     class CodexCallbackHandler(BaseHTTPRequestHandler):
         def log_message(self, format, *args):
             return
+
         def do_GET(self):
             parsed = urlparse(self.path)
             if parsed.path != "/auth/callback":
@@ -210,25 +280,34 @@ def _start_codex_browser_listener(loop: asyncio.AbstractEventLoop) -> tuple[bool
                 self.wfile.write(b"Forbidden")
                 return
             state = parse_qs(parsed.query, keep_blank_values=False).get("state", [None])[0]
-            future = asyncio.run_coroutine_threadsafe(_complete_codex_browser_callback(state, f"http://localhost:1455{self.path}"), loop)
+            future = asyncio.run_coroutine_threadsafe(
+                _complete_codex_browser_callback(state, f"http://localhost:1455{self.path}"), loop
+            )
             try:
                 success, message = future.result(timeout=settings.request_timeout_seconds + 5)
             except Exception:
-                success, message = False, "Codex authorization failed. Return to Usage Dashboard and use manual callback fallback."
+                success, message = (
+                    False,
+                    "Codex authorization failed. Return to Usage Dashboard and use manual callback fallback.",
+                )
             body = _codex_browser_result_page(success, message).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
     try:
         server = ThreadingHTTPServer(("127.0.0.1", 1455), CodexCallbackHandler)
     except OSError as exc:
         return False, "port_busy" if getattr(exc, "errno", None) == errno.EADDRINUSE else "listener_unavailable"
     _codex_browser_listener = server
-    _codex_browser_listener_thread = threading.Thread(target=server.serve_forever, name="codex-oauth-callback", daemon=True)
+    _codex_browser_listener_thread = threading.Thread(
+        target=server.serve_forever, name="codex-oauth-callback", daemon=True
+    )
     _codex_browser_listener_thread.start()
     return True, None
+
 
 def _stop_codex_browser_listener() -> None:
     global _codex_browser_listener, _codex_browser_listener_thread
@@ -238,6 +317,7 @@ def _stop_codex_browser_listener() -> None:
     _codex_browser_listener = None
     _codex_browser_listener_thread = None
     threading.Thread(target=server.shutdown, daemon=True).start()
+
 
 def _format_homepage_number(value: float | int | str | bool | None) -> str:
     if isinstance(value, bool) or value is None:
@@ -249,12 +329,9 @@ def _format_homepage_number(value: float | int | str | bool | None) -> str:
     return str(value)
 
 
-def _homepage_usage_text(
-    metrics: list[dict], summary: str | None, provider: str | None = None
-) -> str:
+def _homepage_usage_text(metrics: list[dict], summary: str | None, provider: str | None = None) -> str:
     labeled_metrics = {
-        str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_"): metric
-        for metric in metrics
+        str(metric.get("label") or "").lower().replace("-", "_").replace(" ", "_"): metric for metric in metrics
     }
 
     quota_windows = {
@@ -275,8 +352,7 @@ def _homepage_usage_text(
     window_parts = [
         f"{title} {_format_homepage_number(labeled_metrics[metric_name].get('value'))}%"
         for title, metric_name in quota_windows
-        if metric_name in labeled_metrics
-        and labeled_metrics[metric_name].get("value") is not None
+        if metric_name in labeled_metrics and labeled_metrics[metric_name].get("value") is not None
     ]
     if window_parts:
         return " • ".join(window_parts)
@@ -318,13 +394,8 @@ def _provider_display_name(provider: str) -> str:
 def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
     provider_rows = []
     provider_counts = {
-        provider: sum(
-            row["config"].provider == provider and row["config"].is_enabled
-            for row in rows
-        )
-        for provider in {
-            row["config"].provider for row in rows if row["config"].is_enabled
-        }
+        provider: sum(row["config"].provider == provider and row["config"].is_enabled for row in rows)
+        for provider in {row["config"].provider for row in rows if row["config"].is_enabled}
     }
     for row in rows:
         cfg = row["config"]
@@ -344,11 +415,7 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
             HomepageProviderRow(
                 provider=cfg.provider,
                 config_id=cfg.id,
-                label=(
-                    provider_name
-                    if provider_counts[cfg.provider] == 1
-                    else f"{provider_name} ({cfg.label})"
-                ),
+                label=(provider_name if provider_counts[cfg.provider] == 1 else f"{provider_name} ({cfg.label})"),
                 value=(
                     _homepage_usage_text(display.metrics, display.summary, cfg.provider)
                     if display
@@ -362,7 +429,9 @@ def _homepage_provider_rows(rows: list[dict]) -> list[HomepageProviderRow]:
 
 async def _unique_label(session: AsyncSession, provider: str, requested: str | None) -> str:
     base = (requested or "main").strip() or "main"
-    existing = set((await session.execute(select(ProviderConfig.label).where(ProviderConfig.provider == provider))).scalars().all())
+    existing = set(
+        (await session.execute(select(ProviderConfig.label).where(ProviderConfig.provider == provider))).scalars().all()
+    )
     if base not in existing:
         return base
     provider_slug = _slug(provider)
@@ -370,7 +439,6 @@ async def _unique_label(session: AsyncSession, provider: str, requested: str | N
     while f"{provider_slug}-{index}" in existing:
         index += 1
     return f"{provider_slug}-{index}"
-
 
 
 async def _save_codex_secret(
@@ -407,6 +475,7 @@ async def _save_codex_secret(
     await session.commit()
     await session.refresh(config)
     return config
+
 
 @router.get("/auth/status", response_model=AuthStatusRead)
 async def get_auth_status(session: AsyncSession = Depends(get_session)):
@@ -448,17 +517,26 @@ async def complete_auth_reset(payload: AuthCodePasswordRequest, session: AsyncSe
 
 @router.get("/api-tokens", response_model=list[ApiTokenRead], dependencies=[Depends(require_admin_auth)])
 async def list_api_tokens(session: AsyncSession = Depends(get_session)):
-    rows = (await session.execute(select(ApiToken).order_by(desc(ApiToken.created_at), desc(ApiToken.id)))).scalars().all()
+    rows = (
+        (await session.execute(select(ApiToken).order_by(desc(ApiToken.created_at), desc(ApiToken.id)))).scalars().all()
+    )
     return [_api_token_read(row) for row in rows]
 
 
-@router.post("/api-tokens", response_model=ApiTokenCreated, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/api-tokens",
+    response_model=ApiTokenCreated,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_auth)],
+)
 async def create_api_token(payload: ApiTokenCreate, session: AsyncSession = Depends(get_session)):
     record, token = await create_api_token_record(payload.name, payload.scopes, payload.expires_at, session)
     return ApiTokenCreated(**_api_token_read(record).model_dump(), token=token)
 
 
-@router.post("/api-tokens/{token_id}/revoke", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/api-tokens/{token_id}/revoke", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)]
+)
 async def revoke_api_token(token_id: int, session: AsyncSession = Depends(get_session)):
     if not await revoke_api_token_record(token_id, session):
         raise HTTPException(status_code=404, detail="API token not found")
@@ -475,7 +553,12 @@ async def list_configs(session: AsyncSession = Depends(get_session)):
     return [_config_read(row) for row in rows]
 
 
-@router.post("/configs", response_model=ProviderConfigRead, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/configs",
+    response_model=ProviderConfigRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin_auth)],
+)
 async def create_config(payload: ProviderConfigCreate, session: AsyncSession = Depends(get_session)):
     try:
         get_adapter_class(payload.provider)
@@ -509,7 +592,9 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
         await session.commit()
     except Exception as exc:
         await session.rollback()
-        raise HTTPException(status_code=409, detail="Provider label already exists or database rejected the config") from exc
+        raise HTTPException(
+            status_code=409, detail="Provider label already exists or database rejected the config"
+        ) from exc
     await session.refresh(config)
     return _config_read(config)
 
@@ -518,14 +603,23 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
 async def test_config(payload: ProviderConfigCreate):
     try:
         adapter_cls = get_adapter_class(payload.provider)
-        adapter = adapter_cls(payload.api_key, base_url=payload.base_url, timeout=settings.request_timeout_seconds, extra=payload.extra)
+        adapter = adapter_cls(
+            payload.api_key, base_url=payload.base_url, timeout=settings.request_timeout_seconds, extra=payload.extra
+        )
         usage = await adapter.fetch_usage()
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": usage.status, "summary": usage.summary, "metrics": [asdict(metric) for metric in usage.metrics], "raw": usage.raw}
+    return {
+        "status": usage.status,
+        "summary": usage.summary,
+        "metrics": [asdict(metric) for metric in usage.metrics],
+        "raw": usage.raw,
+    }
 
 
-@router.post("/codex/oauth/device/start", response_model=CodexDeviceStartRead, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/codex/oauth/device/start", response_model=CodexDeviceStartRead, dependencies=[Depends(require_admin_auth)]
+)
 async def start_codex_device_oauth():
     try:
         device = await codex_oauth.start_device_authorization(timeout=settings.request_timeout_seconds)
@@ -538,8 +632,12 @@ async def start_codex_device_oauth():
     return codex_oauth.public_device_payload(flow_id, device)
 
 
-@router.post("/codex/oauth/device/{flow_id}/poll", response_model=CodexDevicePollRead, dependencies=[Depends(require_admin_auth)])
-async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest | None = None, session: AsyncSession = Depends(get_session)):
+@router.post(
+    "/codex/oauth/device/{flow_id}/poll", response_model=CodexDevicePollRead, dependencies=[Depends(require_admin_auth)]
+)
+async def poll_codex_device_oauth(
+    flow_id: str, payload: CodexDevicePollRequest | None = None, session: AsyncSession = Depends(get_session)
+):
     async with _codex_device_lock:
         _prune_codex_device_flows()
         device = _codex_device_flows.get(flow_id)
@@ -548,15 +646,30 @@ async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest 
     if device.expires_at <= datetime.now(UTC):
         async with _codex_device_lock:
             _codex_device_flows.pop(flow_id, None)
-        return {"status": "expired", "error": "Codex device code expired. Start a new connection.", "interval_seconds": None, "config": None}
+        return {
+            "status": "expired",
+            "error": "Codex device code expired. Start a new connection.",
+            "interval_seconds": None,
+            "config": None,
+        }
 
     result = await codex_oauth.poll_device_authorization(device.device_code, timeout=settings.request_timeout_seconds)
     if result.get("status") != "completed":
-        return {"status": result.get("status", "failed"), "interval_seconds": result.get("interval_seconds"), "error": result.get("error"), "config": None}
+        return {
+            "status": result.get("status", "failed"),
+            "interval_seconds": result.get("interval_seconds"),
+            "error": result.get("error"),
+            "config": None,
+        }
 
     secret = result.get("secret")
     if not isinstance(secret, str) or not secret.strip():
-        return {"status": "failed", "error": "Codex device authorization completed without usable tokens", "interval_seconds": None, "config": None}
+        return {
+            "status": "failed",
+            "error": "Codex device authorization completed without usable tokens",
+            "interval_seconds": None,
+            "config": None,
+        }
 
     config = await _save_codex_secret(
         session,
@@ -570,7 +683,9 @@ async def poll_codex_device_oauth(flow_id: str, payload: CodexDevicePollRequest 
     return {"status": "completed", "interval_seconds": None, "error": None, "config": _config_read(config)}
 
 
-@router.post("/codex/oauth/browser/start", response_model=CodexBrowserStartRead, dependencies=[Depends(require_admin_auth)])
+@router.post(
+    "/codex/oauth/browser/start", response_model=CodexBrowserStartRead, dependencies=[Depends(require_admin_auth)]
+)
 async def start_codex_browser_oauth(payload: CodexDevicePollRequest | None = None):
     browser = codex_oauth.start_browser_authorization()
     flow_id = token_urlsafe(32)
@@ -580,14 +695,23 @@ async def start_codex_browser_oauth(payload: CodexDevicePollRequest | None = Non
         listener_started, fallback_reason = False, "auto_capture_not_enabled"
     async with _codex_device_lock:
         _prune_codex_device_flows()
-        _codex_browser_flows[flow_id] = CodexBrowserFlowState(browser=browser, label=payload.label if payload else None, config_id=payload.config_id if payload else None)
+        _codex_browser_flows[flow_id] = CodexBrowserFlowState(
+            browser=browser, label=payload.label if payload else None, config_id=payload.config_id if payload else None
+        )
     data = codex_oauth.public_browser_payload(flow_id, browser)
     data["callback_available"] = listener_started
     data["fallback_reason"] = fallback_reason
     return data
 
-@router.post("/codex/oauth/browser/{flow_id}/complete", response_model=CodexBrowserCompleteRead, dependencies=[Depends(require_admin_auth)])
-async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserCompleteRequest, session: AsyncSession = Depends(get_session)):
+
+@router.post(
+    "/codex/oauth/browser/{flow_id}/complete",
+    response_model=CodexBrowserCompleteRead,
+    dependencies=[Depends(require_admin_auth)],
+)
+async def complete_codex_browser_oauth(
+    flow_id: str, payload: CodexBrowserCompleteRequest, session: AsyncSession = Depends(get_session)
+):
     claimed_id, flow, code, error = await _claim_codex_browser_flow(flow_id, payload.callback, allow_failed_retry=True)
     if not flow:
         raise HTTPException(status_code=404, detail="Codex browser authorization flow was not found or expired")
@@ -598,7 +722,12 @@ async def complete_codex_browser_oauth(flow_id: str, payload: CodexBrowserComple
         raise HTTPException(status_code=400, detail=message)
     return {"status": "completed", "error": None, "config": config}
 
-@router.get("/codex/oauth/browser/{flow_id}/status", response_model=CodexBrowserStatusRead, dependencies=[Depends(require_admin_auth)])
+
+@router.get(
+    "/codex/oauth/browser/{flow_id}/status",
+    response_model=CodexBrowserStatusRead,
+    dependencies=[Depends(require_admin_auth)],
+)
 async def codex_browser_oauth_status(flow_id: str):
     async with _codex_device_lock:
         _prune_codex_device_flows()
@@ -614,7 +743,9 @@ async def codex_browser_oauth_status(flow_id: str):
 
 @router.patch("/configs/order", response_model=list[ProviderConfigRead], dependencies=[Depends(require_admin_auth)])
 async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSession = Depends(get_session)):
-    existing = (await session.execute(select(ProviderConfig).where(ProviderConfig.id.in_(payload.config_ids)))).scalars().all()
+    existing = (
+        (await session.execute(select(ProviderConfig).where(ProviderConfig.id.in_(payload.config_ids)))).scalars().all()
+    )
     by_id = {config.id: config for config in existing}
     missing = [config_id for config_id in payload.config_ids if config_id not in by_id]
     if missing:
@@ -700,7 +831,9 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
     return _config_read(config)
 
 
-@router.delete("/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)])
+@router.delete(
+    "/configs/{config_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_admin_auth)]
+)
 async def delete_config(config_id: int, session: AsyncSession = Depends(get_session)):
     result = await session.execute(delete(ProviderConfig).where(ProviderConfig.id == config_id))
     if result.rowcount == 0:
@@ -708,8 +841,14 @@ async def delete_config(config_id: int, session: AsyncSession = Depends(get_sess
     await session.commit()
 
 
-@router.get("/configs/{config_id}/history", response_model=list[UsageSnapshotRead], dependencies=[Depends(require_scope("history:read"))])
-async def config_history(config_id: int, hours: int = 168, limit: int = 500, session: AsyncSession = Depends(get_session)):
+@router.get(
+    "/configs/{config_id}/history",
+    response_model=list[UsageSnapshotRead],
+    dependencies=[Depends(require_scope("history:read"))],
+)
+async def config_history(
+    config_id: int, hours: int = 168, limit: int = 500, session: AsyncSession = Depends(get_session)
+):
     config = await session.get(ProviderConfig, config_id)
     if not config:
         raise HTTPException(status_code=404, detail="Provider config not found")
@@ -718,7 +857,12 @@ async def config_history(config_id: int, hours: int = 168, limit: int = 500, ses
     if limit <= 0:
         raise HTTPException(status_code=400, detail="limit must be greater than zero")
     since = datetime.now(UTC) - timedelta(hours=hours)
-    result = await session.execute(select(UsageSnapshot).where(UsageSnapshot.provider_config_id == config_id, UsageSnapshot.checked_at >= since).order_by(asc(UsageSnapshot.checked_at), asc(UsageSnapshot.id)).limit(limit))
+    result = await session.execute(
+        select(UsageSnapshot)
+        .where(UsageSnapshot.provider_config_id == config_id, UsageSnapshot.checked_at >= since)
+        .order_by(asc(UsageSnapshot.checked_at), asc(UsageSnapshot.id))
+        .limit(limit)
+    )
     return result.scalars().all()
 
 
@@ -726,12 +870,26 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
     try:
         adapter_cls = get_adapter_class(config.provider)
         crypto = _crypto()
-        adapter = adapter_cls(crypto.decrypt(config.encrypted_api_key), base_url=config.base_url, timeout=settings.request_timeout_seconds, extra=config.extra)
+        adapter = adapter_cls(
+            crypto.decrypt(config.encrypted_api_key),
+            base_url=config.base_url,
+            timeout=settings.request_timeout_seconds,
+            extra=config.extra,
+        )
         usage = await adapter.fetch_usage()
         updated_secret = getattr(adapter, "updated_secret", None)
         if updated_secret:
             config.encrypted_api_key = crypto.encrypt(updated_secret)
-        snapshot = UsageSnapshot(provider_config_id=config.id, provider=config.provider, status=usage.status, summary=usage.summary, metrics=[asdict(metric) for metric in usage.metrics], raw=usage.raw, error=None, error_details=None)
+        snapshot = UsageSnapshot(
+            provider_config_id=config.id,
+            provider=config.provider,
+            status=usage.status,
+            summary=usage.summary,
+            metrics=[asdict(metric) for metric in usage.metrics],
+            raw=usage.raw,
+            error=None,
+            error_details=None,
+        )
         native = adapter.native_observations(usage.raw)
     except Exception as exc:  # noqa: BLE001 - classify + record, never leak secrets
         error = classify_exception(exc, stage="fetch_usage")
@@ -782,18 +940,24 @@ def _observation_key(obs) -> tuple:
     )
 
 
-async def _ingest_observations(session: AsyncSession, config: ProviderConfig, snapshot: UsageSnapshot, native: list[dict]) -> None:
+async def _ingest_observations(
+    session: AsyncSession, config: ProviderConfig, snapshot: UsageSnapshot, native: list[dict]
+) -> None:
     """Derive and persist normalized observations for a freshly polled snapshot."""
     capabilities = get_adapter_class(config.provider).analytics or {}
     if snapshot.status != "error" and snapshot.metrics:
         recent = (
-            await session.execute(
-                select(UsageSnapshot)
-                .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.id < snapshot.id)
-                .order_by(desc(UsageSnapshot.id))
-                .limit(3)
+            (
+                await session.execute(
+                    select(UsageSnapshot)
+                    .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.id < snapshot.id)
+                    .order_by(desc(UsageSnapshot.id))
+                    .limit(3)
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         previous = next((row for row in recent if row.metrics), None)
         history = []
         if previous is not None:
@@ -813,15 +977,19 @@ async def _ingest_observations(session: AsyncSession, config: ProviderConfig, sn
             lower = min(obs.observed_at for obs in native_obs)
             upper = max(obs.observed_at for obs in native_obs)
             existing = (
-                await session.execute(
-                    select(UsageObservation).where(
-                        UsageObservation.provider_config_id == config.id,
-                        UsageObservation.source == "native",
-                        UsageObservation.observed_at >= lower,
-                        UsageObservation.observed_at <= upper,
+                (
+                    await session.execute(
+                        select(UsageObservation).where(
+                            UsageObservation.provider_config_id == config.id,
+                            UsageObservation.source == "native",
+                            UsageObservation.observed_at >= lower,
+                            UsageObservation.observed_at <= upper,
+                        )
                     )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             by_key = {_observation_key(row): row for row in existing}
             for obs in native_obs:
                 row = by_key.get(_observation_key(obs))
@@ -849,15 +1017,30 @@ async def _prune_old_snapshots(session: AsyncSession) -> None:
     cutoff = datetime.now(UTC) - timedelta(days=settings.snapshot_retention_days)
     ranked_snapshots = select(
         UsageSnapshot.id,
-        func.row_number().over(partition_by=UsageSnapshot.provider_config_id, order_by=(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))).label("rank"),
+        func.row_number()
+        .over(
+            partition_by=UsageSnapshot.provider_config_id,
+            order_by=(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id)),
+        )
+        .label("rank"),
     ).subquery()
     latest_snapshot_ids = select(ranked_snapshots.c.id).where(ranked_snapshots.c.rank == 1)
-    await session.execute(delete(UsageSnapshot).where(UsageSnapshot.checked_at < cutoff, UsageSnapshot.id.not_in(latest_snapshot_ids)))
+    await session.execute(
+        delete(UsageSnapshot).where(UsageSnapshot.checked_at < cutoff, UsageSnapshot.id.not_in(latest_snapshot_ids))
+    )
     await session.commit()
 
 
 async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
-    configs = (await session.execute(select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)).order_by(*_config_ordering()))).scalars().all()
+    configs = (
+        (
+            await session.execute(
+                select(ProviderConfig).where(ProviderConfig.is_enabled.is_(True)).order_by(*_config_ordering())
+            )
+        )
+        .scalars()
+        .all()
+    )
     results = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
     snapshots = [result[0] for result in results]
     if snapshots:
@@ -917,7 +1100,9 @@ async def stop_auto_polling() -> None:
     _next_auto_poll_at = None
 
 
-@router.post("/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_scope("poll:write"))])
+@router.post(
+    "/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_scope("poll:write"))]
+)
 async def poll_config(config_id: int, session: AsyncSession = Depends(get_session)):
     config = await session.get(ProviderConfig, config_id)
     if not config:
@@ -955,50 +1140,62 @@ async def poll_status():
     )
 
 
-async def _health_for_config(session: AsyncSession, config: ProviderConfig) -> tuple[UsageSnapshot | None, dict, UsageSnapshot | None]:
+async def _health_for_config(
+    session: AsyncSession, config: ProviderConfig
+) -> tuple[UsageSnapshot | None, dict, UsageSnapshot | None]:
     """Derive ``(latest, health, last_good)`` for a config using targeted queries.
 
     No bounded scan window: the latest snapshot, last success, last failure, and
     failure count are each located with their own query, so a long run of
     failures can never hide an older successful snapshot.
     """
-    latest = (await session.execute(
-        select(UsageSnapshot)
-        .where(UsageSnapshot.provider_config_id == config.id)
-        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
-        .limit(1)
-    )).scalar_one_or_none()
+    latest = (
+        await session.execute(
+            select(UsageSnapshot)
+            .where(UsageSnapshot.provider_config_id == config.id)
+            .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
-    last_success = (await session.execute(
-        select(UsageSnapshot)
-        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status != "error")
-        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
-        .limit(1)
-    )).scalar_one_or_none()
+    last_success = (
+        await session.execute(
+            select(UsageSnapshot)
+            .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status != "error")
+            .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
-    last_failure = (await session.execute(
-        select(UsageSnapshot)
-        .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status == "error")
-        .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
-        .limit(1)
-    )).scalar_one_or_none()
+    last_failure = (
+        await session.execute(
+            select(UsageSnapshot)
+            .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status == "error")
+            .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
     last_success_at = last_success.checked_at if last_success is not None else None
     if last_success_at is not None:
-        consecutive = (await session.execute(
-            select(func.count(UsageSnapshot.id)).where(
-                UsageSnapshot.provider_config_id == config.id,
-                UsageSnapshot.status == "error",
-                UsageSnapshot.checked_at > last_success_at,
+        consecutive = (
+            await session.execute(
+                select(func.count(UsageSnapshot.id)).where(
+                    UsageSnapshot.provider_config_id == config.id,
+                    UsageSnapshot.status == "error",
+                    UsageSnapshot.checked_at > last_success_at,
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
     else:
-        consecutive = (await session.execute(
-            select(func.count(UsageSnapshot.id)).where(
-                UsageSnapshot.provider_config_id == config.id,
-                UsageSnapshot.status == "error",
+        consecutive = (
+            await session.execute(
+                select(func.count(UsageSnapshot.id)).where(
+                    UsageSnapshot.provider_config_id == config.id,
+                    UsageSnapshot.status == "error",
+                )
             )
-        )).scalar_one()
+        ).scalar_one()
 
     # Only surface error details when the *latest* attempt failed; a later
     # success clears stale error state so a healthy provider never shows an old
@@ -1030,7 +1227,9 @@ async def usage(session: AsyncSession = Depends(get_session)):
     for config in configs:
         latest, health, last_good = await _health_for_config(session, config)
         alert_source = last_good if last_good is not None else latest
-        alerts = build_alerts(alert_source.metrics if alert_source else [], config.alert_thresholds) if alert_source else []
+        alerts = (
+            build_alerts(alert_source.metrics if alert_source else [], config.alert_thresholds) if alert_source else []
+        )
         payload.append(
             {
                 "config": _config_read(config),
@@ -1064,4 +1263,12 @@ async def homepage(session: AsyncSession = Depends(get_session)):
             key = f"{cfg.provider}_{cfg.label}_{metric.get('label')}".lower().replace(" ", "_")
             metrics[key] = metric.get("value")
     checked = latest_check.astimezone(UTC).isoformat() if latest_check else None
-    return HomepagePayload(configured_providers=configured, healthy_providers=healthy, degraded_providers=degraded, latest_check=checked, summary=f"{healthy}/{configured} providers healthy" if configured else "No providers configured", metrics=metrics, list=_homepage_provider_rows(rows))
+    return HomepagePayload(
+        configured_providers=configured,
+        healthy_providers=healthy,
+        degraded_providers=degraded,
+        latest_check=checked,
+        summary=f"{healthy}/{configured} providers healthy" if configured else "No providers configured",
+        metrics=metrics,
+        list=_homepage_provider_rows(rows),
+    )

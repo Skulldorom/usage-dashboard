@@ -130,10 +130,7 @@ def estimate_quota_impact(
     Returns ``None`` when fewer than :data:`MIN_WINDOWS` complete windows exist
     (not enough history to estimate impact).
     """
-    windowed = [
-        obs for obs in util_points
-        if obs.kind == "point" and obs.reset_at is not None
-    ]
+    windowed = [obs for obs in util_points if obs.kind == "point" and obs.reset_at is not None]
     if len(windowed) < MIN_WINDOWS:
         return None
 
@@ -162,10 +159,9 @@ def estimate_quota_impact(
         window_end = window["reset_at"]
         # Hermes token deltas within the same reset window.
         activity = sum(
-            obs.value for obs in hermes_deltas
-            if obs.kind == "delta"
-            and obs.metric in TOKEN_METRICS
-            and window_start <= obs.observed_at < window_end
+            obs.value
+            for obs in hermes_deltas
+            if obs.kind == "delta" and obs.metric in TOKEN_METRICS and window_start <= obs.observed_at < window_end
         )
         hermes_activity.append(activity)
 

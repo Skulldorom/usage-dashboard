@@ -44,10 +44,10 @@ async def discover_due_sources(session_factory: async_sessionmaker) -> list[int]
     """Return the ids of enabled data sources that are due for a poll."""
     async with session_factory() as session:
         sources = (
-            await session.execute(
-                select(DataSourceConfig).where(DataSourceConfig.is_enabled.is_(True))
-            )
-        ).scalars().all()
+            (await session.execute(select(DataSourceConfig).where(DataSourceConfig.is_enabled.is_(True))))
+            .scalars()
+            .all()
+        )
         now = datetime.now(UTC)
         return [s.id for s in sources if is_due(s.last_attempt_at, s.poll_interval_minutes, now)]
 

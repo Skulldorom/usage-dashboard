@@ -29,8 +29,14 @@ def test_codex_parser_reports_session_weekly_review_and_reset_credits_left():
     assert usage.status == "healthy"
     assert usage.summary == "Pro - 57.6% session left, 12% weekly left"
     assert any(m.label == "plan_type" and m.value == "Pro" for m in usage.metrics)
-    assert any(m.label == "session_remaining_percent" and m.value == 57.6 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
-    assert any(m.label == "weekly_remaining_percent" and m.value == 12 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
+    assert any(
+        m.label == "session_remaining_percent" and m.value == 57.6 and m.unit == "%" and m.maximum == 100
+        for m in usage.metrics
+    )
+    assert any(
+        m.label == "weekly_remaining_percent" and m.value == 12 and m.unit == "%" and m.maximum == 100
+        for m in usage.metrics
+    )
     assert any(m.label == "session_reset_at" and m.value == "2026-08-14T12:30:00Z" for m in usage.metrics)
     assert any(m.label == "review_session_remaining_percent" and m.value == 88 for m in usage.metrics)
     assert any(m.label == "review_limit_reached" and m.value is True for m in usage.metrics)
@@ -38,17 +44,22 @@ def test_codex_parser_reports_session_weekly_review_and_reset_credits_left():
 
 
 def test_codex_parser_reports_weekly_left_without_session_usage():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "secondary_window": {"used_percent": 73, "reset_at": "2026-08-20T00:00:00Z"},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "secondary_window": {"used_percent": 73, "reset_at": "2026-08-20T00:00:00Z"},
+            },
+        }
+    )
 
     assert usage.status == "healthy"
     assert usage.summary == "Pro - 27% weekly left"
     assert not any(m.label == "session_remaining_percent" for m in usage.metrics)
-    assert any(m.label == "weekly_remaining_percent" and m.value == 27 and m.unit == "%" and m.maximum == 100 for m in usage.metrics)
+    assert any(
+        m.label == "weekly_remaining_percent" and m.value == 27 and m.unit == "%" and m.maximum == 100
+        for m in usage.metrics
+    )
 
 
 def test_codex_parser_converts_numeric_reset_timestamps_to_iso_utc():
@@ -82,26 +93,30 @@ def test_codex_parser_converts_numeric_reset_timestamps_to_iso_utc():
 
 
 def test_codex_parser_accepts_float_unix_reset_timestamps():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "primary_window": {"used_percent": 20, "reset_at": 1787836140.0},
-            "secondary_window": {"used_percent": 10, "reset_at": 1788338296.5},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "primary_window": {"used_percent": 20, "reset_at": 1787836140.0},
+                "secondary_window": {"used_percent": 10, "reset_at": 1788338296.5},
+            },
+        }
+    )
 
     assert any(m.label == "session_reset_at" and m.value == "2026-08-27T13:09:00Z" for m in usage.metrics)
     assert any(m.label == "weekly_reset_at" and m.value == "2026-09-02T08:38:16Z" for m in usage.metrics)
 
 
 def test_codex_parser_omits_reset_metric_when_reset_at_missing():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "primary_window": {"used_percent": 12},
-            "secondary_window": {"used_percent": 88},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "primary_window": {"used_percent": 12},
+                "secondary_window": {"used_percent": 88},
+            },
+        }
+    )
 
     assert any(m.label == "session_remaining_percent" and m.value == 88 for m in usage.metrics)
     assert any(m.label == "weekly_remaining_percent" and m.value == 12 for m in usage.metrics)
@@ -110,13 +125,15 @@ def test_codex_parser_omits_reset_metric_when_reset_at_missing():
 
 
 def test_codex_parser_rejects_invalid_numeric_reset_values():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "primary_window": {"used_percent": 40, "reset_at": float("nan")},
-            "secondary_window": {"used_percent": 40, "reset_at": float("inf")},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "primary_window": {"used_percent": 40, "reset_at": float("nan")},
+                "secondary_window": {"used_percent": 40, "reset_at": float("inf")},
+            },
+        }
+    )
 
     assert any(m.label == "session_remaining_percent" and m.value == 60 for m in usage.metrics)
     assert any(m.label == "weekly_remaining_percent" and m.value == 60 for m in usage.metrics)
@@ -124,42 +141,47 @@ def test_codex_parser_rejects_invalid_numeric_reset_values():
     assert not any(m.label == "weekly_reset_at" for m in usage.metrics)
 
     # Boolean and non-numeric reset values must also be discarded.
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "primary_window": {"used_percent": 40, "reset_at": True},
-            "secondary_window": {"used_percent": 40, "reset_at": [1788338296]},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "primary_window": {"used_percent": 40, "reset_at": True},
+                "secondary_window": {"used_percent": 40, "reset_at": [1788338296]},
+            },
+        }
+    )
     assert not any(m.label == "session_reset_at" for m in usage.metrics)
     assert not any(m.label == "weekly_reset_at" for m in usage.metrics)
 
 
 def test_codex_parser_rejects_out_of_range_reset_timestamps():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "primary_window": {"used_percent": 40, "reset_at": 1e20},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "primary_window": {"used_percent": 40, "reset_at": 1e20},
+            },
+        }
+    )
 
     assert any(m.label == "session_remaining_percent" and m.value == 60 for m in usage.metrics)
     assert not any(m.label == "session_reset_at" for m in usage.metrics)
 
 
-
 def test_codex_parser_accepts_weekly_window_aliases_and_string_percentages():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Team",
-        "rate_limits_by_limit_id": {
-            "codex": {
-                "weekly_window": {"usage_percent": "0%", "reset_time": "2026-08-27T00:00:00Z"},
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Team",
+            "rate_limits_by_limit_id": {
+                "codex": {
+                    "weekly_window": {"usage_percent": "0%", "reset_time": "2026-08-27T00:00:00Z"},
+                },
+                "code_review": {
+                    "weekly_window": {"usage_percent": "90%", "reset_at": "2026-08-27T00:00:00Z"},
+                },
             },
-            "code_review": {
-                "weekly_window": {"usage_percent": "90%", "reset_at": "2026-08-27T00:00:00Z"},
-            },
-        },
-    })
+        }
+    )
 
     assert usage.summary == "Team - 100% weekly left"
     assert any(m.label == "weekly_remaining_percent" and m.value == 100 for m in usage.metrics)
@@ -168,15 +190,17 @@ def test_codex_parser_accepts_weekly_window_aliases_and_string_percentages():
 
 
 def test_codex_parser_accepts_windows_collection_and_remaining_percent():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Pro",
-        "rate_limit": {
-            "windows": [
-                {"type": "session", "remaining_percent": "88"},
-                {"type": "weekly", "remaining_pct": 62.5, "resetAt": "2026-08-28T00:00:00Z"},
-            ],
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Pro",
+            "rate_limit": {
+                "windows": [
+                    {"type": "session", "remaining_percent": "88"},
+                    {"type": "weekly", "remaining_pct": 62.5, "resetAt": "2026-08-28T00:00:00Z"},
+                ],
+            },
+        }
+    )
 
     assert any(m.label == "session_remaining_percent" and m.value == 88 for m in usage.metrics)
     assert any(m.label == "weekly_remaining_percent" and m.value == 62.5 for m in usage.metrics)
@@ -184,12 +208,14 @@ def test_codex_parser_accepts_windows_collection_and_remaining_percent():
 
 
 def test_codex_parser_leaves_missing_weekly_window_unavailable():
-    usage = CodexAdapter.parse_usage({
-        "plan_type": "Free",
-        "rate_limit": {
-            "primary_window": {"used_percent": 12, "reset_at": "2026-08-21T00:00:00Z"},
-        },
-    })
+    usage = CodexAdapter.parse_usage(
+        {
+            "plan_type": "Free",
+            "rate_limit": {
+                "primary_window": {"used_percent": 12, "reset_at": "2026-08-21T00:00:00Z"},
+            },
+        }
+    )
 
     assert any(m.label == "session_remaining_percent" for m in usage.metrics)
     assert not any(m.label == "weekly_remaining_percent" for m in usage.metrics)

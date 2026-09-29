@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+
 @dataclass(slots=True)
 class Metric:
     label: str
@@ -9,12 +10,14 @@ class Metric:
     unit: str | None = None
     maximum: float | int | None = None
 
+
 @dataclass(slots=True)
 class ProviderUsage:
     status: str
     summary: str
     metrics: list[Metric]
     raw: dict[str, Any] = field(default_factory=dict)
+
 
 class ProviderAdapter(ABC):
     id: str
@@ -27,7 +30,9 @@ class ProviderAdapter(ABC):
     # means only generic gauge point-history is available.
     analytics: dict | None = None
 
-    def __init__(self, api_key: str, base_url: str | None = None, timeout: float = 20.0, extra: dict[str, Any] | None = None):
+    def __init__(
+        self, api_key: str, base_url: str | None = None, timeout: float = 20.0, extra: dict[str, Any] | None = None
+    ):
         self.api_key = api_key
         self.base_url = (base_url or self.default_base_url).rstrip("/")
         self.timeout = timeout

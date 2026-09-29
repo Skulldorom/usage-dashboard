@@ -288,9 +288,7 @@ def estimate_cost(
             },
         )
         class_cost = value / _PER_MILLION * rate
-        cls = group["classes"].setdefault(
-            metric, {"metric": metric, "tokens": 0.0, "cost": 0.0, "rate_per_1m": rate}
-        )
+        cls = group["classes"].setdefault(metric, {"metric": metric, "tokens": 0.0, "cost": 0.0, "rate_per_1m": rate})
         cls["tokens"] += value
         cls["cost"] += class_cost
         group["cost"] += class_cost
@@ -299,7 +297,7 @@ def estimate_cost(
         total_priced_tokens += value
 
     group_list: list[dict] = []
-    for _key, group in sorted(groups.items(), key=lambda item: (-item[1]["cost"])):
+    for _key, group in sorted(groups.items(), key=lambda item: -item[1]["cost"]):
         classes = list(group["classes"].values())
         classes.sort(key=lambda c: -c["cost"])
         group_list.append(

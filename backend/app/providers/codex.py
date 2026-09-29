@@ -42,7 +42,9 @@ class CodexCredentials:
             access_token=access_token,
             refresh_token=refresh_token,
             expires_at=_parse_datetime(payload.get("expires_at")),
-            account_id=_clean_string(payload.get("account_id") or payload.get("workspace_id") or payload.get("chatgpt_account_id")),
+            account_id=_clean_string(
+                payload.get("account_id") or payload.get("workspace_id") or payload.get("chatgpt_account_id")
+            ),
         )
 
     def to_secret_json(self) -> str:
@@ -52,7 +54,9 @@ class CodexCredentials:
             "expires_at": self.expires_at.astimezone(UTC).isoformat() if self.expires_at else None,
             "account_id": self.account_id,
         }
-        return json.dumps({key: value for key, value in payload.items() if value is not None}, separators=(",", ":"), sort_keys=True)
+        return json.dumps(
+            {key: value for key, value in payload.items() if value is not None}, separators=(",", ":"), sort_keys=True
+        )
 
     def needs_refresh(self, now: datetime | None = None) -> bool:
         if self.expires_at is None:
@@ -63,7 +67,9 @@ class CodexCredentials:
 class CodexAdapter(ProviderAdapter):
     id = "codex"
     name = "OpenAI Codex"
-    description = "ChatGPT OAuth Codex rate-limit windows from the wham usage endpoint. Store access + refresh tokens encrypted."
+    description = (
+        "ChatGPT OAuth Codex rate-limit windows from the wham usage endpoint. Store access + refresh tokens encrypted."
+    )
     default_base_url = "https://chatgpt.com"
     metric_names = [
         "plan_type",
@@ -79,18 +85,64 @@ class CodexAdapter(ProviderAdapter):
     alert_metrics = [
         {"metric": "session_remaining_percent", "label": "Session remaining", "unit": "%", "direction": "decreasing"},
         {"metric": "weekly_remaining_percent", "label": "Weekly remaining", "unit": "%", "direction": "decreasing"},
-        {"metric": "review_session_remaining_percent", "label": "Review session remaining", "unit": "%", "direction": "decreasing"},
-        {"metric": "review_weekly_remaining_percent", "label": "Review weekly remaining", "unit": "%", "direction": "decreasing"},
-        {"metric": "reset_credits_available", "label": "Reset credits available", "unit": "credits", "direction": "decreasing"},
+        {
+            "metric": "review_session_remaining_percent",
+            "label": "Review session remaining",
+            "unit": "%",
+            "direction": "decreasing",
+        },
+        {
+            "metric": "review_weekly_remaining_percent",
+            "label": "Review weekly remaining",
+            "unit": "%",
+            "direction": "decreasing",
+        },
+        {
+            "metric": "reset_credits_available",
+            "label": "Reset credits available",
+            "unit": "credits",
+            "direction": "decreasing",
+        },
     ]
     analytics = analytics_spec(
         supported=True,
         native_history=False,
         metrics={
-            "session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="session_reset_at", window="session", utilization=True),
-            "weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="weekly_reset_at", window="week", utilization=True, overview=True),
-            "review_session_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_session_reset_at", window="session"),
-            "review_weekly_remaining_percent": metric_spec(type_="remaining", unit="%", direction="decreasing", maximum=100, reset_metric="review_weekly_reset_at", window="week"),
+            "session_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="session_reset_at",
+                window="session",
+                utilization=True,
+            ),
+            "weekly_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="weekly_reset_at",
+                window="week",
+                utilization=True,
+                overview=True,
+            ),
+            "review_session_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="review_session_reset_at",
+                window="session",
+            ),
+            "review_weekly_remaining_percent": metric_spec(
+                type_="remaining",
+                unit="%",
+                direction="decreasing",
+                maximum=100,
+                reset_metric="review_weekly_reset_at",
+                window="week",
+            ),
             "reset_credits_available": metric_spec(type_="balance", unit="credits", direction="decreasing"),
         },
     )
@@ -129,13 +181,21 @@ class CodexAdapter(ProviderAdapter):
                     retryable=False,
                 )
             if response.status_code == 429:
-                raise ProviderError.from_response(response, message="Codex rate limited", stage="fetch_usage", retryable=True)
+                raise ProviderError.from_response(
+                    response, message="Codex rate limited", stage="fetch_usage", retryable=True
+                )
             if response.status_code == 404:
-                raise ProviderError.from_response(response, message="Codex usage endpoint not found or changed", stage="fetch_usage", retryable=False)
+                raise ProviderError.from_response(
+                    response, message="Codex usage endpoint not found or changed", stage="fetch_usage", retryable=False
+                )
             if response.status_code >= 500:
-                raise ProviderError.from_response(response, message="OpenAI upstream error", stage="fetch_usage", retryable=True)
+                raise ProviderError.from_response(
+                    response, message="OpenAI upstream error", stage="fetch_usage", retryable=True
+                )
             if response.status_code >= 400:
-                raise ProviderError.from_response(response, message="Codex request failed", stage="fetch_usage", retryable=False)
+                raise ProviderError.from_response(
+                    response, message="Codex request failed", stage="fetch_usage", retryable=False
+                )
             try:
                 data = response.json()
             except json.JSONDecodeError as exc:
@@ -211,11 +271,19 @@ class CodexAdapter(ProviderAdapter):
         if review_limit:
             metrics.append(Metric("review_limit_reached", bool(review_limit.get("limit_reached"))))
             if review_session["used_percent"] is not None:
-                metrics.append(Metric("review_session_remaining_percent", _remaining_percent(review_session["used_percent"]), "%", 100))
+                metrics.append(
+                    Metric(
+                        "review_session_remaining_percent", _remaining_percent(review_session["used_percent"]), "%", 100
+                    )
+                )
             if review_session["reset_at"]:
                 metrics.append(Metric("review_session_reset_at", review_session["reset_at"]))
             if review_weekly["used_percent"] is not None:
-                metrics.append(Metric("review_weekly_remaining_percent", _remaining_percent(review_weekly["used_percent"]), "%", 100))
+                metrics.append(
+                    Metric(
+                        "review_weekly_remaining_percent", _remaining_percent(review_weekly["used_percent"]), "%", 100
+                    )
+                )
             if review_weekly["reset_at"]:
                 metrics.append(Metric("review_weekly_reset_at", review_weekly["reset_at"]))
         summary_parts = []
@@ -309,7 +377,9 @@ def _find_review_limit(data: dict[str, Any]) -> dict[str, Any] | None:
     for item in data.get("additional_rate_limits") or []:
         if not isinstance(item, dict):
             continue
-        haystack = " ".join(str(item.get(key, "")) for key in ("id", "name", "label", "quotaFamily", "quota_family")).lower()
+        haystack = " ".join(
+            str(item.get(key, "")) for key in ("id", "name", "label", "quotaFamily", "quota_family")
+        ).lower()
         if "review" in haystack:
             return item
     return None
@@ -345,7 +415,10 @@ def _window_candidates(limit: dict[str, Any], key: str) -> list[Any]:
         for item in windows:
             if not isinstance(item, dict):
                 continue
-            haystack = " ".join(str(item.get(name, "")) for name in ("id", "key", "name", "label", "type", "window", "window_type", "windowType")).lower()
+            haystack = " ".join(
+                str(item.get(name, ""))
+                for name in ("id", "key", "name", "label", "type", "window", "window_type", "windowType")
+            ).lower()
             if any(token in haystack for token in tokens):
                 candidates.append(item)
     return [candidate for candidate in candidates if isinstance(candidate, dict)]

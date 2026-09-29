@@ -1,4 +1,5 @@
 """provider visibility and order"""
+
 from alembic import op
 import sqlalchemy as sa
 
@@ -9,9 +10,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("provider_configs", sa.Column("is_visible", sa.Boolean(), nullable=False, server_default=sa.text("true")))
-    op.add_column("provider_configs", sa.Column("display_order", sa.Integer(), nullable=False, server_default=sa.text("0")))
-    provider_configs = sa.table("provider_configs", sa.column("id", sa.Integer()), sa.column("display_order", sa.Integer()))
+    op.add_column(
+        "provider_configs", sa.Column("is_visible", sa.Boolean(), nullable=False, server_default=sa.text("true"))
+    )
+    op.add_column(
+        "provider_configs", sa.Column("display_order", sa.Integer(), nullable=False, server_default=sa.text("0"))
+    )
+    provider_configs = sa.table(
+        "provider_configs", sa.column("id", sa.Integer()), sa.column("display_order", sa.Integer())
+    )
     connection = op.get_bind()
     rows = connection.execute(sa.select(provider_configs.c.id).order_by(provider_configs.c.id)).fetchall()
     for index, row in enumerate(rows):

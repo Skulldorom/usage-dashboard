@@ -35,7 +35,12 @@ async def sqlite_db(monkeypatch):
         session.add(
             AdminCredential(
                 password_hash="test-only",
-                session_tokens=[{"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}],
+                session_tokens=[
+                    {
+                        "token_hash": _hash_secret("test-admin-session-token-123"),
+                        "expires_at": "2999-01-01T00:00:00+00:00",
+                    }
+                ],
             )
         )
         await session.commit()
@@ -87,14 +92,25 @@ async def test_last_successful_usage_retained_after_failure(sqlite_db):
     config = await _config(Session, provider="codex")
     now = datetime.now(UTC)
     await _snapshot(
-        Session, config, status="healthy",
+        Session,
+        config,
+        status="healthy",
         metrics=[{"label": "plan_type", "value": "Pro"}],
         checked_at=now - timedelta(minutes=10),
     )
     await _snapshot(
-        Session, config, status="error",
+        Session,
+        config,
+        status="error",
         error="Too Many Requests",
-        error_details={"category": "rate_limit", "message": "Too Many Requests", "http_status": 429, "stage": "fetch_usage", "retryable": True, "occurred_at": now.isoformat()},
+        error_details={
+            "category": "rate_limit",
+            "message": "Too Many Requests",
+            "http_status": 429,
+            "stage": "fetch_usage",
+            "retryable": True,
+            "occurred_at": now.isoformat(),
+        },
         checked_at=now,
     )
 
@@ -117,9 +133,18 @@ async def test_latest_normalized_error_returned_through_api(sqlite_db):
     config = await _config(Session, provider="codex")
     now = datetime.now(UTC)
     await _snapshot(
-        Session, config, status="error",
+        Session,
+        config,
+        status="error",
         error="Codex access token rejected - re-authorize the Codex provider",
-        error_details={"category": "authentication", "message": "Codex access token rejected - re-authorize the Codex provider", "http_status": 401, "stage": "fetch_usage", "retryable": False, "occurred_at": now.isoformat()},
+        error_details={
+            "category": "authentication",
+            "message": "Codex access token rejected - re-authorize the Codex provider",
+            "http_status": 401,
+            "stage": "fetch_usage",
+            "retryable": False,
+            "occurred_at": now.isoformat(),
+        },
         checked_at=now,
     )
 
@@ -143,13 +168,24 @@ async def test_healthy_success_clears_stale_error(sqlite_db):
     config = await _config(Session, provider="codex")
     now = datetime.now(UTC)
     await _snapshot(
-        Session, config, status="error",
+        Session,
+        config,
+        status="error",
         error="Too Many Requests",
-        error_details={"category": "rate_limit", "message": "Too Many Requests", "http_status": 429, "stage": "fetch_usage", "retryable": True, "occurred_at": now.isoformat()},
+        error_details={
+            "category": "rate_limit",
+            "message": "Too Many Requests",
+            "http_status": 429,
+            "stage": "fetch_usage",
+            "retryable": True,
+            "occurred_at": now.isoformat(),
+        },
         checked_at=now - timedelta(minutes=10),
     )
     await _snapshot(
-        Session, config, status="healthy",
+        Session,
+        config,
+        status="healthy",
         metrics=[{"label": "plan_type", "value": "Pro"}],
         checked_at=now,
     )

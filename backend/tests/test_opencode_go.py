@@ -1,4 +1,3 @@
-
 from app.providers.opencode_go import OpenCodeGoAdapter, _canonical_model_id, _extract_model_usage, _extract_windows
 
 
@@ -158,9 +157,7 @@ def test_parser_extracts_per_model_usage_and_limits():
 
 
 def test_parser_tolerates_unknown_models():
-    usage = OpenCodeGoAdapter.parse_usage(
-        {"data": {"models": [{"id": "unknown-model", "usage": 42}]}}
-    )
+    usage = OpenCodeGoAdapter.parse_usage({"data": {"models": [{"id": "unknown-model", "usage": 42}]}})
     by_label = {m.label: m for m in usage.metrics}
     models = by_label["models_used"].value
     assert models[0]["model"] == "unknown-model"

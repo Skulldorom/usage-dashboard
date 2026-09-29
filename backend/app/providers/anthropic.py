@@ -12,6 +12,7 @@ TOKEN_FIELDS = ("input_tokens", "output_tokens", "cache_creation_tokens", "cache
 _TIME_START_KEYS = ("start_time", "bucket_start", "starting_at", "start")
 _TIME_END_KEYS = ("end_time", "bucket_end", "ending_at", "end")
 
+
 class AnthropicAdapter(ProviderAdapter):
     id = "anthropic"
     name = "Anthropic / Claude"
@@ -21,7 +22,12 @@ class AnthropicAdapter(ProviderAdapter):
     alert_metrics = [
         {"metric": "input_tokens", "label": "Input tokens", "unit": "tokens", "direction": "increasing"},
         {"metric": "output_tokens", "label": "Output tokens", "unit": "tokens", "direction": "increasing"},
-        {"metric": "cache_creation_tokens", "label": "Cache creation tokens", "unit": "tokens", "direction": "increasing"},
+        {
+            "metric": "cache_creation_tokens",
+            "label": "Cache creation tokens",
+            "unit": "tokens",
+            "direction": "increasing",
+        },
         {"metric": "cache_read_tokens", "label": "Cache read tokens", "unit": "tokens", "direction": "increasing"},
         {"metric": "num_requests", "label": "Requests", "unit": "requests", "direction": "increasing"},
     ]
@@ -89,7 +95,10 @@ class AnthropicAdapter(ProviderAdapter):
                 value = record.get(field)
                 if isinstance(value, (int, float)):
                     totals[field] += value
-        metrics = [Metric(label, value, "tokens" if label.endswith("tokens") else "requests") for label, value in totals.items()]
+        metrics = [
+            Metric(label, value, "tokens" if label.endswith("tokens") else "requests")
+            for label, value in totals.items()
+        ]
         requests = totals["num_requests"]
         total_tokens = sum(totals[field] for field in TOKEN_FIELDS if field.endswith("tokens"))
         summary = f"{total_tokens:,} tokens across {requests:,} requests in last 24h"
@@ -158,15 +167,17 @@ def _cost_observations(raw: dict[str, Any]) -> list[dict]:
             except (TypeError, ValueError):
                 continue
         if cents > 0:
-            observations.append({
-                "metric": "daily_cost",
-                "value": cents / 100.0,
-                "unit": "USD",
-                "observed_at": start,
-                "window_start": start,
-                "window_end": end,
-                "kind": "delta",
-            })
+            observations.append(
+                {
+                    "metric": "daily_cost",
+                    "value": cents / 100.0,
+                    "unit": "USD",
+                    "observed_at": start,
+                    "window_start": start,
+                    "window_end": end,
+                    "kind": "delta",
+                }
+            )
     return observations
 
 

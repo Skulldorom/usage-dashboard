@@ -15,7 +15,12 @@ from sqlalchemy import asc, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
-from app.analytics.economics import provider_economics, provider_level_economics, summarize as summarize_economics, value_trend
+from app.analytics.economics import (
+    provider_economics,
+    provider_level_economics,
+    summarize as summarize_economics,
+    value_trend,
+)
 from app.analytics.aggregation import bucketize, fill_buckets, series_coverage
 from app.analytics.attribution import ATTRIBUTION_METRICS, attribute, provider_metric_labels
 from app.analytics.confidence import confidence_level
@@ -44,7 +49,12 @@ from app.analytics.schemas import (
     ProviderCapacity,
 )
 from app.analytics.types import Observation
-from app.analytics.capabilities import activity_dimensions, activity_metric_labels, comparison_dimension, overview_metric
+from app.analytics.capabilities import (
+    activity_dimensions,
+    activity_metric_labels,
+    comparison_dimension,
+    overview_metric,
+)
 from app.analytics.pricing import estimate_cost, normalize_model
 from app.analytics.quota_correlation import estimate_quota_impact
 from app.analytics.reconciliation import (
@@ -231,12 +241,14 @@ def _as_aware(value: datetime) -> datetime:
 
 async def _observed_metrics(session: AsyncSession, config_id: int) -> set[str]:
     rows = (
-        await session.execute(
-            select(UsageObservation.metric)
-            .where(UsageObservation.provider_config_id == config_id)
-            .distinct()
+        (
+            await session.execute(
+                select(UsageObservation.metric).where(UsageObservation.provider_config_id == config_id).distinct()
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return set(rows)
 
 
@@ -308,7 +320,10 @@ async def provider_capacity(
         else None
     )
     util_obs = utilization_observations(
-        point_obs, metric=util_metric_name, spec=util_spec, capacity_observations=capacity_obs,
+        point_obs,
+        metric=util_metric_name,
+        spec=util_spec,
+        capacity_observations=capacity_obs,
     )
 
     used_pct = None
@@ -355,7 +370,10 @@ async def provider_capacity(
     # Quota-impact correlation: estimate how Hermes-observed activity tracks
     # quota movement across complete reset windows (never a fixed conversion).
     hermes_observations = await _load_mapped_hermes_observations(
-        session, config.provider, start=now - timedelta(days=365), end=now,
+        session,
+        config.provider,
+        start=now - timedelta(days=365),
+        end=now,
     )
     quota_impact = estimate_quota_impact(util_obs, hermes_observations)
 
@@ -415,7 +433,14 @@ async def timeseries(
     buckets = fill_buckets(buckets, interval=interval, start=start, end=end, tz=timezone)
     cov = series_coverage(metric_obs)
     hermes_overlay = await _hermes_overlay(
-        session, config.provider, metric_type, spec, interval=interval, tz=timezone, start=start, end=end,
+        session,
+        config.provider,
+        metric_type,
+        spec,
+        interval=interval,
+        tz=timezone,
+        start=start,
+        end=end,
     )
 
     return AnalyticsTimeseries(
@@ -647,8 +672,14 @@ async def comparison(
 )
 async def summary(session: AsyncSession = Depends(get_session)):
     configs = (
-        await session.execute(select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id)))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     now = datetime.now(UTC)
     cards: list[AnalyticsSummaryCard] = []
@@ -682,8 +713,12 @@ async def summary(session: AsyncSession = Depends(get_session)):
             reset_at = _latest_reset_at(metric_obs)
             window_start = _window_start(spec, reset_at, now)
             fc = forecast_for_metric(
-                metric_obs, metric_type=metric_type, now=now, reset_at=reset_at,
-                window_start=window_start, capacity=spec.get("maximum"),
+                metric_obs,
+                metric_type=metric_type,
+                now=now,
+                reset_at=reset_at,
+                window_start=window_start,
+                capacity=spec.get("maximum"),
             )
             projected = fc.get("projected_at_reset")
 
@@ -711,7 +746,8 @@ async def summary(session: AsyncSession = Depends(get_session)):
 
 def _metric_delta_sum(observations: list[Observation], metric: str, start: datetime, end: datetime) -> float:
     return sum(
-        obs.value for obs in observations
+        obs.value
+        for obs in observations
         if obs.kind == "delta" and obs.metric == metric and start <= obs.observed_at < end
     )
 
@@ -759,13 +795,17 @@ def _delta_sums_by_metric(observations: list[Observation], start: datetime, end:
     return {metric: round(value, 4) for metric, value in sorted(totals.items()) if value}
 
 
-def _provider_total_for_hermes_metric(observations: list[Observation], metric: str, start: datetime, end: datetime) -> float | None:
+def _provider_total_for_hermes_metric(
+    observations: list[Observation], metric: str, start: datetime, end: datetime
+) -> float | None:
     labels = provider_metric_labels(metric)
     total = sum(_metric_delta_sum(observations, label, start, end) for label in labels)
     return round(total, 4) if total else None
 
 
-def _attribution_rows(provider_observations: list[Observation], hermes_activity: dict[str, float], start: datetime, end: datetime) -> list[dict]:
+def _attribution_rows(
+    provider_observations: list[Observation], hermes_activity: dict[str, float], start: datetime, end: datetime
+) -> list[dict]:
     rows: list[dict] = []
     for metric, hermes_value in hermes_activity.items():
         if metric not in {name for name, _ in ATTRIBUTION_METRICS}:
@@ -786,15 +826,19 @@ async def _load_mapped_hermes_observations(
     end: datetime,
 ) -> list[Observation]:
     rows = (
-        await session.execute(
-            select(UsageObservation).where(
-                UsageObservation.source == "hermes",
-                UsageObservation.observed_at >= start,
-                UsageObservation.observed_at < end,
-                (UsageObservation.provider_mapping == provider) | (UsageObservation.provider == provider),
+        (
+            await session.execute(
+                select(UsageObservation).where(
+                    UsageObservation.source == "hermes",
+                    UsageObservation.observed_at >= start,
+                    UsageObservation.observed_at < end,
+                    (UsageObservation.provider_mapping == provider) | (UsageObservation.provider == provider),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return [_orm_to_observation(row) for row in rows]
 
 
@@ -873,7 +917,12 @@ async def _hermes_overlay(
         )
 
     buckets = _hermes_overlay_series(
-        hermes_observations, hermes_metrics, interval=interval, tz=tz, start=start, end=end,
+        hermes_observations,
+        hermes_metrics,
+        interval=interval,
+        tz=tz,
+        start=start,
+        end=end,
     )
     return HermesOverlay(
         compatible=True,
@@ -896,17 +945,25 @@ def _period_trend(observations: list[Observation], metric: str | None, start: da
 
 
 def _latest_point(observations: list[Observation], metric: str, *, end: datetime | None = None) -> Observation | None:
-    points = [obs for obs in observations if obs.metric == metric and obs.kind == "point" and (end is None or obs.observed_at <= end)]
+    points = [
+        obs
+        for obs in observations
+        if obs.metric == metric and obs.kind == "point" and (end is None or obs.observed_at <= end)
+    ]
     return max(points, key=lambda obs: obs.observed_at) if points else None
 
 
-def _overview_value(observations: list[Observation], metric: str | None, spec: dict | None, start: datetime, end: datetime) -> float | None:
+def _overview_value(
+    observations: list[Observation], metric: str | None, spec: dict | None, start: datetime, end: datetime
+) -> float | None:
     if metric is None:
         return None
     metric_type = (spec or {}).get("type", "gauge")
     if metric_type in ("counter", "rate_limit"):
         value = _metric_delta_sum(observations, metric, start, end)
-        has_delta = any(obs.kind == "delta" and obs.metric == metric and start <= obs.observed_at < end for obs in observations)
+        has_delta = any(
+            obs.kind == "delta" and obs.metric == metric and start <= obs.observed_at < end for obs in observations
+        )
         return value if has_delta else None
     latest = _latest_point(observations, metric, end=end)
     return latest.value if latest is not None else None
@@ -922,7 +979,9 @@ def _observation_sources(observations: list[Observation]) -> list[str]:
     return sorted({obs.source for obs in observations if obs.source})
 
 
-def _quality_state(*, has_observations: bool, has_utilization: bool, native_history: bool, supported: bool, coverage: float) -> tuple[str, str, str | None]:
+def _quality_state(
+    *, has_observations: bool, has_utilization: bool, native_history: bool, supported: bool, coverage: float
+) -> tuple[str, str, str | None]:
     if not has_observations:
         return "unavailable", "unavailable", "No current analytics observations"
     if coverage and coverage < 0.5:
@@ -962,8 +1021,14 @@ async def overview(
         raise HTTPException(status_code=400, detail=f"Unsupported interval: {interval}")
 
     configs = (
-        await session.execute(select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id)))
-    ).scalars().all()
+        (
+            await session.execute(
+                select(ProviderConfig).order_by(asc(ProviderConfig.display_order), asc(ProviderConfig.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
     provider_config_counts = {
         provider: sum(1 for config in configs if config.provider == provider)
         for provider in {config.provider for config in configs}
@@ -995,11 +1060,11 @@ async def overview(
         hermes_activity = _delta_sums_by_metric(hermes_observations, start, end)
         attribution_rows = _attribution_rows(observations, hermes_activity, start, end)
         provider_cost_estimate = estimate_cost(hermes_observations)
-        estimated_cost = round(provider_cost_estimate["total_cost"], 4) if provider_cost_estimate["total_cost"] else None
+        estimated_cost = (
+            round(provider_cost_estimate["total_cost"], 4) if provider_cost_estimate["total_cost"] else None
+        )
         estimated_cost_source = (
-            f"pricing {provider_cost_estimate['pricing_version']}"
-            if estimated_cost is not None
-            else None
+            f"pricing {provider_cost_estimate['pricing_version']}" if estimated_cost is not None else None
         )
         cov = series_coverage(observations)
         conf = confidence_level(observations + hermes_observations, coverage=cov["coverage"])["level"]
@@ -1053,7 +1118,10 @@ async def overview(
                     previous_utilizations.append(previous_util_pct)
                 # Quota-impact correlation over long history (not the 30d range).
                 impact_hermes = await _load_mapped_hermes_observations(
-                    session, config.provider, start=now - timedelta(days=365), end=now,
+                    session,
+                    config.provider,
+                    start=now - timedelta(days=365),
+                    end=now,
                 )
                 quota_impact = estimate_quota_impact(util_obs, impact_hermes)
 
@@ -1064,7 +1132,11 @@ async def overview(
         util_source_obs = [obs for obs in observations if util_metric_name and obs.metric == util_metric_name]
         source_pool = util_source_obs + headline_obs + hermes_observations
         sources = _observation_sources(source_pool or observations)
-        authoritative = latest_util_source or authoritative_source(_observation_sources(headline_obs)) or authoritative_source(_observation_sources(observations))
+        authoritative = (
+            latest_util_source
+            or authoritative_source(_observation_sources(headline_obs))
+            or authoritative_source(_observation_sources(observations))
+        )
         corroborating_sources = [source for source in sources if source != authoritative]
 
         quality, data_state, exclusion_reason = _quality_state(
@@ -1136,7 +1208,9 @@ async def overview(
                     "value": round(util_pct, 4) if util_pct is not None else None,
                     "unit": "%" if util_pct is not None else None,
                     "authoritative_source": authoritative if util_pct is not None else None,
-                    "window_start": latest.window_start.isoformat() if util_pct is not None and latest.window_start else None,
+                    "window_start": latest.window_start.isoformat()
+                    if util_pct is not None and latest.window_start
+                    else None,
                     "window_end": latest.window_end.isoformat() if util_pct is not None and latest.window_end else None,
                     "reset_at": reset_at.isoformat() if reset_at else None,
                     "confidence": conf,
@@ -1193,8 +1267,13 @@ async def overview(
             if not capacity_util_obs:
                 continue
             capacity_buckets = fill_buckets(
-                bucketize(capacity_util_obs, metric=capacity_metric_name, interval=interval, tz=timezone, start=start, end=end),
-                interval=interval, start=start, end=end, tz=timezone,
+                bucketize(
+                    capacity_util_obs, metric=capacity_metric_name, interval=interval, tz=timezone, start=start, end=end
+                ),
+                interval=interval,
+                start=start,
+                end=end,
+                tz=timezone,
             )
             capacity_latest = max(capacity_util_obs, key=lambda obs: obs.observed_at)
             window_label = _window_label(capacity_spec.get("window"), capacity_metric_name)
@@ -1202,16 +1281,18 @@ async def overview(
             capacity_reset = capacity_latest.reset_at or _latest_reset_at(
                 [obs for obs in observations if obs.metric == capacity_metric_name]
             )
-            quota_windows.append({
-                "metric": capacity_metric_name,
-                "label": window_label,
-                "used_pct": capacity_used,
-                "remaining_pct": round(max(0.0, 100.0 - capacity_used), 4),
-                "overage_pct": round(max(0.0, capacity_used - 100.0), 4),
-                "reset_at": capacity_reset.isoformat() if capacity_reset else None,
-                "source": capacity_latest.source,
-                "observed_at": capacity_latest.observed_at.isoformat(),
-            })
+            quota_windows.append(
+                {
+                    "metric": capacity_metric_name,
+                    "label": window_label,
+                    "used_pct": capacity_used,
+                    "remaining_pct": round(max(0.0, 100.0 - capacity_used), 4),
+                    "overage_pct": round(max(0.0, capacity_used - 100.0), 4),
+                    "reset_at": capacity_reset.isoformat() if capacity_reset else None,
+                    "source": capacity_latest.source,
+                    "observed_at": capacity_latest.observed_at.isoformat(),
+                }
+            )
             display_label = _provider_display_name(config.provider)
             if provider_config_counts.get(config.provider, 0) > 1 and config.label and config.label != "main":
                 display_label = f"{display_label} - {config.label}"
@@ -1239,9 +1320,17 @@ async def overview(
             if total > 0:
                 provider.share_pct = round(provider.value / total * 100, 2)
 
-    highest = max((provider for provider in providers if provider.utilization_pct is not None), key=lambda row: row.utilization_pct, default=None)
-    provider_pressure_pct = round(sum(current_utilizations) / len(current_utilizations), 4) if current_utilizations else None
-    previous_pressure_pct = round(sum(previous_utilizations) / len(previous_utilizations), 4) if previous_utilizations else None
+    highest = max(
+        (provider for provider in providers if provider.utilization_pct is not None),
+        key=lambda row: row.utilization_pct,
+        default=None,
+    )
+    provider_pressure_pct = (
+        round(sum(current_utilizations) / len(current_utilizations), 4) if current_utilizations else None
+    )
+    previous_pressure_pct = (
+        round(sum(previous_utilizations) / len(previous_utilizations), 4) if previous_utilizations else None
+    )
     pressure_trend_pct = _utilization_trend(provider_pressure_pct, previous_pressure_pct)
     coverage = OverviewCoverage(
         measurable_provider_count=len(current_utilizations),
@@ -1271,16 +1360,11 @@ async def overview(
             labels_in_dimension = labels.get(dimension)
             if not labels_in_dimension:
                 continue
-            value = sum(
-                _metric_delta_sum(observations, label, start, end)
-                for label in labels_in_dimension
-            )
+            value = sum(_metric_delta_sum(observations, label, start, end) for label in labels_in_dimension)
             value = round(value, 4)
             if not value:
                 continue
-            sources = _observation_sources(
-                [obs for obs in observations if obs.metric in labels_in_dimension]
-            )
+            sources = _observation_sources([obs for obs in observations if obs.metric in labels_in_dimension])
             metric_obs = [obs for obs in observations if obs.metric in labels_in_dimension]
             entries.append(
                 OverviewActivityProvider(
@@ -1292,9 +1376,17 @@ async def overview(
                     value=value,
                     source=authoritative_source(sources) if sources else None,
                     confidence=confidence_level(metric_obs)["level"],
-                    buckets=[AnalyticsBucket(**asdict(bucket)) for bucket in _activity_series(
-                        observations, labels_in_dimension, interval=interval, tz=timezone, start=start, end=end,
-                    )],
+                    buckets=[
+                        AnalyticsBucket(**asdict(bucket))
+                        for bucket in _activity_series(
+                            observations,
+                            labels_in_dimension,
+                            interval=interval,
+                            tz=timezone,
+                            start=start,
+                            end=end,
+                        )
+                    ],
                     disambiguate=provider_config_counts.get(config.provider, 0) > 1,
                 )
             )
@@ -1304,7 +1396,7 @@ async def overview(
         for entry in entries:
             if entry.value is not None and dimension_total > 0:
                 entry.share_pct = round(entry.value / dimension_total * 100, 2)
-        entries.sort(key=lambda entry: (entry.value or 0), reverse=True)
+        entries.sort(key=lambda entry: entry.value or 0, reverse=True)
         activity.append(
             OverviewActivityDimension(
                 dimension=dimension,
@@ -1390,7 +1482,11 @@ async def economics(
         # provider's workload is never double-attributed to two configs.
         effective_hermes = [] if ambiguous else hermes_by_provider.get(config.provider, [])
         row = provider_economics(
-            config, provider_observations, effective_hermes, start, end,
+            config,
+            provider_observations,
+            effective_hermes,
+            start,
+            end,
             attribution_ambiguous=ambiguous,
         )
         row["disambiguate"] = ambiguous
@@ -1443,7 +1539,10 @@ _HERMES_OVERLAY_UNITS = {
 
 
 async def _load_hermes_rows(
-    session: AsyncSession, start: datetime, end: datetime, provider: str | None = None,
+    session: AsyncSession,
+    start: datetime,
+    end: datetime,
+    provider: str | None = None,
 ) -> list[UsageObservation]:
     query = select(UsageObservation).where(
         UsageObservation.source == "hermes",
@@ -1474,16 +1573,18 @@ async def _hermes_source_summaries(
     end: datetime,
 ) -> list[HermesSourceSummary]:
     sources = (
-        await session.execute(
-            select(DataSourceConfig)
-            .where(DataSourceConfig.kind == "hermes")
-            .order_by(asc(DataSourceConfig.id))
-        )
-    ).scalars().all()
-    configured_providers = set(
         (
-            await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True)))
-        ).scalars().all()
+            await session.execute(
+                select(DataSourceConfig).where(DataSourceConfig.kind == "hermes").order_by(asc(DataSourceConfig.id))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    configured_providers = set(
+        (await session.execute(select(ProviderConfig.provider).where(ProviderConfig.is_enabled.is_(True))))
+        .scalars()
+        .all()
     )
     summaries: list[HermesSourceSummary] = []
     for source in sources:
@@ -1491,33 +1592,42 @@ async def _hermes_source_summaries(
             UsageObservation.source == "hermes",
             UsageObservation.data_source_id == source.id,
         )
-        total_observations = await session.scalar(
-            select(func.count(UsageObservation.id)).where(
-                UsageObservation.source == "hermes",
-                UsageObservation.data_source_id == source.id,
+        total_observations = (
+            await session.scalar(
+                select(func.count(UsageObservation.id)).where(
+                    UsageObservation.source == "hermes",
+                    UsageObservation.data_source_id == source.id,
+                )
             )
-        ) or 0
-        observations_in_range = await session.scalar(
-            select(func.count(UsageObservation.id)).where(
-                UsageObservation.source == "hermes",
-                UsageObservation.data_source_id == source.id,
-                UsageObservation.observed_at >= start,
-                UsageObservation.observed_at < end,
+            or 0
+        )
+        observations_in_range = (
+            await session.scalar(
+                select(func.count(UsageObservation.id)).where(
+                    UsageObservation.source == "hermes",
+                    UsageObservation.data_source_id == source.id,
+                    UsageObservation.observed_at >= start,
+                    UsageObservation.observed_at < end,
+                )
             )
-        ) or 0
+            or 0
+        )
         latest_observation_at = await session.scalar(
             select(UsageObservation.observed_at)
             .where(UsageObservation.source == "hermes", UsageObservation.data_source_id == source.id)
             .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
             .limit(1)
         )
-        provider_rows = (await session.execute(base_query.with_only_columns(UsageObservation.provider).distinct())).scalars().all()
+        provider_rows = (
+            (await session.execute(base_query.with_only_columns(UsageObservation.provider).distinct())).scalars().all()
+        )
         observed = sorted({str(provider or "unknown") for provider in provider_rows})
         mappings = dict((source.extra or {}).get("provider_mappings") or {})
         unmapped = sorted(
             provider
             for provider in observed
-            if configured_providers and str(mappings.get(provider, provider)).strip().lower() not in configured_providers
+            if configured_providers
+            and str(mappings.get(provider, provider)).strip().lower() not in configured_providers
         )
         summaries.append(
             HermesSourceSummary(
@@ -1542,10 +1652,17 @@ async def _hermes_source_summaries(
     return summaries
 
 
-def _hermes_diagnostics(*, sources: list[HermesSourceSummary], rows: list[UsageObservation], start: datetime, end: datetime) -> list[HermesDiagnostic]:
+def _hermes_diagnostics(
+    *, sources: list[HermesSourceSummary], rows: list[UsageObservation], start: datetime, end: datetime
+) -> list[HermesDiagnostic]:
     diagnostics: list[HermesDiagnostic] = []
     if not sources:
-        return [HermesDiagnostic(severity="info", message="No Hermes data source is configured. Connect Hermes Agent in Settings → Data sources.")]
+        return [
+            HermesDiagnostic(
+                severity="info",
+                message="No Hermes data source is configured. Connect Hermes Agent in Settings → Data sources.",
+            )
+        ]
     enabled = [source for source in sources if source.is_enabled]
     if not enabled:
         diagnostics.append(HermesDiagnostic(severity="warning", message="All Hermes data sources are disabled."))
@@ -1554,15 +1671,36 @@ def _hermes_diagnostics(*, sources: list[HermesSourceSummary], rows: list[UsageO
             detail = f": {source.latest_error}" if source.latest_error else ""
             diagnostics.append(HermesDiagnostic(severity="error", message=f"{source.name} sync is failing{detail}."))
         elif source.status == "never_connected":
-            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has not synced successfully yet."))
+            diagnostics.append(
+                HermesDiagnostic(severity="info", message=f"{source.name} has not synced successfully yet.")
+            )
         if source.profiles:
-            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} is filtered to profiles: {', '.join(source.profiles)}."))
+            diagnostics.append(
+                HermesDiagnostic(
+                    severity="info", message=f"{source.name} is filtered to profiles: {', '.join(source.profiles)}."
+                )
+            )
         if source.providers_unmapped and not source.mute_unmapped_provider_alerts:
-            diagnostics.append(HermesDiagnostic(severity="warning", message=f"{source.name} observed unmapped providers: {', '.join(source.providers_unmapped)}."))
+            diagnostics.append(
+                HermesDiagnostic(
+                    severity="warning",
+                    message=f"{source.name} observed unmapped providers: {', '.join(source.providers_unmapped)}.",
+                )
+            )
         if source.total_observations and source.observations_in_range == 0 and source.latest_observation_at:
-            diagnostics.append(HermesDiagnostic(severity="info", message=f"{source.name} has stored Hermes observations, but the latest ({source.latest_observation_at.isoformat()}) is outside the selected range."))
+            diagnostics.append(
+                HermesDiagnostic(
+                    severity="info",
+                    message=f"{source.name} has stored Hermes observations, but the latest ({source.latest_observation_at.isoformat()}) is outside the selected range.",
+                )
+            )
     if not rows and any(source.last_success_at for source in sources):
-        diagnostics.append(HermesDiagnostic(severity="info", message=f"No Hermes observations between {start.date().isoformat()} and {end.date().isoformat()}. Try a wider range, inspect recent observations, or sync now."))
+        diagnostics.append(
+            HermesDiagnostic(
+                severity="info",
+                message=f"No Hermes observations between {start.date().isoformat()} and {end.date().isoformat()}. Try a wider range, inspect recent observations, or sync now.",
+            )
+        )
     return diagnostics
 
 
@@ -1584,22 +1722,24 @@ async def provider_attribution(
 
     provider_obs = await _load_observations(session, config_id, start=start, end=end)
     hermes_rows = (
-        await session.execute(
-            select(UsageObservation).where(
-                UsageObservation.source == "hermes",
-                UsageObservation.provider_mapping == config.provider,
-                UsageObservation.observed_at >= start,
-                UsageObservation.observed_at < end,
+        (
+            await session.execute(
+                select(UsageObservation).where(
+                    UsageObservation.source == "hermes",
+                    UsageObservation.provider_mapping == config.provider,
+                    UsageObservation.observed_at >= start,
+                    UsageObservation.observed_at < end,
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     metrics: list[AttributionMetric] = []
     for hermes_metric, aliases in ATTRIBUTION_METRICS:
         hermes_observed = sum(r.value for r in hermes_rows if r.metric == hermes_metric) or None
-        provider_total = (
-            sum(o.value for o in provider_obs if o.kind == "delta" and o.metric in aliases) or None
-        )
+        provider_total = sum(o.value for o in provider_obs if o.kind == "delta" and o.metric in aliases) or None
         if hermes_observed is None and provider_total is None:
             continue
         att = attribute(provider_total, hermes_observed)
@@ -1647,7 +1787,11 @@ async def hermes_breakdown(
     totals: list[HermesTotal] = []
     for metric in ("cost", "input_tokens", "output_tokens", "requests"):
         value = sum(r.value for r in rows if r.metric == metric) or None
-        totals.append(HermesTotal(metric=metric, unit=_ATTRIBUTION_UNITS.get(metric), value=_round_or_none(value) if value else None))
+        totals.append(
+            HermesTotal(
+                metric=metric, unit=_ATTRIBUTION_UNITS.get(metric), value=_round_or_none(value) if value else None
+            )
+        )
     tokens = sum(r.value for r in rows if r.metric in _TOKEN_METRICS) or None
     totals.append(HermesTotal(metric="tokens", unit="tokens", value=_round_or_none(tokens) if tokens else None))
 
@@ -1726,9 +1870,7 @@ async def hermes_breakdown(
         for row in rows:
             key = str(getattr(row, attribute) or "unknown")
             day = _aware(row.observed_at).date().isoformat()
-            bucket = grouped.setdefault(key, {}).setdefault(
-                day, {"cost": 0.0, "tokens": 0.0, "requests": 0.0}
-            )
+            bucket = grouped.setdefault(key, {}).setdefault(day, {"cost": 0.0, "tokens": 0.0, "requests": 0.0})
             if row.session_id:
                 grouped_sessions.setdefault((key, day), set()).add(row.session_id)
             if row.metric == "cost":

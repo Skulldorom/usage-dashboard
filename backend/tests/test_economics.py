@@ -37,7 +37,12 @@ async def sqlite_db(monkeypatch):
         session.add(
             AdminCredential(
                 password_hash="test-only",
-                session_tokens=[{"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}],
+                session_tokens=[
+                    {
+                        "token_hash": _hash_secret("test-admin-session-token-123"),
+                        "expires_at": "2999-01-01T00:00:00+00:00",
+                    }
+                ],
             )
         )
         await session.commit()
@@ -57,14 +62,18 @@ async def sqlite_db(monkeypatch):
 async def _config(Session, provider="anthropic", **kwargs):
     encrypted = CryptoService(settings.encryption_key).encrypt("sk-test")
     async with Session() as session:
-        config = ProviderConfig(provider=provider, label=kwargs.pop("label", "main"), encrypted_api_key=encrypted, is_enabled=True, **kwargs)
+        config = ProviderConfig(
+            provider=provider, label=kwargs.pop("label", "main"), encrypted_api_key=encrypted, is_enabled=True, **kwargs
+        )
         session.add(config)
         await session.commit()
         await session.refresh(config)
         return config
 
 
-async def _seed_tokens(Session, provider="anthropic", *, start: datetime, days: int, model="claude-sonnet-4", include_unknown: bool = False):
+async def _seed_tokens(
+    Session, provider="anthropic", *, start: datetime, days: int, model="claude-sonnet-4", include_unknown: bool = False
+):
     async with Session() as session:
         rows = []
         for index in range(days):
@@ -159,7 +168,9 @@ async def test_economics_subscription_prorates_real_month_overlap(sqlite_db):
     await _seed_tokens(Session, start=start, days=30)
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH
+        )
 
     assert response.status_code == 200, response.text
     row = response.json()["providers"][0]
@@ -175,7 +186,18 @@ async def test_economics_mixed_currency_does_not_silently_aggregate_as_usd(sqlit
     config = await _config(Session, provider="openai", pricing_model="payg", subscription_currency="EUR")
     start = datetime.now(UTC) - timedelta(days=40)
     async with Session() as session:
-        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=20, unit="EUR", kind="delta", source="native", observed_at=start + timedelta(days=30)))
+        session.add(
+            UsageObservation(
+                provider_config_id=config.id,
+                provider="openai",
+                metric="daily_cost",
+                value=20,
+                unit="EUR",
+                kind="delta",
+                source="native",
+                observed_at=start + timedelta(days=30),
+            )
+        )
         await session.commit()
     await _seed_tokens(Session, provider="openai", start=start, days=30, model="gpt-4o")
 
@@ -202,10 +224,30 @@ async def test_economics_actual_spend_rejects_mixed_provider_spend_units(sqlite_
     config = await _config(Session, provider="openai", pricing_model="payg")
     now = datetime.now(UTC)
     async with Session() as session:
-        session.add_all([
-            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=10, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)),
-            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=10, unit="GBP", kind="delta", source="native", observed_at=now - timedelta(days=1)),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider="openai",
+                    metric="daily_cost",
+                    value=10,
+                    unit="USD",
+                    kind="delta",
+                    source="native",
+                    observed_at=now - timedelta(days=2),
+                ),
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider="openai",
+                    metric="daily_cost",
+                    value=10,
+                    unit="GBP",
+                    kind="delta",
+                    source="native",
+                    observed_at=now - timedelta(days=1),
+                ),
+            ]
+        )
         await session.commit()
     await _seed_tokens(Session, provider="openai", start=now - timedelta(days=30), days=30, model="gpt-4o")
 
@@ -222,7 +264,14 @@ async def test_economics_actual_spend_rejects_mixed_provider_spend_units(sqlite_
 @pytest.mark.asyncio
 async def test_pricing_coverage_and_attribution_confidence_are_separate(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=1), days=1)
 
@@ -240,7 +289,14 @@ async def test_pricing_coverage_and_attribution_confidence_are_separate(sqlite_d
 @pytest.mark.asyncio
 async def test_partial_pricing_coverage_can_still_have_strong_attribution(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=20), days=10, include_unknown=True)
 
@@ -256,13 +312,32 @@ async def test_partial_pricing_coverage_can_still_have_strong_attribution(sqlite
 @pytest.mark.asyncio
 async def test_insufficient_pricing_coverage_with_strong_attribution_is_ineligible(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=20), days=10, include_unknown=True)
     async with Session() as session:
         # Add enough unknown tokens to drop coverage below the 80% comparison floor while preserving observation history quality.
         for index in range(10):
-            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="output_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=20 - index), model="unknown-output-model"))
+            session.add(
+                UsageObservation(
+                    provider="anthropic",
+                    provider_mapping="anthropic",
+                    metric="output_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=now - timedelta(days=20 - index),
+                    model="unknown-output-model",
+                )
+            )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -278,7 +353,14 @@ async def test_insufficient_pricing_coverage_with_strong_attribution_is_ineligib
 @pytest.mark.asyncio
 async def test_high_pricing_coverage_and_strong_attribution_are_eligible(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=40), days=30)
 
@@ -294,7 +376,15 @@ async def test_high_pricing_coverage_and_strong_attribution_are_eligible(sqlite_
 @pytest.mark.asyncio
 async def test_economics_filters_by_config_id(sqlite_db):
     Session = sqlite_db
-    first = await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    first = await _config(
+        Session,
+        provider="anthropic",
+        label="Work",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     await _config(Session, provider="openai", label="Personal", pricing_model="payg")
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=30), days=30)
@@ -310,7 +400,15 @@ async def test_economics_filters_by_config_id(sqlite_db):
 @pytest.mark.asyncio
 async def test_economics_single_config_attributes_hermes_workload(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", label="main", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        label="main",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, start=now - timedelta(days=30), days=30)
 
@@ -329,8 +427,24 @@ async def test_economics_single_config_attributes_hermes_workload(sqlite_db):
 @pytest.mark.asyncio
 async def test_economics_two_configs_same_provider_do_not_double_count(sqlite_db):
     Session = sqlite_db
-    await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
-    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        Session,
+        provider="anthropic",
+        label="Work",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
+    await _config(
+        Session,
+        provider="anthropic",
+        label="Personal",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, provider="anthropic", start=now - timedelta(days=30), days=30)
 
@@ -373,8 +487,24 @@ async def test_economics_config_id_filter_does_not_hide_ambiguity(sqlite_db):
     workload would be attributed to that one config. Multiplicity is global.
     """
     Session = sqlite_db
-    first = await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
-    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    first = await _config(
+        Session,
+        provider="anthropic",
+        label="Work",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
+    await _config(
+        Session,
+        provider="anthropic",
+        label="Personal",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     await _seed_tokens(Session, provider="anthropic", start=now - timedelta(days=30), days=30)
 
@@ -410,17 +540,49 @@ async def test_economics_ambiguous_subscription_gets_empty_trend(sqlite_db):
     """Two subscriptions of the same provider must not each receive the full
     provider workload in their per-billing-period value trend."""
     Session = sqlite_db
-    await _config(Session, provider="anthropic", label="Work", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly", billing_anchor=datetime(2026, 1, 31, tzinfo=UTC))
-    await _config(Session, provider="anthropic", label="Personal", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly", billing_anchor=datetime(2026, 1, 31, tzinfo=UTC))
+    await _config(
+        Session,
+        provider="anthropic",
+        label="Work",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+        billing_anchor=datetime(2026, 1, 31, tzinfo=UTC),
+    )
+    await _config(
+        Session,
+        provider="anthropic",
+        label="Personal",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+        billing_anchor=datetime(2026, 1, 31, tzinfo=UTC),
+    )
     start = datetime(2026, 2, 10, tzinfo=UTC)
     end = datetime(2026, 3, 10, tzinfo=UTC)
     async with Session() as session:
         for observed_at in (datetime(2026, 2, 12, tzinfo=UTC), datetime(2026, 3, 5, tzinfo=UTC)):
-            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed_at, model="claude-sonnet-4"))
+            session.add(
+                UsageObservation(
+                    provider="anthropic",
+                    provider_mapping="anthropic",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed_at,
+                    model="claude-sonnet-4",
+                )
+            )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH
+        )
 
     assert response.status_code == 200, response.text
     rows = response.json()["providers"]
@@ -432,10 +594,21 @@ async def test_economics_ambiguous_subscription_gets_empty_trend(sqlite_db):
 
 @pytest.mark.asyncio
 async def test_economics_rejects_invalid_date_ranges(sqlite_db):
-    await _config(sqlite_db, provider="anthropic", pricing_model="subscription", subscription_amount=20, subscription_currency="USD", billing_cadence="monthly")
+    await _config(
+        sqlite_db,
+        provider="anthropic",
+        pricing_model="subscription",
+        subscription_amount=20,
+        subscription_currency="USD",
+        billing_cadence="monthly",
+    )
     now = datetime.now(UTC)
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": now.isoformat(), "to": (now - timedelta(days=1)).isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics",
+            params={"from": now.isoformat(), "to": (now - timedelta(days=1)).isoformat()},
+            headers=ADMIN_AUTH,
+        )
 
     assert response.status_code == 400
 
@@ -622,9 +795,32 @@ async def test_economics_payg_reconciliation_surfaces_disagreement(sqlite_db):
     now = datetime.now(UTC)
     async with Session() as session:
         # Provider-reported actual spend far above the reconstructed token value.
-        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=100, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)))
+        session.add(
+            UsageObservation(
+                provider_config_id=config.id,
+                provider="openai",
+                metric="daily_cost",
+                value=100,
+                unit="USD",
+                kind="delta",
+                source="native",
+                observed_at=now - timedelta(days=2),
+            )
+        )
         # 1M gpt-4o input tokens reconstructs to $2.50.
-        session.add(UsageObservation(provider="openai", provider_mapping="openai", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=5), model="gpt-4o"))
+        session.add(
+            UsageObservation(
+                provider="openai",
+                provider_mapping="openai",
+                metric="input_tokens",
+                value=1_000_000,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=now - timedelta(days=5),
+                model="gpt-4o",
+            )
+        )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -646,8 +842,31 @@ async def test_economics_payg_reconciliation_agrees_when_close(sqlite_db):
     now = datetime.now(UTC)
     async with Session() as session:
         # Actual spend close to the reconstructed $2.50 for 1M gpt-4o input tokens.
-        session.add(UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=2.4, unit="USD", kind="delta", source="native", observed_at=now - timedelta(days=2)))
-        session.add(UsageObservation(provider="openai", provider_mapping="openai", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=now - timedelta(days=5), model="gpt-4o"))
+        session.add(
+            UsageObservation(
+                provider_config_id=config.id,
+                provider="openai",
+                metric="daily_cost",
+                value=2.4,
+                unit="USD",
+                kind="delta",
+                source="native",
+                observed_at=now - timedelta(days=2),
+            )
+        )
+        session.add(
+            UsageObservation(
+                provider="openai",
+                provider_mapping="openai",
+                metric="input_tokens",
+                value=1_000_000,
+                unit="tokens",
+                kind="delta",
+                source="hermes",
+                observed_at=now - timedelta(days=5),
+                model="gpt-4o",
+            )
+        )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
@@ -663,15 +882,61 @@ async def test_deepseek_payg_falls_back_to_pricing_estimate_with_efficiency_metr
     await _config(Session, provider="deepseek", pricing_model="payg")
     observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
     async with Session() as session:
-        session.add_all([
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="cache_read_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="output_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="requests", value=100, unit="count", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="cache_read_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="output_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="requests",
+                    value=100,
+                    unit="count",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+            ]
+        )
         await session.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics",
+            params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"},
+            headers=ADMIN_AUTH,
+        )
     row = response.json()["providers"][0]
     assert row["cost_basis"]["amount"] == pytest.approx(0.887)
     assert row["cost_basis"]["source"] == "pricing_estimate"
@@ -688,13 +953,38 @@ async def test_deepseek_actual_spend_wins_and_is_not_added_to_estimate(sqlite_db
     config = await _config(Session, provider="deepseek", pricing_model="payg")
     observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
     async with Session() as session:
-        session.add_all([
-            UsageObservation(provider_config_id=config.id, provider="deepseek", metric="billed_cost", value=5, unit="USD", kind="delta", source="native", observed_at=observed),
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider="deepseek",
+                    metric="billed_cost",
+                    value=5,
+                    unit="USD",
+                    kind="delta",
+                    source="native",
+                    observed_at=observed,
+                ),
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+            ]
+        )
         await session.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics",
+            params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"},
+            headers=ADMIN_AUTH,
+        )
     row = response.json()["providers"][0]
     assert row["cost_basis"]["amount"] == 5
     assert row["cost_basis"]["source"] == "provider_billing_history"
@@ -708,13 +998,39 @@ async def test_payg_estimate_below_minimum_coverage_is_not_a_cost_basis(sqlite_d
     await _config(Session, provider="deepseek", pricing_model="payg")
     observed = datetime(2026, 8, 23, 12, tzinfo=UTC)
     async with Session() as session:
-        session.add_all([
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="deepseek-v4-flash"),
-            UsageObservation(provider="deepseek", provider_mapping="deepseek", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed, model="unknown-model"),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="deepseek-v4-flash",
+                ),
+                UsageObservation(
+                    provider="deepseek",
+                    provider_mapping="deepseek",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed,
+                    model="unknown-model",
+                ),
+            ]
+        )
         await session.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics",
+            params={"from": "2026-08-20T00:00:00Z", "to": "2026-08-25T00:00:00Z"},
+            headers=ADMIN_AUTH,
+        )
     basis = response.json()["providers"][0]["cost_basis"]
     economics = response.json()["providers"][0]["economics"]
     assert basis["amount"] is None
@@ -744,10 +1060,30 @@ async def test_provider_reported_spend_precedes_native_history_without_summing(s
     config = await _config(Session, provider="openai", pricing_model="payg")
     now = datetime.now(UTC)
     async with Session() as session:
-        session.add_all([
-            UsageObservation(provider_config_id=config.id, provider="openai", metric="reported_cost", value=3, unit="USD", kind="delta", source="snapshot", observed_at=now),
-            UsageObservation(provider_config_id=config.id, provider="openai", metric="daily_cost", value=4, unit="USD", kind="delta", source="native", observed_at=now),
-        ])
+        session.add_all(
+            [
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider="openai",
+                    metric="reported_cost",
+                    value=3,
+                    unit="USD",
+                    kind="delta",
+                    source="snapshot",
+                    observed_at=now,
+                ),
+                UsageObservation(
+                    provider_config_id=config.id,
+                    provider="openai",
+                    metric="daily_cost",
+                    value=4,
+                    unit="USD",
+                    kind="delta",
+                    source="native",
+                    observed_at=now,
+                ),
+            ]
+        )
         await session.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/analytics/economics", headers=ADMIN_AUTH)
@@ -777,11 +1113,25 @@ async def test_economics_subscription_value_trend_by_billing_period(sqlite_db):
             datetime(2026, 2, 27, tzinfo=UTC),
             datetime(2026, 3, 5, tzinfo=UTC),
         ):
-            session.add(UsageObservation(provider="anthropic", provider_mapping="anthropic", metric="input_tokens", value=1_000_000, unit="tokens", kind="delta", source="hermes", observed_at=observed_at, model="claude-sonnet-4"))
+            session.add(
+                UsageObservation(
+                    provider="anthropic",
+                    provider_mapping="anthropic",
+                    metric="input_tokens",
+                    value=1_000_000,
+                    unit="tokens",
+                    kind="delta",
+                    source="hermes",
+                    observed_at=observed_at,
+                    model="claude-sonnet-4",
+                )
+            )
         await session.commit()
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH)
+        response = await client.get(
+            "/api/v1/analytics/economics", params={"from": start.isoformat(), "to": end.isoformat()}, headers=ADMIN_AUTH
+        )
 
     row = response.json()["providers"][0]
     assert len(row["trend"]) == 2

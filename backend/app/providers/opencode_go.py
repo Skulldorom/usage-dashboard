@@ -452,7 +452,9 @@ def _extract_windows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
         elif isinstance(collection, list):
             for item in collection:
                 if isinstance(item, dict):
-                    name = _first_text(item.get("id"), item.get("key"), item.get("name"), item.get("label"), item.get("window"))
+                    name = _first_text(
+                        item.get("id"), item.get("key"), item.get("name"), item.get("label"), item.get("window")
+                    )
                     if name:
                         raw_windows[name] = item
 
@@ -482,7 +484,12 @@ def _extract_windows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             usage = _number(payload.get("usage"))
             limit = _number(payload.get("limit"))
             if usage is not None or limit is not None:
-                window = {"usage": usage, "limit": limit, "remaining": _number(payload.get("remaining")), "reset_at": _normalize_reset_at(payload.get("reset_at"))}
+                window = {
+                    "usage": usage,
+                    "limit": limit,
+                    "remaining": _number(payload.get("remaining")),
+                    "reset_at": _normalize_reset_at(payload.get("reset_at")),
+                }
         if window is not None:
             windows[canonical] = window
 
@@ -493,7 +500,11 @@ def _extract_windows(payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
             continue
         if window.get("limit") is None:
             window["limit"] = DEFAULT_LIMITS.get(canonical)
-        if window.get("remaining") is None and isinstance(window.get("usage"), (int, float)) and isinstance(window["limit"], (int, float)):
+        if (
+            window.get("remaining") is None
+            and isinstance(window.get("usage"), (int, float))
+            and isinstance(window["limit"], (int, float))
+        ):
             window["remaining"] = max(0, round(window["limit"] - window["usage"], 4))
 
     return windows
@@ -522,7 +533,12 @@ def _coerce_window(raw_windows: dict[str, Any], canonical: str) -> dict[str, Any
                     "reset_at": reset_at,
                 }
         elif isinstance(value, (int, float)) and not isinstance(value, bool):
-            return {"usage": _number(value), "limit": DEFAULT_LIMITS.get(canonical), "remaining": None, "reset_at": None}
+            return {
+                "usage": _number(value),
+                "limit": DEFAULT_LIMITS.get(canonical),
+                "remaining": None,
+                "reset_at": None,
+            }
 
     return None
 

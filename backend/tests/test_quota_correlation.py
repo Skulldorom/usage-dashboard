@@ -161,8 +161,12 @@ def test_estimate_ignores_non_token_hermes_deltas():
     util, hermes = _windows(base, 4)
     # Requests are not token metrics and must not inflate activity.
     requests = Observation(
-        metric="requests", value=999999.0, unit="count",
-        observed_at=base + timedelta(days=3), kind="delta", source="hermes",
+        metric="requests",
+        value=999999.0,
+        unit="count",
+        observed_at=base + timedelta(days=3),
+        kind="delta",
+        source="hermes",
     )
     hermes.append(requests)
     result = estimate_quota_impact(util, hermes)

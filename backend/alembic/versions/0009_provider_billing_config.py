@@ -18,7 +18,9 @@ def upgrade() -> None:
     with op.batch_alter_table("provider_configs") as batch_op:
         batch_op.add_column(sa.Column("pricing_model", sa.String(length=16), server_default="payg", nullable=False))
         batch_op.add_column(sa.Column("subscription_amount", sa.Numeric(12, 4), nullable=True))
-        batch_op.add_column(sa.Column("subscription_currency", sa.String(length=3), server_default="USD", nullable=False))
+        batch_op.add_column(
+            sa.Column("subscription_currency", sa.String(length=3), server_default="USD", nullable=False)
+        )
         batch_op.add_column(sa.Column("billing_cadence", sa.String(length=16), nullable=True))
         batch_op.add_column(sa.Column("billing_anchor", sa.DateTime(timezone=True), nullable=True))
 

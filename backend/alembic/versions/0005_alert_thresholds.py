@@ -1,4 +1,5 @@
 """alert thresholds per provider"""
+
 from alembic import op
 import sqlalchemy as sa
 

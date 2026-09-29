@@ -169,10 +169,7 @@ def _window_rank(window: str | None) -> int:
 
 def activity_metric_labels(dimensions: dict[str, list[tuple[str, dict]]]) -> dict[str, list[str]]:
     """Flatten ``activity_dimensions`` output to ``{dimension: [metric_label]}``."""
-    return {
-        dimension: [label for label, _spec in entries]
-        for dimension, entries in dimensions.items()
-    }
+    return {dimension: [label for label, _spec in entries] for dimension, entries in dimensions.items()}
 
 
 # Hermes only observes consumption counters (tokens / requests / cost), so an

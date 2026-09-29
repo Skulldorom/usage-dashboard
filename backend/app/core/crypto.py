@@ -1,7 +1,9 @@
 from cryptography.fernet import Fernet, InvalidToken
 
+
 class CryptoError(ValueError):
     pass
+
 
 class CryptoService:
     """Fernet-backed API key encryption.
@@ -10,6 +12,7 @@ class CryptoService:
     is the cryptography project's safe recipe and satisfies the Fernet
     requirement for encrypted-at-rest provider secrets.
     """
+
     def __init__(self, key: str):
         try:
             self._fernet = Fernet(key.encode() if isinstance(key, str) else key)

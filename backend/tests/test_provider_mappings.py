@@ -35,7 +35,10 @@ async def sqlite_db(monkeypatch):
             AdminCredential(
                 password_hash="test-only",
                 session_tokens=[
-                    {"token_hash": _hash_secret("test-admin-session-token-123"), "expires_at": "2999-01-01T00:00:00+00:00"}
+                    {
+                        "token_hash": _hash_secret("test-admin-session-token-123"),
+                        "expires_at": "2999-01-01T00:00:00+00:00",
+                    }
                 ],
             )
         )

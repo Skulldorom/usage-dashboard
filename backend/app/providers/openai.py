@@ -5,6 +5,7 @@ from app.analytics.capabilities import analytics_spec, metric_spec
 from app.analytics.normalizer import parse_time
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
+
 class OpenAIAdapter(ProviderAdapter):
     id = "openai"
     name = "OpenAI"
@@ -19,14 +20,23 @@ class OpenAIAdapter(ProviderAdapter):
         native_history=True,
         metrics={
             "cost_30d": metric_spec(
-                type_="rolling_total", unit="USD", direction="increasing",
-                aggregations=["daily"], deltas=False, window="30d",
+                type_="rolling_total",
+                unit="USD",
+                direction="increasing",
+                aggregations=["daily"],
+                deltas=False,
+                window="30d",
             ),
             "daily_cost": metric_spec(
-                type_="counter", unit="USD", direction="increasing", aggregations=["daily"], overview=True,
+                type_="counter",
+                unit="USD",
+                direction="increasing",
+                aggregations=["daily"],
+                overview=True,
             ),
         },
     )
+
     async def fetch_usage(self) -> ProviderUsage:
         end = datetime.now(UTC)
         start = end - timedelta(days=30)
@@ -37,6 +47,7 @@ class OpenAIAdapter(ProviderAdapter):
             resp.raise_for_status()
             data = resp.json()
         return self.parse_usage(data)
+
     @staticmethod
     def parse_usage(data: dict) -> ProviderUsage:
         total = 0.0
@@ -48,7 +59,9 @@ class OpenAIAdapter(ProviderAdapter):
                 total += float(amount.get("value") or 0)
                 currency = amount.get("currency") or currency
         metrics = [Metric("cost_30d", round(total, 6), currency.upper()), Metric("buckets", len(buckets))]
-        return ProviderUsage(status="healthy", summary=f"{total:.2f} {currency.upper()} spent in last 30 days", metrics=metrics, raw=data)
+        return ProviderUsage(
+            status="healthy", summary=f"{total:.2f} {currency.upper()} spent in last 30 days", metrics=metrics, raw=data
+        )
 
     @staticmethod
     def native_observations(raw: dict) -> list[dict]:
