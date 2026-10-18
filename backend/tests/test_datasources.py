@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+import httpx
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -15,7 +16,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.auth import _hash_secret
 from app.core.config import settings
 from app.database import get_session
-from app.datasources.base import expand_observation_records
+from app.datasources.base import DataSourceFetchResult, expand_observation_records
+from app.datasources.base import DataSourceRetryError
+from app.datasources.ninerouter import NineRouterDataSource
 from app.datasources.service import _persist_observations, sync_data_source
 from app.main import app
 from app.models import (
@@ -209,7 +212,9 @@ async def test_data_source_crud_and_status(sqlite_db):
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         catalog = await client.get("/api/v1/datasources", headers=AUTH)
         assert catalog.status_code == 200
-        assert any(item["id"] == "hermes" for item in catalog.json())
+        catalog_by_id = {item["id"]: item for item in catalog.json()}
+        assert catalog_by_id["hermes"]["default_poll_interval_minutes"] == 60
+        assert catalog_by_id["9router"]["default_poll_interval_minutes"] == 1
 
         created = await client.post(
             "/api/v1/datasources/configs",
@@ -226,6 +231,7 @@ async def test_data_source_crud_and_status(sqlite_db):
         assert body["token_masked"] == "••••••••"
         assert "token" not in body
         assert body["mute_unmapped_provider_alerts"] is True
+        assert body["poll_interval_minutes"] == 60
         assert body["status"]["status"] == "never_connected"
 
         updated = await client.patch(
@@ -241,6 +247,26 @@ async def test_data_source_crud_and_status(sqlite_db):
 
         deleted = await client.delete(f"/api/v1/datasources/configs/{body['id']}", headers=AUTH)
         assert deleted.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_connection_inspection_accepts_paginated_result(sqlite_db, monkeypatch):
+    async def fake_fetch(self, base_url, token, extra, timeout):
+        return DataSourceFetchResult(records=[{"id": "1"}], cursor="1")
+
+    monkeypatch.setattr(NineRouterDataSource, "fetch_observations", fake_fetch)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/datasources/configs",
+            json={"kind": "9router", "base_url": "http://router.local", "token": "dashboard-password"},
+            headers=AUTH,
+        )
+        assert created.status_code == 201, created.text
+        assert created.json()["poll_interval_minutes"] == 1
+        response = await client.post(f"/api/v1/datasources/configs/{created.json()['id']}/test", headers=AUTH)
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True, "records": 1}
 
 
 @pytest.mark.asyncio
@@ -708,3 +734,513 @@ async def test_sync_skips_malformed_row_without_blocking_valid_observations(sqli
     assert duplicate["inserted"] == 0
     assert duplicate["duplicates_skipped"] == 1
     assert duplicate["observations_skipped_invalid_fields"] == 1
+
+
+def test_ninerouter_catalog_is_registered():
+    from app.datasources.registry import list_data_sources
+
+    assert any(item["id"] == "9router" for item in list_data_sources())
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_uses_fixed_window_and_discards_sensitive_detail_fields(monkeypatch):
+    class Response:
+        def __init__(self, payload, status_code=200):
+            self.payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self.payload
+
+    class Cookie:
+        name = "auth_token"
+        value = "ephemeral-session"
+
+    class Client:
+        def __init__(self):
+            self.pages = []
+            self.cookies = type("Cookies", (), {"jar": [Cookie()]})()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            assert url == "http://router.test/api/auth/login"
+            assert json == {"password": "secret"}
+            return Response({"success": True})
+
+        async def get(self, url, params):
+            assert url == "http://router.test/api/usage/request-details"
+            self.pages.append(params.copy())
+            if params["page"] == 1:
+                return Response(
+                    {
+                        "details": [
+                            {
+                                "id": "2026-10-18T12:00:00.000Z-a-cls",
+                                "timestamp": "2026-10-18T12:00:00Z",
+                                "provider": "OpenRouter",
+                                "model": "anthropic/claude-sonnet-4",
+                                "connectionId": "provider-account-not-a-session",
+                                "tokens": {
+                                    "prompt_tokens": 11,
+                                    "completion_tokens": 7,
+                                    "cached_tokens": 3,
+                                },
+                                "request": {"prompt": "SUPER_SECRET_PROMPT"},
+                                "providerRequest": {"key": "SUPER_SECRET_API_KEY"},
+                                "providerResponse": {"text": "SUPER_SECRET_RESPONSE"},
+                                "response": {"text": "SUPER_SECRET_RESPONSE"},
+                            }
+                        ],
+                        "pagination": {"page": 1, "pageSize": 100, "totalItems": 101, "totalPages": 2, "hasNext": True},
+                    }
+                )
+            return Response(
+                {
+                    "details": [
+                        {
+                            "id": "2026-10-18T12:01:00.000Z-b-gpt",
+                            "timestamp": "2026-10-18T12:01:00Z",
+                            "provider": "openai",
+                            "model": "gpt-5",
+                            "connectionId": "another-provider-account",
+                            "tokens": {"prompt_tokens": 0, "completion_tokens": 0},
+                        }
+                    ],
+                    "pagination": {"page": 2, "pageSize": 100, "totalItems": 101, "totalPages": 2, "hasNext": False},
+                }
+            )
+
+    client = Client()
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: client)
+    result = await NineRouterDataSource().fetch_observations(
+        "http://router.test/", "secret", {"cursor": "2026-10-18T12:10:00+00:00"}, 5
+    )
+
+    assert [page["page"] for page in client.pages] == [1, 2]
+    assert all(page["pageSize"] == 100 for page in client.pages)
+    assert all(page["startDate"] == "2026-10-18T12:00:00+00:00" for page in client.pages)
+    assert len({page["endDate"] for page in client.pages}) == 1
+    assert result.cursor == client.pages[0]["endDate"]
+    assert result.records == [
+        {
+            "id": "2026-10-18T12:00:00.000Z-a-cls",
+            "timestamp": "2026-10-18T12:00:00Z",
+            "provider": "OpenRouter",
+            "model": "anthropic/claude-sonnet-4",
+            "requests": 1,
+            "input_tokens": 11,
+            "output_tokens": 7,
+            "cache_read_tokens": 3,
+        },
+        {
+            "id": "2026-10-18T12:01:00.000Z-b-gpt",
+            "timestamp": "2026-10-18T12:01:00Z",
+            "provider": "openai",
+            "model": "gpt-5",
+            "requests": 1,
+        },
+    ]
+    assert "SUPER_SECRET_PROMPT" not in repr(result.records)
+    assert "SUPER_SECRET_API_KEY" not in repr(result.records)
+    assert "SUPER_SECRET_RESPONSE" not in repr(result.records)
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_rejects_login_failure_without_a_session(monkeypatch):
+    class Response:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"success": True}
+
+    class Client:
+        cookies = type("Cookies", (), {"jar": []})()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            return Response()
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ValueError, match="did not establish a session"):
+        await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "message", "retry_after"),
+    [
+        (401, "authentication failed", 15 * 60),
+        (403, "access was denied", 30 * 60),
+    ],
+)
+async def test_ninerouter_adapter_backoffs_persistent_login_failures(monkeypatch, status_code, message, retry_after):
+    class Response:
+        def __init__(self):
+            self.status_code = status_code
+            self.headers = {}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            assert json == {"password": "wrong"}
+            return Response()
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(DataSourceRetryError, match=message) as caught:
+        await NineRouterDataSource().fetch_observations("http://router.test", "wrong", {}, 5)
+    assert caught.value.retry_after_seconds == retry_after
+    assert "wrong" not in str(caught.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("retry_after", ["120", None, "invalid", "-1"])
+async def test_ninerouter_adapter_respects_login_rate_limit(monkeypatch, retry_after):
+    class Response:
+        status_code = 429
+        headers = {} if retry_after is None else {"Retry-After": retry_after}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            return Response()
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(DataSourceRetryError, match="temporarily locked") as caught:
+        await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+    assert caught.value.retry_after_seconds == (120 if retry_after == "120" else 10 * 60)
+    assert "secret" not in str(caught.value)
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_fails_when_auth_expires_during_pagination(monkeypatch):
+    class Response:
+        def __init__(self, payload=None, status_code=200):
+            self.payload = payload
+            self.status_code = status_code
+
+        def json(self):
+            return self.payload
+
+    class Cookie:
+        name = "auth_token"
+        value = "ephemeral-session"
+
+    class Client:
+        cookies = type("Cookies", (), {"jar": [Cookie()]})()
+        calls = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            return Response({"success": True})
+
+        async def get(self, url, params):
+            self.calls += 1
+            if self.calls == 1:
+                return Response(
+                    {"details": [], "pagination": {"page": 1, "pageSize": 100, "totalItems": 101, "totalPages": 2, "hasNext": True}}
+                )
+            return Response(status_code=401)
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ValueError, match="request-details returned HTTP 401"):
+        await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_retries_an_unstable_window_once(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class Cookie:
+        name = "auth_token"
+        value = "ephemeral-session"
+
+    class Client:
+        cookies = type("Cookies", (), {"jar": [Cookie()]})()
+
+        def __init__(self):
+            self.pages = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            return Response({"success": True})
+
+        async def get(self, url, params):
+            self.pages.append(params.copy())
+            sequence = len(self.pages)
+            total = 101 if sequence in (1, 3, 4) else 100
+            page = params["page"]
+            return Response(
+                {
+                    "details": [],
+                    "pagination": {
+                        "page": page,
+                        "pageSize": 100,
+                        "totalItems": total,
+                        "totalPages": 2 if total == 101 else 1,
+                        "hasNext": page < (2 if total == 101 else 1),
+                    },
+                }
+            )
+
+    client = Client()
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: client)
+    result = await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+    assert result.records == []
+    assert [page["page"] for page in client.pages] == [1, 2, 1, 2]
+    assert len({page["endDate"] for page in client.pages}) == 1
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_rejects_persistently_unstable_pagination(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+    class Cookie:
+        name = "auth_token"
+        value = "ephemeral-session"
+
+    class Client:
+        cookies = type("Cookies", (), {"jar": [Cookie()]})()
+        call = 0
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            return Response({"success": True})
+
+        async def get(self, url, params):
+            self.call += 1
+            total = 101 if self.call % 2 else 100
+            return Response(
+                {
+                    "details": [],
+                    "pagination": {
+                        "page": params["page"],
+                        "pageSize": 100,
+                        "totalItems": total,
+                        "totalPages": 2 if total == 101 else 1,
+                        "hasNext": params["page"] == 1,
+                    },
+                }
+            )
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ValueError, match="changed during pagination"):
+        await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+
+@pytest.mark.asyncio
+async def test_ninerouter_overlapping_polls_are_idempotent(sqlite_db, monkeypatch):
+    class FakeNineRouter:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return DataSourceFetchResult(records=[_record(event_id="detail-1", input_tokens=10)], cursor="2026-10-18T12:10:00+00:00")
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeNineRouter)
+    source_id = await _make_source(sqlite_db, name="router-overlap")
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.kind = "9router"
+        source.extra = {"cursor": "2026-10-18T12:00:00+00:00"}
+        await session.commit()
+
+    for expected_inserted in (1, 0):
+        async with sqlite_db() as session:
+            source = await session.get(DataSourceConfig, source_id)
+            result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+        assert result["status"] == "healthy"
+        assert result["inserted"] == expected_inserted
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        assert source.extra["cursor"] == "2026-10-18T12:10:00+00:00"
+        assert await _count(sqlite_db, source_id) == 1
+
+
+@pytest.mark.asyncio
+async def test_cursor_advances_only_after_successful_persistence(sqlite_db, monkeypatch):
+    class FakeNineRouter:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return DataSourceFetchResult(records=[_record(event_id="42", input_tokens=10)], cursor="42")
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeNineRouter)
+    source_id = await _make_source(sqlite_db, name="router")
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.kind = "9router"
+        source.extra = {"cursor": "41"}
+        await session.commit()
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+    assert result["status"] == "healthy"
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        assert source.extra["cursor"] == "42"
+        stored = (await session.execute(select(UsageObservation).where(UsageObservation.data_source_id == source_id))).scalars().all()
+        assert {row.source for row in stored} == {"9router"}
+        assert {row.source_event_id for row in stored} == {"42:input_tokens"}
+
+
+@pytest.mark.asyncio
+async def test_cursor_is_not_advanced_when_persistence_fails(sqlite_db, monkeypatch):
+    class FakeNineRouter:
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            return DataSourceFetchResult(records=[_record(event_id="42", input_tokens=10)], cursor="42")
+
+    async def failed_persist(session, source, observations):
+        raise RuntimeError("synthetic persistence failure")
+
+    monkeypatch.setattr("app.datasources.service.get_data_source", lambda kind: FakeNineRouter)
+    monkeypatch.setattr("app.datasources.service._persist_observations", failed_persist)
+    source_id = await _make_source(sqlite_db, name="router")
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.kind = "9router"
+        source.extra = {"cursor": "41"}
+        await session.commit()
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        result = await sync_data_source(session, source, crypto=type("C", (), {"decrypt": lambda self, value: value})())
+    assert result["status"] == "error"
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        assert source.extra["cursor"] == "41"
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_requires_password_login():
+    with pytest.raises(ValueError, match="dashboard password is required"):
+        await NineRouterDataSource().fetch_observations("http://router.test", None, {}, 5)
+
+
+@pytest.mark.asyncio
+async def test_ninerouter_adapter_wraps_login_network_failure(monkeypatch):
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    with pytest.raises(ValueError, match="9Router connection failed: connection refused"):
+        await NineRouterDataSource().fetch_observations("http://router.test", "secret", {}, 5)
+
+@pytest.mark.asyncio
+async def test_ninerouter_manual_connection_test_attempts_login_once_on_rate_limit(sqlite_db, monkeypatch):
+    attempts = 0
+
+    class Response:
+        status_code = 429
+        headers = {"Retry-After": "120"}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, json):
+            nonlocal attempts
+            attempts += 1
+            return Response()
+
+    monkeypatch.setattr("app.datasources.ninerouter.httpx.AsyncClient", lambda **kwargs: Client())
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/datasources/configs",
+            json={"kind": "9router", "base_url": "http://router.test", "token": "test-password"},
+            headers=AUTH,
+        )
+        assert created.status_code == 201, created.text
+        response = await client.post(f"/api/v1/datasources/configs/{created.json()['id']}/test", headers=AUTH)
+
+    assert response.status_code == 400
+    assert attempts == 1
+    assert response.json()["detail"] == "9Router dashboard login is temporarily locked. Retry after 120 seconds."
+    assert "test-password" not in response.text
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, created.json()["id"])
+        assert source.next_attempt_at is not None
+        assert source.next_attempt_at > source.last_failure_at
+
+
+@pytest.mark.asyncio
+async def test_replacing_data_source_token_clears_automatic_backoff(sqlite_db):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/datasources/configs",
+            json={"kind": "9router", "base_url": "http://router.test", "token": "old-password"},
+            headers=AUTH,
+        )
+        source_id = created.json()["id"]
+
+    async with sqlite_db() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.next_attempt_at = datetime.now(UTC) + timedelta(minutes=10)
+        await session.commit()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        updated = await client.patch(
+            f"/api/v1/datasources/configs/{source_id}",
+            json={"token": "corrected-password"},
+            headers=AUTH,
+        )
+
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["status"]["next_attempt_at"] is None
+    assert "corrected-password" not in updated.text

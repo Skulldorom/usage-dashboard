@@ -42,6 +42,95 @@ this usage come from?"*. Where the provider exposes incomplete metrics, Hermes
 provides a detailed view of the usage it can observe while the dashboard
 clearly labels the figures as **Hermes-observed only**.
 
+## Connecting 9Router
+
+9Router is supported as a read-only observational data source using its existing
+protected dashboard endpoint: `GET /api/usage/request-details`. No 9Router
+patch, API-key bypass, database mount, or log scraping is required.
+
+1. In 9Router, enable **observability/request-detail collection**. Without it,
+   9Router accepts requests but does not write `requestDetails`; an empty result
+   can also mean an idle or new instance, so Usage Dashboard cannot distinguish
+   those cases.
+2. In **Settings → Data sources**, select **9Router** and enter its base URL,
+   such as `http://9router:20128`.
+3. Enter the 9Router **dashboard password**. Usage Dashboard sends it only to
+   the official `POST /api/auth/login` endpoint to obtain a temporary in-memory
+   dashboard session cookie, then calls request-details through that session.
+   It never stores the cookie. The password is encrypted at rest using the
+   existing data-source credential store.
+4. Keep the default **one-minute** poll interval unless traffic and 9Router's
+   request-detail retention require a higher 9Router retention limit, then click
+   **Test connection** and **Sync now**.
+
+This requires 9Router password dashboard authentication. A 9Router API key does
+not authorize dashboard usage APIs. SSO-only 9Router deployments cannot use
+this integration today because official 9Router has no non-browser service
+credential for its protected dashboard APIs. Login failure, a missing session
+cookie after login, a request-details `401`/`403`, a timeout, or any other
+connection failure fails the whole sync; it is never treated as an empty history.
+
+For Docker, use a URL resolvable from the Usage Dashboard backend, normally the
+9Router Compose service name on a shared network. Do not use the browser-only
+`localhost` address unless both services run on the same host network.
+
+The official endpoint returns a paginated, redacted detail list. Usage Dashboard
+imports only stable detail ID, timestamp, provider, model, request count, and
+positive token fields. It deliberately does **not** import `connectionId`: in
+9Router it identifies a selected provider account/configuration, not a
+conversation or user session. It does not retain request status, latency, or
+redacted detail objects because they have no generic telemetry mapping. It never
+imports prompts, responses, request bodies, headers, Authorization values, API
+keys, OAuth credentials, cookies, or provider credentials.
+
+9Router request details do not expose per-request cost. `stats` and `chart`
+endpoints expose aggregate local costs but cannot safely be combined with these
+request records without inventing allocation or double-counting. This first
+version therefore imports no 9Router cost. Provider-native billing remains
+authoritative; 9Router observations are supplemental and never added to provider
+totals.
+
+9Router's `requestDetails` is a bounded rolling history (upstream defaults are
+approximately `200` records and configurable as `observabilityMaxRecords`). The
+safe interval depends on your traffic volume and this limit: increase the limit
+or keep traffic within what the one-minute minimum interval can retain before
+the gateway overwrites details between polls. The one-minute default is only a
+conservative starting point, not a losslessness guarantee.
+
+Each sync fixes one `endDate` before requesting page 1 and reuses it on every
+page. Later polls use a ten-minute overlap from the prior successful sync and
+stable request-detail IDs for idempotency. Because 9Router paginates with
+`OFFSET` and can delete old details while a sync is running, the adapter compares
+the reported `totalItems` across pages, retries an unstable fixed window once,
+and otherwise fails visibly rather than claiming complete ingestion. Even with
+this protection, high traffic can age records out before the next poll because
+upstream exposes no durable cursor or snapshot export.
+
+Automatic 9Router polling uses the dashboard login endpoint once per sync. A
+`401` (wrong password) defers the next automatic attempt for 15 minutes; a
+`403` (dashboard access denied, for example an SSO-only deployment or required
+password rotation) defers it for 30 minutes. A login `429` honors 9Router's
+`Retry-After` seconds; a missing, malformed, or negative header uses a
+conservative 10-minute delay. These delays are persisted as source scheduler
+eligibility, not worker sleeps, and the source stays visibly unhealthy with a
+sanitized actionable error. **Test connection** is user-triggered and bypasses
+that eligibility once, but still makes exactly one login attempt; it reports a
+current `429` without retrying. Saving a replacement dashboard password clears
+automatic backoff so the next scheduled poll can recover. Session expiry while
+reading later pages fails that sync without another login attempt.
+
+Some 9Router paths can substitute `prompt_tokens: 0` and
+`completion_tokens: 0` when actual usage is unavailable. For this source only,
+Usage Dashboard imports positive token values and treats zero or missing token
+fields as unknown; it does not write zero-token metrics.
+
+9Router does not currently expose a suitable remote API-key-authenticated export
+of `usageHistory`. Consequently, this integration cannot import usage beyond the
+request-details retention window, per-request cost, combo/fallback data, quota
+snapshots, latency/status analytics, or reliable aggregate history. A future
+upstream-neutral solution would be an authenticated, privacy-safe cursor export
+of `usageHistory` metadata.
+
 ## Connecting Hermes
 
 Usage Dashboard connects to Hermes Agent through the supported
@@ -49,7 +138,7 @@ Usage Dashboard connects to Hermes Agent through the supported
 Hermes does not expose this dashboard's `/usage` contract directly; install the
 sidecar on the machine running Hermes, then configure the dashboard to poll it.
 
-1. In **Settings → Data sources**, click **Add Hermes source**.
+1. In **Settings → Data sources**, click **Add data source** and select **Hermes**.
 2. In **Install with Hermes**, click **Copy installation prompt**.
 3. Paste the copied prompt into Hermes Agent on the machine that runs Hermes.
 4. Let Hermes inspect the current sidecar documentation, install the sidecar,
