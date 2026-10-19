@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from math import isfinite
 from typing import Any
 
@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.crypto import CryptoService
 from app.analytics.normalizer import parse_time
-from app.datasources.base import HERMES_METRIC_FIELDS, expand_observation_records
+from app.datasources.base import (
+    DataSourceFetchResult,
+    DataSourceRetryError,
+    HERMES_METRIC_FIELDS,
+    expand_observation_records,
+)
 from app.datasources.registry import get_data_source
 from app.models import DataSourceConfig, ProviderConfig, UsageObservation
 
@@ -317,10 +322,12 @@ async def _sync_data_source(
     source.last_attempt_at = now
 
     try:
-        records = await adapter.fetch_observations(
+        fetched = await adapter.fetch_observations(
             source.base_url, token, source.extra or {}, settings.request_timeout_seconds
         )
-        observations_produced = expand_observation_records(records)
+        result = fetched if isinstance(fetched, DataSourceFetchResult) else DataSourceFetchResult(records=fetched)
+        records = result.records
+        observations_produced = expand_observation_records(records, source=source.kind)
         profiles = _profiles(source.extra or {})
         observations = observations_produced
         if profiles:
@@ -343,8 +350,13 @@ async def _sync_data_source(
         )
         persist_result = await _persist_observations(session, source, observations)
         inserted = persist_result["inserted"]
+        if result.cursor is not None:
+            extra = dict(source.extra or {})
+            extra["cursor"] = result.cursor
+            source.extra = extra
 
         source.last_success_at = now
+        source.next_attempt_at = None
         source.consecutive_failures = 0
         source.latest_error = None
         await session.commit()
@@ -357,11 +369,24 @@ async def _sync_data_source(
             **diagnostics,
         }
     except Exception as exc:  # noqa: BLE001 - record any failure, never leak tokens
-        await session.rollback()
-        await session.refresh(source)
-        source.last_attempt_at = now
-        source.last_failure_at = now
-        source.consecutive_failures = (source.consecutive_failures or 0) + 1
-        source.latest_error = str(exc)
-        await session.commit()
+        await record_data_source_failure(session, source, exc, now)
         return {"status": "error", "inserted": 0, "observed": 0, "error": str(exc)}
+
+
+async def record_data_source_failure(
+    session: AsyncSession,
+    source: DataSourceConfig,
+    error: Exception,
+    attempted_at: datetime | None = None,
+) -> None:
+    """Persist source health and scheduler eligibility after a failed attempt."""
+    now = attempted_at or datetime.now(UTC)
+    await session.rollback()
+    await session.refresh(source)
+    source.last_attempt_at = now
+    source.last_failure_at = now
+    source.consecutive_failures = (source.consecutive_failures or 0) + 1
+    source.latest_error = str(error)
+    if isinstance(error, DataSourceRetryError):
+        source.next_attempt_at = now + timedelta(seconds=error.retry_after_seconds)
+    await session.commit()

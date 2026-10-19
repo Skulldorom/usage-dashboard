@@ -1,23 +1,15 @@
-"""Generic data source abstraction.
-
-Data sources are *not* providers. Providers are the accounts/services whose
-usage, quotas, balances and limits are being measured (authoritative).
-Data sources are applications/gateways/agents that supply additional
-telemetry about usage flowing through them (observed). Hermes Agent is the
-first data source.
-"""
+"""Generic observed-telemetry data source abstractions."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from math import isfinite
 from typing import Any
 
 from app.analytics.normalizer import parse_time
 
-# Metric fields a telemetry source may emit, mapped to their display unit.
-# These become individual UsageObservation rows (kind="delta", source="hermes").
-HERMES_METRIC_FIELDS: tuple[tuple[str, str], ...] = (
+METRIC_FIELDS: tuple[tuple[str, str], ...] = (
     ("input_tokens", "tokens"),
     ("output_tokens", "tokens"),
     ("cache_read_tokens", "tokens"),
@@ -26,20 +18,32 @@ HERMES_METRIC_FIELDS: tuple[tuple[str, str], ...] = (
     ("requests", "count"),
     ("cost", "USD"),
 )
+# Backward-compatible import name for existing data-source analytics code.
+HERMES_METRIC_FIELDS = METRIC_FIELDS
+
+
+@dataclass(frozen=True)
+class DataSourceFetchResult:
+    records: list[dict]
+    cursor: str | None = None
+
+
+class DataSourceRetryError(ValueError):
+    """A source failure that supplies scheduler eligibility metadata."""
+
+    def __init__(self, message: str, retry_after_seconds: int):
+        super().__init__(message)
+        self.retry_after_seconds = max(0, retry_after_seconds)
 
 
 class DataSource(ABC):
-    """A telemetry source adapter.
-
-    Subclasses implement ``fetch_observations`` to retrieve raw usage records
-    over HTTP (read-only) and return them as a list of record dicts matching
-    the contract below.
-    """
+    """Read-only application or gateway telemetry adapter."""
 
     id: str
     name: str
     description: str
-    metric_names: list[str] = [field for field, _unit in HERMES_METRIC_FIELDS]
+    metric_names: list[str] = [field for field, _unit in METRIC_FIELDS]
+    default_poll_interval_minutes: int = 60
 
     @abstractmethod
     async def fetch_observations(
@@ -48,17 +52,8 @@ class DataSource(ABC):
         token: str | None,
         extra: dict[str, Any],
         timeout: float,
-    ) -> list[dict]:
-        """Fetch raw usage records and return them normalized to the contract.
-
-        Each record dict may carry:
-          - ``timestamp`` (required; ISO-8601 string, epoch, or datetime)
-          - ``provider`` (required; provider id, e.g. ``anthropic``)
-          - ``event_id`` or ``id`` (optional; stable source event identifier used
-            for idempotent ingestion)
-          - ``model``, ``profile``, ``session_id``, ``cost_type`` (optional)
-          - any of the metric fields in :data:`HERMES_METRIC_FIELDS`
-        """
+    ) -> DataSourceFetchResult | list[dict]:
+        """Fetch records with optional source-owned incremental cursor metadata."""
         raise NotImplementedError
 
 
@@ -70,14 +65,8 @@ def _record_event_id(record: dict) -> str | None:
     return None
 
 
-def expand_observation_records(records: list[dict]) -> list[dict]:
-    """Expand raw telemetry records into per-metric observation dicts.
-
-    Returns dicts ready to persist as ``UsageObservation`` rows with
-    ``source="hermes"``. Records with no usable timestamp or no numeric metric
-    fields are skipped. A record's ``event_id``/``id`` is carried through so the
-    ingestion layer can deduplicate on it.
-    """
+def expand_observation_records(records: list[dict], source: str = "hermes") -> list[dict]:
+    """Expand source events into generic, metric-level observations."""
     observations: list[dict] = []
     for record in records or []:
         observed_at = parse_time(record.get("timestamp"))
@@ -85,7 +74,7 @@ def expand_observation_records(records: list[dict]) -> list[dict]:
             continue
         provider = _normalize_provider(record.get("provider"))
         event_id = _record_event_id(record)
-        for field, unit in HERMES_METRIC_FIELDS:
+        for field, unit in METRIC_FIELDS:
             value = record.get(field)
             if value is None:
                 continue
@@ -102,7 +91,7 @@ def expand_observation_records(records: list[dict]) -> list[dict]:
                     "unit": unit,
                     "observed_at": observed_at,
                     "kind": "delta",
-                    "source": "hermes",
+                    "source": source,
                     "provider": provider or "unknown",
                     "model": record.get("model"),
                     "profile": record.get("profile"),
