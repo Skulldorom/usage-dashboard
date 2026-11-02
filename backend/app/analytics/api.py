@@ -829,7 +829,7 @@ async def _load_mapped_hermes_observations(
         (
             await session.execute(
                 select(UsageObservation).where(
-                    UsageObservation.source == "hermes",
+                    UsageObservation.source.in_(("hermes", "9router")),
                     UsageObservation.observed_at >= start,
                     UsageObservation.observed_at < end,
                     (UsageObservation.provider_mapping == provider) | (UsageObservation.provider == provider),
@@ -1545,7 +1545,7 @@ async def _load_hermes_rows(
     provider: str | None = None,
 ) -> list[UsageObservation]:
     query = select(UsageObservation).where(
-        UsageObservation.source == "hermes",
+        UsageObservation.source.in_(("hermes", "9router")),
         UsageObservation.observed_at >= start,
         UsageObservation.observed_at < end,
     )
@@ -1575,7 +1575,7 @@ async def _hermes_source_summaries(
     sources = (
         (
             await session.execute(
-                select(DataSourceConfig).where(DataSourceConfig.kind == "hermes").order_by(asc(DataSourceConfig.id))
+                select(DataSourceConfig).order_by(asc(DataSourceConfig.id))
             )
         )
         .scalars()
@@ -1589,13 +1589,13 @@ async def _hermes_source_summaries(
     summaries: list[HermesSourceSummary] = []
     for source in sources:
         base_query = select(UsageObservation).where(
-            UsageObservation.source == "hermes",
+            UsageObservation.source.in_(("hermes", "9router")),
             UsageObservation.data_source_id == source.id,
         )
         total_observations = (
             await session.scalar(
                 select(func.count(UsageObservation.id)).where(
-                    UsageObservation.source == "hermes",
+                    UsageObservation.source.in_(("hermes", "9router")),
                     UsageObservation.data_source_id == source.id,
                 )
             )
@@ -1604,7 +1604,7 @@ async def _hermes_source_summaries(
         observations_in_range = (
             await session.scalar(
                 select(func.count(UsageObservation.id)).where(
-                    UsageObservation.source == "hermes",
+                    UsageObservation.source.in_(("hermes", "9router")),
                     UsageObservation.data_source_id == source.id,
                     UsageObservation.observed_at >= start,
                     UsageObservation.observed_at < end,
@@ -1614,7 +1614,7 @@ async def _hermes_source_summaries(
         )
         latest_observation_at = await session.scalar(
             select(UsageObservation.observed_at)
-            .where(UsageObservation.source == "hermes", UsageObservation.data_source_id == source.id)
+            .where(UsageObservation.data_source_id == source.id)
             .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
             .limit(1)
         )
@@ -1725,7 +1725,7 @@ async def provider_attribution(
         (
             await session.execute(
                 select(UsageObservation).where(
-                    UsageObservation.source == "hermes",
+                    UsageObservation.source.in_(("hermes", "9router")),
                     UsageObservation.provider_mapping == config.provider,
                     UsageObservation.observed_at >= start,
                     UsageObservation.observed_at < end,

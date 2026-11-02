@@ -369,17 +369,18 @@ class DataSourceInfo(BaseModel):
     name: str
     description: str
     metrics: list[str]
+    default_poll_interval_minutes: int
 
 
 class DataSourceConfigCreate(BaseModel):
-    kind: str = Field(..., examples=["hermes"])
+    kind: str = Field(..., examples=["hermes", "9router"])
     name: str | None = Field(default=None, max_length=120)
     base_url: str | None = None
     token: str | None = None
     profiles: list[str] | None = None
     provider_mappings: dict[str, str] | None = None
     mute_unmapped_provider_alerts: bool = False
-    poll_interval_minutes: int = Field(default=60, ge=1)
+    poll_interval_minutes: int | None = Field(default=None, ge=1)
     is_enabled: bool = True
 
 
@@ -400,6 +401,7 @@ class DataSourceConfigUpdate(BaseModel):
 class DataSourceStatus(BaseModel):
     status: str
     last_attempt_at: datetime | None = None
+    next_attempt_at: datetime | None = None
     last_success_at: datetime | None = None
     last_failure_at: datetime | None = None
     consecutive_failures: int = 0
