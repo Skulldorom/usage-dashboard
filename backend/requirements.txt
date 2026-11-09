@@ -1,13 +1,13 @@
 fastapi==0.162.0
 uvicorn[standard]==0.54.0
-SQLAlchemy[asyncio]==2.1.6
+SQLAlchemy[asyncio]==2.1.8
 asyncpg==0.32.0
 alembic==1.20.1
-pydantic==2.14.2
+pydantic==2.14.3
 pydantic-settings==2.16.2
 cryptography==50.0.2
 httpx==0.28.1
 pytest==9.2.0
 pytest-asyncio==1.4.1
 aiosqlite==0.22.1
-ruff==0.17.3
+ruff==0.17.4
