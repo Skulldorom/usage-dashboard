@@ -1,3 +1,5 @@
+from datetime import datetime
+
 import httpx
 import pytest
 
@@ -369,3 +371,21 @@ def test_openrouter_native_observations_preserve_empty_and_zero_metrics():
         "openrouter_account_completion_tokens": 12.0,
     }
     assert all(item["scope"] == "ws_1" for item in observations)
+
+
+def test_openrouter_sanitize_activity_rejects_float_overflow():
+    with pytest.raises(ValueError, match="no valid rows"):
+        OpenRouterAdapter._sanitize_activity({"data": [{"date": "2026-11-09", "usage": "1e10000"}]})
+
+
+def test_openrouter_native_observations_reject_incomplete_current_utc_day(monkeypatch):
+    class CurrentTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 11, 10, 12, tzinfo=tz)
+
+    monkeypatch.setattr("app.providers.openrouter.datetime", CurrentTime)
+    observations = OpenRouterAdapter.native_observations(
+        {"activity": {"data": [{"date": "2026-11-10T00:00:00Z", "usage": 1}]}}
+    )
+    assert observations == []

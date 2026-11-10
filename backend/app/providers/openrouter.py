@@ -195,7 +195,11 @@ class OpenRouterAdapter(ProviderAdapter):
                 ):
                     valid = False
                     break
-                item[key] = int(value) if kind == "count" else float(value)
+                converted = int(value) if kind == "count" else OpenRouterAdapter._number(value)
+                if converted is None:
+                    valid = False
+                    break
+                item[key] = converted
             for key in ("workspace_id", "model", "provider_name"):
                 if key in row and isinstance(row[key], str) and row[key].strip():
                     item[key] = row[key].strip()
@@ -224,9 +228,9 @@ class OpenRouterAdapter(ProviderAdapter):
             if day is None:
                 continue
             start = day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            if start >= datetime.now(UTC):
-                continue
             end = start + timedelta(days=1)
+            if end > datetime.now(UTC):
+                continue
             dimensions = {
                 "openrouter_account_spend": (row.get("usage"), "USD"),
                 "openrouter_account_requests": (row.get("requests"), "requests"),
