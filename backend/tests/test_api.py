@@ -317,13 +317,26 @@ async def test_openrouter_account_config_persists_mode_rotates_credential_and_po
         assert homepage.status_code == 200, homepage.text
         assert homepage.json()["list"][0]["value"] == "9 credits left"
 
-        rejected = await client.patch(
-            f"/api/v1/configs/{config_id}",
-            json={"extra": {"monitoring_mode": "individual_key"}},
-            headers=auth,
-        )
-        assert rejected.status_code == 422
-        assert "requires a new credential" in rejected.text
+        invalid_switches = [
+            {"extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": None, "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "", "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "   ", "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "management-secret", "extra": {"monitoring_mode": "individual_key"}},
+            {
+                "api_key": "management-secret",
+                "base_url": "https://openrouter-proxy.example/api/v1",
+                "extra": {"monitoring_mode": "individual_key"},
+            },
+        ]
+        for invalid_switch in invalid_switches:
+            rejected = await client.patch(f"/api/v1/configs/{config_id}", json=invalid_switch, headers=auth)
+            assert rejected.status_code == 422
+            async with sqlite_db() as session:
+                config = await session.get(ProviderConfig, config_id)
+                assert config.extra == {"monitoring_mode": "account_wide"}
+                assert config.base_url is None
+                assert _crypto().decrypt(config.encrypted_api_key) == "management-secret"
 
         switched = await client.patch(
             f"/api/v1/configs/{config_id}",
