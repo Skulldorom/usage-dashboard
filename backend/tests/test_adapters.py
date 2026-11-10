@@ -329,9 +329,14 @@ async def test_openrouter_account_mode_uses_fixed_credits_endpoint_without_redir
         "https://openrouter.ai/api/v1#evil",
     ],
 )
-def test_openrouter_rejects_untrusted_base_url(base_url):
-    with pytest.raises(ValueError, match="credentials may only be sent"):
-        OpenRouterAdapter("secret", base_url=base_url)
+def test_openrouter_account_mode_rejects_untrusted_base_url(base_url):
+    with pytest.raises(ValueError, match="Management credentials may only be sent"):
+        OpenRouterAdapter("secret", base_url=base_url, extra={"monitoring_mode": "account_wide"})
+
+
+def test_openrouter_individual_mode_preserves_custom_base_url_support():
+    adapter = OpenRouterAdapter("secret", base_url="https://openrouter-proxy.example/api/v1")
+    assert adapter.base_url == "https://openrouter-proxy.example/api/v1"
 
 
 def test_openrouter_rejects_unknown_monitoring_mode():

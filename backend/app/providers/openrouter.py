@@ -71,6 +71,8 @@ class OpenRouterAdapter(ProviderAdapter):
         return mode == "account_wide"
 
     def _validate_endpoint(self) -> None:
+        if not self.account_wide:
+            return
         parsed = urlparse(self.base_url)
         if (
             parsed.scheme != "https"
@@ -83,7 +85,7 @@ class OpenRouterAdapter(ProviderAdapter):
             or parsed.query
             or parsed.fragment
         ):
-            raise ValueError("OpenRouter credentials may only be sent to https://openrouter.ai/api/v1")
+            raise ValueError("OpenRouter Management credentials may only be sent to https://openrouter.ai/api/v1")
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
