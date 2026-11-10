@@ -714,10 +714,11 @@ export default function DashboardPage() {
   const [providerIcons, setProviderIcons] = useState(() => new Map());
   const refreshInFlight = useRef(false);
   const refreshGeneration = useRef(0);
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
+  const refreshTimer = useRef(null);
+  const refreshDeadline = useRef(null);
 
   async function load(poll = false) {
+    const generation = ++refreshGeneration.current;
     setLoading(true);
     setError("");
     try {
@@ -729,6 +730,7 @@ export default function DashboardPage() {
         api.providers().catch(() => []),
         api.hermesBreakdown().catch(() => null),
       ]);
+      if (generation !== refreshGeneration.current) return;
       setItems(usage);
       setHomepage(hp);
       setPollStatus(status);
@@ -737,36 +739,51 @@ export default function DashboardPage() {
         new Map(providerRows.map((provider) => [provider.id, provider.icon])),
       );
     } catch (err) {
-      setError(err.message);
+      if (generation === refreshGeneration.current) setError(err.message);
     } finally {
-      setLoading(false);
+      if (generation === refreshGeneration.current) setLoading(false);
     }
   }
 
   useEffect(() => {
-    let cancelled = false;
-    const startedAt = Date.now();
-    const refresh = async () => {
-      if (cancelled || refreshInFlight.current || Date.now() - startedAt >= 30000) return;
-      const awaiting = itemsRef.current.some(
-        (item) => item.config.is_enabled && item.latest == null,
-      );
-      if (!awaiting) return;
+    const pending = items.some(
+      (item) => item.config.is_enabled && item.latest == null,
+    );
+    if (!pending) {
+      if (refreshTimer.current !== null) window.clearInterval(refreshTimer.current);
+      refreshTimer.current = null;
+      refreshDeadline.current = null;
+      return undefined;
+    }
+    if (refreshTimer.current !== null) return undefined;
+    refreshDeadline.current = Date.now() + 30000;
+    refreshTimer.current = window.setInterval(async () => {
+      if (Date.now() >= refreshDeadline.current) {
+        window.clearInterval(refreshTimer.current);
+        refreshTimer.current = null;
+        refreshDeadline.current = null;
+        return;
+      }
+      if (refreshInFlight.current) return;
       refreshInFlight.current = true;
-      const generation = ++refreshGeneration.current;
+      const generation = refreshGeneration.current;
       try {
         const usage = await api.usage();
-        if (!cancelled && generation === refreshGeneration.current) setItems(usage);
+        if (generation === refreshGeneration.current) setItems(usage);
+      } catch {
+        // Keep the displayed data and retry on the next tick.
       } finally {
         refreshInFlight.current = false;
       }
-    };
-    const timer = window.setInterval(refresh, 1000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-      refreshGeneration.current += 1;
-    };
+    }, 1000);
+    return undefined;
+  }, [items]);
+
+  useEffect(() => () => {
+    if (refreshTimer.current !== null) window.clearInterval(refreshTimer.current);
+    refreshTimer.current = null;
+    refreshDeadline.current = null;
+    refreshGeneration.current += 1;
   }, []);
 
   useEffect(() => {
