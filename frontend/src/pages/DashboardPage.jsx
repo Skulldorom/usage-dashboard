@@ -716,9 +716,13 @@ export default function DashboardPage() {
   const refreshGeneration = useRef(0);
   const refreshTimer = useRef(null);
   const refreshDeadline = useRef(null);
+  const refreshPendingBatch = useRef(null);
+  const refreshExpiredBatch = useRef(null);
+  const manualLoading = useRef(false);
 
   async function load(poll = false) {
     const generation = ++refreshGeneration.current;
+    manualLoading.current = true;
     setLoading(true);
     setError("");
     try {
@@ -742,29 +746,40 @@ export default function DashboardPage() {
       if (generation === refreshGeneration.current) setError(err.message);
     } finally {
       if (generation === refreshGeneration.current) setLoading(false);
+      manualLoading.current = false;
     }
   }
 
   useEffect(() => {
-    const pending = items.some(
-      (item) => item.config.is_enabled && item.latest == null,
-    );
-    if (!pending) {
+    const pendingIds = items
+      .filter((item) => item.config.is_enabled && item.latest == null)
+      .map((item) => item.config.id)
+      .sort();
+    const pendingBatch = pendingIds.join(",");
+    if (!pendingBatch) {
       if (refreshTimer.current !== null) window.clearInterval(refreshTimer.current);
       refreshTimer.current = null;
       refreshDeadline.current = null;
+      refreshPendingBatch.current = null;
+      refreshExpiredBatch.current = null;
       return undefined;
     }
-    if (refreshTimer.current !== null) return undefined;
+    if (refreshPendingBatch.current !== pendingBatch) {
+      refreshPendingBatch.current = pendingBatch;
+      refreshExpiredBatch.current = null;
+      refreshDeadline.current = null;
+    }
+    if (refreshExpiredBatch.current === pendingBatch || refreshTimer.current !== null) return undefined;
     refreshDeadline.current = Date.now() + 30000;
     refreshTimer.current = window.setInterval(async () => {
       if (Date.now() >= refreshDeadline.current) {
         window.clearInterval(refreshTimer.current);
         refreshTimer.current = null;
         refreshDeadline.current = null;
+        refreshExpiredBatch.current = pendingBatch;
         return;
       }
-      if (refreshInFlight.current) return;
+      if (manualLoading.current || refreshInFlight.current) return;
       refreshInFlight.current = true;
       const generation = refreshGeneration.current;
       try {
@@ -783,6 +798,8 @@ export default function DashboardPage() {
     if (refreshTimer.current !== null) window.clearInterval(refreshTimer.current);
     refreshTimer.current = null;
     refreshDeadline.current = null;
+    refreshPendingBatch.current = null;
+    refreshExpiredBatch.current = null;
     refreshGeneration.current += 1;
   }, []);
 
