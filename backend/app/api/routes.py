@@ -763,29 +763,12 @@ async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSess
 def _validate_openrouter_config(provider: str, base_url: str | None, extra: dict | None) -> None:
     if provider != "openrouter":
         return
-    extra = extra or {}
-    mode = extra.get("monitoring_mode", "individual_key")
-    if mode not in {"individual_key", "account_wide"}:
-        raise HTTPException(status_code=422, detail="OpenRouter monitoring_mode must be individual_key or account_wide")
-    if mode != "account_wide":
-        return
-    from urllib.parse import urlparse
+    from app.providers.openrouter import OpenRouterAdapter
 
-    parsed = urlparse((base_url or "https://openrouter.ai/api/v1").rstrip("/"))
-    if (
-        parsed.scheme != "https"
-        or parsed.hostname != "openrouter.ai"
-        or parsed.username
-        or parsed.password
-        or parsed.port is not None
-        or parsed.path != "/api/v1"
-        or parsed.params
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise HTTPException(
-            status_code=422, detail="OpenRouter account-wide monitoring requires https://openrouter.ai/api/v1"
-        )
+    try:
+        OpenRouterAdapter.validate_config(base_url, extra)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _normalize_and_validate_billing(config: ProviderConfig) -> None:
@@ -1013,7 +996,14 @@ async def _ingest_observations(
             (
                 await session.execute(
                     select(UsageSnapshot)
-                    .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.id < snapshot.id)
+                    .where(
+                        UsageSnapshot.provider_config_id == snapshot.provider_config_id,
+                        UsageSnapshot.id < snapshot.id,
+                        or_(
+                            UsageSnapshot.config_revision == snapshot.config_revision,
+                            and_(UsageSnapshot.config_revision.is_(None), snapshot.config_revision == 1),
+                        ),
+                    )
                     .order_by(desc(UsageSnapshot.id))
                     .limit(3)
                 )
@@ -1201,6 +1191,11 @@ async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnaps
     if current_revision != revision:
         raise HTTPException(status_code=409, detail="Provider configuration changed while polling; retry")
     session.add(snapshot)
+    await session.flush()
+    current_revision = await session.scalar(select(ProviderConfig.usage_revision).where(ProviderConfig.id == config.id))
+    if current_revision != revision:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="Provider configuration changed while polling; retry")
     await session.commit()
     await session.refresh(snapshot)
     await _ingest_observations(session, config, snapshot, native)

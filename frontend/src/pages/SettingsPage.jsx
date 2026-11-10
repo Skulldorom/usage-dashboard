@@ -485,6 +485,7 @@ export default function SettingsPage() {
   const [billingForm, setBillingForm] = useState(null);
   const [billingSaving, setBillingSaving] = useState(false);
   const [credentialValue, setCredentialValue] = useState("");
+  const [credentialMode, setCredentialMode] = useState("individual_key");
   const [credentialSaving, setCredentialSaving] = useState(false);
   const [credentialStatus, setCredentialStatus] = useState("");
   const homepagePreview = useMemo(
@@ -698,8 +699,13 @@ export default function SettingsPage() {
     setCredentialStatus("");
     setCredentialSaving(true);
     try {
+      const switchingMode = credentialTarget.provider === "openrouter" && credentialMode !== (credentialTarget.extra?.monitoring_mode || "individual_key");
       await api.updateConfig(credentialTarget.id, {
         api_key: credentialValue.trim(),
+        ...(switchingMode ? {
+          extra: { monitoring_mode: credentialMode },
+          base_url: credentialMode === "account_wide" ? null : (credentialTarget.base_url || "https://openrouter.ai/api/v1"),
+        } : {}),
       });
       setCredentialValue("");
       setCredentialStatus("Credential replaced. The old token was overwritten and never displayed.");
@@ -2933,7 +2939,19 @@ export default function SettingsPage() {
               </Box>
             )}
             {credentialTarget?.provider === "openrouter" && (
-              <OpenRouterCredentialInstructions mode={credentialTarget.extra?.monitoring_mode || "individual_key"} rotation />
+              <>
+              <OpenRouterCredentialInstructions mode={credentialMode} rotation />
+              <FormControl fullWidth>
+                <InputLabel>Monitoring mode</InputLabel>
+                <Select label="Monitoring mode" value={credentialMode} onChange={(event) => setCredentialMode(event.target.value)}>
+                  <MenuItem value="individual_key">Individual API key</MenuItem>
+                  <MenuItem value="account_wide">Account-wide activity</MenuItem>
+                </Select>
+              </FormControl>
+              {credentialMode !== (credentialTarget.extra?.monitoring_mode || "individual_key") && (
+                <Alert severity="warning">Switching mode requires a new credential. Incompatible history will no longer be shown as current.</Alert>
+              )}
+              </>
             )}
             <TextField
               label={

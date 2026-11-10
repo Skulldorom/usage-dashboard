@@ -1,5 +1,5 @@
 import math
-from datetime import UTC, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
@@ -96,22 +96,37 @@ class OpenRouterAdapter(ProviderAdapter):
             raise ValueError("OpenRouter monitoring_mode must be individual_key or account_wide")
         return mode == "account_wide"
 
-    def _validate_endpoint(self) -> None:
-        if not self.account_wide:
+    @staticmethod
+    def validate_config(base_url: str | None, extra: dict | None) -> None:
+        if not isinstance(extra, dict):
+            raise ValueError("OpenRouter monitoring configuration must be an object")
+        mode = extra.get("monitoring_mode", "individual_key")
+        if not isinstance(mode, str) or mode not in {"individual_key", "account_wide"}:
+            raise ValueError("OpenRouter monitoring_mode must be individual_key or account_wide")
+        if mode != "account_wide":
             return
-        parsed = urlparse(self.base_url)
+        try:
+            parsed = urlparse((base_url or "https://openrouter.ai/api/v1").rstrip("/"))
+            port = parsed.port
+        except ValueError as exc:
+            raise ValueError(
+                "OpenRouter Management credentials may only be sent to https://openrouter.ai/api/v1"
+            ) from exc
         if (
             parsed.scheme != "https"
             or parsed.hostname != "openrouter.ai"
             or parsed.username is not None
             or parsed.password is not None
-            or parsed.port is not None
-            or parsed.path.rstrip("/") != "/api/v1"
+            or port is not None
+            or parsed.path != "/api/v1"
             or parsed.params
             or parsed.query
             or parsed.fragment
         ):
             raise ValueError("OpenRouter Management credentials may only be sent to https://openrouter.ai/api/v1")
+
+    def _validate_endpoint(self) -> None:
+        self.validate_config(self.base_url, self.extra)
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
@@ -155,24 +170,43 @@ class OpenRouterAdapter(ProviderAdapter):
     def _sanitize_activity(data: object) -> dict:
         if not isinstance(data, dict) or not isinstance(data.get("data"), list):
             raise ValueError("OpenRouter activity response must contain a data list")
-        rows = []
+        rows, rejected = [], 0
+        numeric = {
+            "usage": "spend",
+            "requests": "count",
+            "prompt_tokens": "count",
+            "completion_tokens": "count",
+            "reasoning_tokens": "count",
+        }
         for row in data["data"]:
-            if not isinstance(row, dict) or not isinstance(row.get("date"), str):
+            if not isinstance(row, dict) or parse_time(row.get("date")) is None:
+                rejected += 1
                 continue
             item = {"date": row["date"]}
-            for key in (
-                "usage",
-                "requests",
-                "prompt_tokens",
-                "completion_tokens",
-                "reasoning_tokens",
-                "workspace_id",
-                "model",
-                "provider_name",
-            ):
-                if key in row and (isinstance(row[key], (str, int, float)) and not isinstance(row[key], bool)):
-                    item[key] = row[key]
-            rows.append(item)
+            valid = True
+            for key, kind in numeric.items():
+                if key not in row:
+                    continue
+                value = OpenRouterAdapter._decimal(row[key])
+                if (
+                    value is None
+                    or (kind == "count" and (value < 0 or value != value.to_integral_value()))
+                    or (kind == "spend" and value < 0)
+                ):
+                    valid = False
+                    break
+                item[key] = int(value) if kind == "count" else float(value)
+            for key in ("workspace_id", "model", "provider_name"):
+                if key in row and isinstance(row[key], str) and row[key].strip():
+                    item[key] = row[key].strip()
+            if valid and any(key in item for key in numeric):
+                rows.append(item)
+            else:
+                rejected += 1
+        if rejected and rows:
+            raise ValueError("OpenRouter activity response contained malformed rows")
+        if rejected and not rows and data["data"]:
+            raise ValueError("OpenRouter activity response contained no valid rows")
         return {"data": rows}
 
     @staticmethod
@@ -190,6 +224,8 @@ class OpenRouterAdapter(ProviderAdapter):
             if day is None:
                 continue
             start = day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            if start >= datetime.now(UTC):
+                continue
             end = start + timedelta(days=1)
             dimensions = {
                 "openrouter_account_spend": (row.get("usage"), "USD"),

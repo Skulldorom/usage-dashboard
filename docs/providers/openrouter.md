@@ -1,44 +1,40 @@
 # OpenRouter
 
-Usage Dashboard supports two independent monitoring modes. Existing OpenRouter
-configurations remain **Individual API key** configurations; no migration or
-credential replacement is required.
+Usage Dashboard supports two monitoring modes: **Individual API key** and **Account-wide credits**. Existing configurations remain individual-key configurations.
+
+## Modes and switching
+
+Individual-key mode uses a normal OpenRouter API key and supports a custom compatible endpoint. Account-wide mode uses a Management API key and sends it only to `https://openrouter.ai/api/v1`. New connections select a mode during setup. Existing connections can switch in either direction from Settings; switching requires a replacement credential and submits the credential, mode, and effective endpoint atomically. Switching to account-wide clears an incompatible custom endpoint; supported individual-key endpoints are preserved. Canceling leaves the connection unchanged.
+
+Snapshots and observations are isolated by configuration revision. History from a previous credential or mode is not shown as current after rotation.
 
 ## Individual API key
 
-Use a standard OpenRouter API key. The dashboard calls `GET /api/v1/key` and
-shows that key's configured limit, remaining limit, and rolling daily, weekly,
-and monthly usage. These are **key-level limits**, not the account credit
-balance. The rolling windows overlap and are not added together.
+The dashboard calls `GET /api/v1/key` and shows key-level limit, remaining limit, and rolling daily, weekly, and monthly usage. These are not account credit balances, and overlapping rolling windows are not added together.
 
-## Account-wide credits
+## Account-wide credits and Activity
 
-Select **Account-wide credits** and provide an OpenRouter **Management API
-key**. The dashboard calls only `GET https://openrouter.ai/api/v1/credits` and
-shows:
+The dashboard calls `GET https://openrouter.ai/api/v1/credits` and the documented Activity endpoint. Credits provide point-in-time balance; valid completed UTC-day Activity rows provide scoped historical spend and request/token dimensions. Current-day, future, invalid, and out-of-window rows are excluded. Rejected rows do not claim complete coverage.
 
-- `account_credit_balance`: `total_credits - total_usage`, the available account balance.
-- `account_credits_used`: lifetime credits used.
-- `account_credits_purchased`: lifetime purchased credits.
+Analytics metadata distinguishes available, genuinely empty, malformed/failed, and stale compatible analytics. Unavailable analytics are not presented as zero. Credit balance remains visible when Activity parsing fails.
 
-Purchased credits are not a monthly spending limit and are never treated as
-workload, token cost, or historical spending. OpenRouter's documented credits
-endpoint does not supply reliable account-wide daily, weekly, or monthly totals,
-so those metrics remain unavailable rather than being estimated from snapshots
-or individual key data.
+`account_credit_balance` is `total_credits - total_usage`; lifetime purchased and used credits are not workload or historical spending. The credits endpoint does not provide reliable account-wide daily, weekly, or monthly totals, so unavailable values are not estimated from snapshots or individual-key data.
 
-Management keys are elevated administrative credentials. OpenRouter applies
-the credential's organization or workspace scope to account data. Usage
-Dashboard uses only read-only GET requests, encrypts the credential at
-rest, never returns it to the frontend, and sends it only to the fixed
-`https://openrouter.ai/api/v1` origin. Create an expiring key and rotate it if
-exposed. OpenRouter does not offer a read-only Management API key permission.
+Workspace-wide analytics and complete arbitrary-period reporting remain unsupported under issue #242.
 
-## Analytics and alerts
+Management keys are elevated credentials. The dashboard uses read-only GET requests, encrypts credentials at rest, never returns them to the frontend, and sends them only to the fixed OpenRouter origin. Create an expiring key and rotate it if exposed. OpenRouter does not offer a read-only Management API key permission.
 
-Account credit balance is a point-in-time state metric and can be used for a
-low-credit alert. It is excluded from workload/spend aggregation, including
-Hermes attribution. Individual key rolling usage remains separate and retains
-its existing behavior. Configure one account-wide connection per OpenRouter
-account; Usage Dashboard does not aggregate account-wide and individual-key
-usage, preventing overlapping data from silently being counted as spending.
+## Alerts and aggregation
+
+Account balance supports low-credit alerts, including zero and negative values; recovery clears the alert after replenishment. Credit balance is excluded from workload/spend aggregation, including Hermes attribution. Account-wide and individual-key activity are not silently combined, preventing overlap.
+
+## Manual smoke tests
+
+1. Add an individual-key connection and verify key-level metrics and custom endpoint behavior.
+2. Rotate its credential and verify no old-revision observations appear as current.
+3. Switch individual-key to account-wide and back; verify instructions, endpoint payload, and incompatible-history warning.
+4. Poll with a Management key, then simulate malformed Activity; credits must remain visible while analytics shows failure.
+5. Test low-credit alerts at positive, zero, and negative balances, then verify recovery.
+6. Confirm Dashboard and Homepage output contains no credential material.
+
+Unsupported native workspace analytics and complete period totals remain tracked under issue #242.
