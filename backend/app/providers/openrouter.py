@@ -65,8 +65,10 @@ class OpenRouterAdapter(ProviderAdapter):
             "account_credits_purchased": metric_spec(
                 type_="gauge", unit="credits", direction="increasing", deltas=False
             ),
+            # Account-wide activity is intentionally scoped, never global: the
+            # same spend may already be represented by individual keys or Hermes.
             "openrouter_account_spend": metric_spec(
-                type_="counter", unit="USD", direction="increasing", aggregations=["daily"], overview=True
+                type_="counter", unit="USD", direction="increasing", aggregations=["daily"]
             ),
             "openrouter_account_requests": metric_spec(
                 type_="counter", unit="requests", direction="increasing", aggregations=["daily"]
@@ -124,27 +126,54 @@ class OpenRouterAdapter(ProviderAdapter):
             credits_resp.raise_for_status()
             credits = credits_resp.json()
             activity = None
+            analytics_status = "failed"
+            analytics_error = None
             try:
-                params = {}
-                workspace_id = self.extra.get("workspace_id")
-                if workspace_id:
-                    params["workspace_id"] = workspace_id
-                if self.extra.get("activity_group_by_workspace"):
-                    params["group_by"] = "workspace"
-                activity_resp = await client.get(
-                    "https://openrouter.ai/api/v1/activity", headers=headers, params=params or None
-                )
+                activity_resp = await client.get("https://openrouter.ai/api/v1/activity", headers=headers)
                 activity_resp.raise_for_status()
                 parsed = activity_resp.json()
-                if isinstance(parsed, dict):
-                    activity = parsed
+                activity = self._sanitize_activity(parsed)
+                analytics_status = "success" if activity["data"] else "empty"
+            except httpx.HTTPStatusError as exc:
+                analytics_error = (
+                    "permission_or_upstream_error" if exc.response.status_code in {401, 403, 404} else "upstream_error"
+                )
             except (httpx.HTTPError, ValueError):
-                # Credits remain authoritative when the optional activity API is unavailable.
-                activity = None
+                analytics_error = "malformed_or_network_error"
         usage = self.parse_account_usage(credits)
+        usage.analytics_status = analytics_status
+        usage.analytics_error = analytics_error
+        usage.raw["analytics"] = {
+            "status": analytics_status,
+            "error": analytics_error,
+        }
         if activity is not None:
             usage.raw["activity"] = activity
         return usage
+
+    @staticmethod
+    def _sanitize_activity(data: object) -> dict:
+        if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+            raise ValueError("OpenRouter activity response must contain a data list")
+        rows = []
+        for row in data["data"]:
+            if not isinstance(row, dict) or not isinstance(row.get("date"), str):
+                continue
+            item = {"date": row["date"]}
+            for key in (
+                "usage",
+                "requests",
+                "prompt_tokens",
+                "completion_tokens",
+                "reasoning_tokens",
+                "workspace_id",
+                "model",
+                "provider_name",
+            ):
+                if key in row and (isinstance(row[key], (str, int, float)) and not isinstance(row[key], bool)):
+                    item[key] = row[key]
+            rows.append(item)
+        return {"data": rows}
 
     @staticmethod
     def native_observations(raw: dict) -> list[dict]:
