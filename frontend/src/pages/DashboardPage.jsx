@@ -712,6 +712,10 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [providerIcons, setProviderIcons] = useState(() => new Map());
+  const refreshInFlight = useRef(false);
+  const refreshGeneration = useRef(0);
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   async function load(poll = false) {
     setLoading(true);
@@ -738,10 +742,35 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    const startedAt = Date.now();
+    const refresh = async () => {
+      if (cancelled || refreshInFlight.current || Date.now() - startedAt >= 30000) return;
+      const awaiting = itemsRef.current.some(
+        (item) => item.config.is_enabled && item.latest == null,
+      );
+      if (!awaiting) return;
+      refreshInFlight.current = true;
+      const generation = ++refreshGeneration.current;
+      try {
+        const usage = await api.usage();
+        if (!cancelled && generation === refreshGeneration.current) setItems(usage);
+      } finally {
+        refreshInFlight.current = false;
+      }
+    };
+    const timer = window.setInterval(refresh, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      refreshGeneration.current += 1;
+    };
+  }, []);
+
   useEffect(() => {
     load();
-    const refresh = window.setInterval(() => load(), 5000);
-    return () => window.clearInterval(refresh);
   }, []);
 
   const visibleItems = items.filter((item) => item.config.is_visible);
