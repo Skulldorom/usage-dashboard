@@ -10,7 +10,7 @@ from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials
-from sqlalchemy import asc, delete, desc, func, select
+from sqlalchemy import and_, asc, delete, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.analytics.normalizer import normalize_native, normalize_snapshots
@@ -830,6 +830,9 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
     config = await session.get(ProviderConfig, config_id)
     if not config:
         raise HTTPException(status_code=404, detail="Provider config not found")
+    old_key = _crypto().decrypt(config.encrypted_api_key)
+    old_base_url = config.base_url
+    old_extra = dict(config.extra or {})
     if config.provider == "openrouter" and payload.has_update_for("extra"):
         current_mode = (config.extra or {}).get("monitoring_mode", "individual_key")
         requested_mode = (payload.extra or {}).get("monitoring_mode", "individual_key")
@@ -869,6 +872,13 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.billing_anchor = payload.billing_anchor
     _validate_openrouter_config(config.provider, config.base_url, config.extra)
     _normalize_and_validate_billing(config)
+    identity_changed = (
+        (payload.has_update_for("api_key") and payload.api_key is not None and payload.api_key != old_key)
+        or (payload.has_update_for("base_url") and config.base_url != old_base_url)
+        or (payload.has_update_for("extra") and (config.extra or {}) != old_extra)
+    )
+    if identity_changed:
+        config.usage_revision = (config.usage_revision or 1) + 1
     await session.commit()
     await session.refresh(config)
     return _config_read(config)
@@ -902,7 +912,14 @@ async def config_history(
     since = datetime.now(UTC) - timedelta(hours=hours)
     result = await session.execute(
         select(UsageSnapshot)
-        .where(UsageSnapshot.provider_config_id == config_id, UsageSnapshot.checked_at >= since)
+        .where(
+            UsageSnapshot.provider_config_id == config_id,
+            UsageSnapshot.checked_at >= since,
+            or_(
+                UsageSnapshot.config_revision == config.usage_revision,
+                and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+            ),
+        )
         .order_by(asc(UsageSnapshot.checked_at), asc(UsageSnapshot.id))
         .limit(limit)
     )
@@ -926,6 +943,7 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
         snapshot = UsageSnapshot(
             provider_config_id=config.id,
             provider=config.provider,
+            config_revision=config.usage_revision,
             status=usage.status,
             summary=usage.summary,
             metrics=[asdict(metric) for metric in usage.metrics],
@@ -939,6 +957,7 @@ async def _snapshot_for_config(config: ProviderConfig) -> tuple[UsageSnapshot, l
         snapshot = UsageSnapshot(
             provider_config_id=config.id,
             provider=config.provider,
+            config_revision=config.usage_revision,
             status="error",
             summary=f"{config.label}: polling failed",
             metrics=[],
@@ -1085,13 +1104,31 @@ async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
         .all()
     )
     results = await asyncio.gather(*(_snapshot_for_config(config) for config in configs)) if configs else []
-    snapshots = [result[0] for result in results]
+    current_revisions = (
+        dict(
+            (
+                await session.execute(
+                    select(ProviderConfig.id, ProviderConfig.usage_revision).where(
+                        ProviderConfig.id.in_([config.id for config in configs])
+                    )
+                )
+            ).all()
+        )
+        if configs
+        else {}
+    )
+    compatible = [
+        (config, result)
+        for config, result in zip(configs, results)
+        if current_revisions.get(config.id) == config.usage_revision
+    ]
+    snapshots = [result[0] for _, result in compatible]
     if snapshots:
         session.add_all(snapshots)
         await session.commit()
         for snapshot in snapshots:
             await session.refresh(snapshot)
-        for config, (snapshot, native) in zip(configs, results):
+        for config, (snapshot, native) in compatible:
             await _ingest_observations(session, config, snapshot, native)
         await _prune_old_snapshots(session)
         await _prune_old_observations(session)
@@ -1156,7 +1193,11 @@ async def poll_config(config_id: int, session: AsyncSession = Depends(get_sessio
 
 
 async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:
+    revision = config.usage_revision
     snapshot, native = await _snapshot_for_config(config)
+    current_revision = await session.scalar(select(ProviderConfig.usage_revision).where(ProviderConfig.id == config.id))
+    if current_revision != revision:
+        raise HTTPException(status_code=409, detail="Provider configuration changed while polling; retry")
     session.add(snapshot)
     await session.commit()
     await session.refresh(snapshot)
@@ -1195,7 +1236,13 @@ async def _health_for_config(
     latest = (
         await session.execute(
             select(UsageSnapshot)
-            .where(UsageSnapshot.provider_config_id == config.id)
+            .where(
+                UsageSnapshot.provider_config_id == config.id,
+                or_(
+                    UsageSnapshot.config_revision == config.usage_revision,
+                    and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+                ),
+            )
             .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
             .limit(1)
         )
@@ -1204,7 +1251,14 @@ async def _health_for_config(
     last_success = (
         await session.execute(
             select(UsageSnapshot)
-            .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status != "error")
+            .where(
+                UsageSnapshot.provider_config_id == config.id,
+                or_(
+                    UsageSnapshot.config_revision == config.usage_revision,
+                    and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+                ),
+                UsageSnapshot.status != "error",
+            )
             .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
             .limit(1)
         )
@@ -1213,7 +1267,14 @@ async def _health_for_config(
     last_failure = (
         await session.execute(
             select(UsageSnapshot)
-            .where(UsageSnapshot.provider_config_id == config.id, UsageSnapshot.status == "error")
+            .where(
+                UsageSnapshot.provider_config_id == config.id,
+                or_(
+                    UsageSnapshot.config_revision == config.usage_revision,
+                    and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+                ),
+                UsageSnapshot.status == "error",
+            )
             .order_by(desc(UsageSnapshot.checked_at), desc(UsageSnapshot.id))
             .limit(1)
         )
@@ -1225,6 +1286,10 @@ async def _health_for_config(
             await session.execute(
                 select(func.count(UsageSnapshot.id)).where(
                     UsageSnapshot.provider_config_id == config.id,
+                    or_(
+                        UsageSnapshot.config_revision == config.usage_revision,
+                        and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+                    ),
                     UsageSnapshot.status == "error",
                     UsageSnapshot.checked_at > last_success_at,
                 )
@@ -1235,6 +1300,10 @@ async def _health_for_config(
             await session.execute(
                 select(func.count(UsageSnapshot.id)).where(
                     UsageSnapshot.provider_config_id == config.id,
+                    or_(
+                        UsageSnapshot.config_revision == config.usage_revision,
+                        and_(UsageSnapshot.config_revision.is_(None), config.usage_revision == 1),
+                    ),
                     UsageSnapshot.status == "error",
                 )
             )

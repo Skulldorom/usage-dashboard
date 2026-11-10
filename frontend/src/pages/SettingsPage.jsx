@@ -404,6 +404,23 @@ const initialForm = {
   openrouter_monitoring_mode: "individual_key",
 };
 
+function OpenRouterCredentialInstructions({ mode = "individual_key", rotation = false }) {
+  const accountWide = mode === "account_wide";
+  return (
+    <Alert severity="info" className="provider-setup-guide">
+      <Typography variant="body2">
+        {accountWide
+          ? `${rotation ? "Rotate with a new" : "Create a"} OpenRouter Management API key. It has elevated permissions, so set an expiration and store it securely.`
+          : `${rotation ? "Replace with a new" : "Use a standard"} OpenRouter API key for individual-key monitoring. Management keys must not be sent to custom individual-key endpoints.`}
+      </Typography>
+      <Button component="a" href={accountWide ? "https://openrouter.ai/settings/management-keys" : "https://openrouter.ai/settings/keys"} target="_blank" rel="noreferrer" size="small" sx={{ mt: 0.5 }}>
+        {accountWide ? "Open Management API keys" : "Open OpenRouter API keys"}
+      </Button>
+      {rotation && <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>Previous-mode history remains separate after switching monitoring modes.</Typography>}
+    </Alert>
+  );
+}
+
 export default function SettingsPage() {
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState([]);
@@ -1516,6 +1533,11 @@ export default function SettingsPage() {
                       <Typography variant="caption" color="text.secondary">
                         {providerDisplayName(config.provider)}
                       </Typography>
+                      {config.provider === "openrouter" && (
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Monitoring: {(config.extra?.monitoring_mode || "individual_key") === "account_wide" ? "Account-wide credits" : "Individual API key"}
+                        </Typography>
+                      )}
                       {(config.alert_thresholds || []).length > 0 && (
                         <div className="config-alert-summary">
                           {(config.alert_thresholds || []).map(
@@ -2413,6 +2435,7 @@ export default function SettingsPage() {
                 <FormHelperText>Account-wide monitoring requires an elevated Management API key. Usage Dashboard performs only read-only GET requests.</FormHelperText>
               </FormControl>
             )}
+            {isOpenRouter && <OpenRouterCredentialInstructions mode={form.openrouter_monitoring_mode} />}
             <TextField
               label={
                 isCodex
@@ -2439,7 +2462,7 @@ export default function SettingsPage() {
                     : `Use the ${setup?.title || "key"} described above.`
               }
             />
-            <TextField
+            {!isOpenRouterAccountWide && <TextField
               label="Base URL override"
               value={form.base_url}
               onChange={(event) =>
@@ -2451,7 +2474,7 @@ export default function SettingsPage() {
                   : "Optional -- provider default will be used"
               }
               required={isCustom}
-            />
+            />}
             <Typography className="dialog-section-label">Billing / value analytics</Typography>
             <FormControl fullWidth>
               <InputLabel>Pricing model</InputLabel>
@@ -2908,6 +2931,9 @@ export default function SettingsPage() {
                   </Alert>
                 )}
               </Box>
+            )}
+            {credentialTarget?.provider === "openrouter" && (
+              <OpenRouterCredentialInstructions mode={credentialTarget.extra?.monitoring_mode || "individual_key"} rotation />
             )}
             <TextField
               label={
