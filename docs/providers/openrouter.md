@@ -12,17 +12,17 @@ Snapshots and observations are isolated by configuration revision. History from 
 
 The dashboard calls `GET /api/v1/key` and shows key-level limit, remaining limit, and rolling daily, weekly, and monthly usage. These are not account credit balances, and overlapping rolling windows are not added together.
 
-## Account-wide credits and Activity
+## Account-wide credits and analytics
 
-The dashboard calls `GET https://openrouter.ai/api/v1/credits` and the documented Activity endpoint. Credits provide point-in-time balance; valid completed UTC-day Activity rows provide scoped historical spend and request/token dimensions. Current-day, future, invalid, and out-of-window rows are excluded. Rejected rows do not claim complete coverage.
+The dashboard calls `GET https://openrouter.ai/api/v1/credits`, then prefers the official Analytics Query API. `GET /analytics/meta` validates available metrics, dimensions, granularities, and operators. `POST /analytics/query` requests only available documented account metrics (`usage`, requests, and token counts) at daily granularity for a bounded 30-day UTC range. It does not invent workspace filters, dimensions, or pagination.
 
-Analytics metadata distinguishes available, genuinely empty, malformed/failed, and stale compatible analytics. Unavailable analytics are not presented as zero. Credit balance remains visible when Activity parsing fails.
+The query response must contain complete `data.data` rows and `data.metadata` (`query_time_ms`, `row_count`, and `truncated`). Truncated, malformed, inconsistent, or unavailable results are rejected. On failure, the documented Activity endpoint remains the fallback. The current UTC day, future days, and invalid rows are excluded from native observations. Valid query rows replace—not add to—Activity fallback rows; native persistence upserts each day within the active configuration revision, preventing repeat-poll double counting.
 
-`account_credit_balance` is `total_credits - total_usage`; lifetime purchased and used credits are not workload or historical spending. The credits endpoint does not provide reliable account-wide daily, weekly, or monthly totals, so unavailable values are not estimated from snapshots or individual-key data.
+Credits provide point-in-time balance; valid completed UTC-day native rows provide scoped historical spend and request/token dimensions. `account_credit_balance` is `total_credits - total_usage`; lifetime purchased and used credits are financial state, not workload or historical spend. The credits endpoint does not provide reliable account-wide daily, weekly, or monthly totals, so unavailable values are not estimated from snapshots or individual-key data.
+
+Analytics metadata distinguishes available, genuinely empty, malformed/failed, and stale compatible analytics. Unavailable analytics are not presented as zero. Credit balance remains visible when Analytics Query and Activity parsing fail. The implementation uses a fixed origin, disabled redirects, and the configured bounded request timeout for Management credentials.
 
 Workspace-wide analytics and complete arbitrary-period reporting remain unsupported under issue #242.
-
-Management keys are elevated credentials. The dashboard uses read-only GET requests, encrypts credentials at rest, never returns them to the frontend, and sends them only to the fixed OpenRouter origin. Create an expiring key and rotate it if exposed. OpenRouter does not offer a read-only Management API key permission.
 
 ## Alerts and aggregation
 
@@ -33,8 +33,12 @@ Account balance supports low-credit alerts, including zero and negative values; 
 1. Add an individual-key connection and verify key-level metrics and custom endpoint behavior.
 2. Rotate its credential and verify no old-revision observations appear as current.
 3. Switch individual-key to account-wide and back; verify instructions, endpoint payload, and incompatible-history warning.
-4. Poll with a Management key, then simulate malformed Activity; credits must remain visible while analytics shows failure.
-5. Test low-credit alerts at positive, zero, and negative balances, then verify recovery.
-6. Confirm Dashboard and Homepage output contains no credential material.
+4. Poll with a Management key. Compare `/credits` values with OpenRouter; verify balance and lifetime values remain separate from period spend.
+5. When Analytics Query is available, compare a completed UTC daily range and supported model/workspace grouping with OpenRouter. Verify a current day is marked live/incomplete rather than completed.
+6. Test an empty scope, unavailable capability, rate-limited response, and a truncated response. None may display as an authoritative zero or overwrite a complete prior range.
+7. Change workspace/date selections quickly and confirm a stale response cannot replace the current selection.
+8. Verify account totals are not added to individual-key or Hermes totals and model/workspace breakdowns do not inflate their account total.
+9. Test low-credit alerts at positive, zero, and negative balances, then verify recovery.
+10. Confirm Dashboard and Homepage output contains no credential material.
 
-Unsupported native workspace analytics and complete period totals remain tracked under issue #242.
+Live upstream verification was not performed without an authorized Management credential. The integration relies on the published beta contract and its capability metadata.

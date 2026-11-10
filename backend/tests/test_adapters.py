@@ -314,7 +314,8 @@ async def test_openrouter_account_mode_uses_fixed_credits_endpoint_without_redir
         "https://openrouter.ai/api/v1/credits",
         {"headers": {"Authorization": "Bearer management-secret", "Accept": "application/json"}},
     )
-    assert calls[1][0] == "https://openrouter.ai/api/v1/activity"
+    assert calls[1][0] == "https://openrouter.ai/api/v1/analytics/meta"
+    assert calls[2][0] == "https://openrouter.ai/api/v1/activity"
     assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
     assert usage.metrics[0].value == 0.75
 
@@ -389,3 +390,80 @@ def test_openrouter_native_observations_reject_incomplete_current_utc_day(monkey
         {"activity": {"data": [{"date": "2026-11-10T00:00:00Z", "usage": 1}]}}
     )
     assert observations == []
+
+@pytest.mark.asyncio
+async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeypatch):
+    calls, client_options = [], []
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, **kwargs):
+            calls.append(("GET", url, kwargs))
+            payloads = {
+                "https://openrouter.ai/api/v1/credits": {"data": {"total_credits": 2, "total_usage": 0.5}},
+                "https://openrouter.ai/api/v1/analytics/meta": {
+                    "data": {
+                        "metrics": [{"name": name} for name in ("usage", "requests", "prompt_tokens")],
+                        "dimensions": [{"name": "date"}],
+                        "granularities": [{"name": "day"}],
+                        "operators": [{"name": "eq"}],
+                    }
+                },
+            }
+            return httpx.Response(200, json=payloads[url], request=httpx.Request("GET", url))
+
+        async def post(self, url, **kwargs):
+            calls.append(("POST", url, kwargs))
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "data": [{"date": "2026-11-09T00:00:00Z", "usage": "1.25", "requests": 2, "prompt_tokens": 3}],
+                        "metadata": {"query_time_ms": 4.0, "row_count": 1, "truncated": False},
+                        "warnings": [],
+                        "cached_at": 1_731_110_400,
+                    }
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    def client_factory(**kwargs):
+        client_options.append(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr("app.providers.openrouter.httpx.AsyncClient", client_factory)
+    usage = await OpenRouterAdapter("management-secret", extra={"monitoring_mode": "account_wide"}).fetch_usage()
+
+    assert [call[:2] for call in calls] == [
+        ("GET", "https://openrouter.ai/api/v1/credits"),
+        ("GET", "https://openrouter.ai/api/v1/analytics/meta"),
+        ("POST", "https://openrouter.ai/api/v1/analytics/query"),
+    ]
+    payload = calls[-1][2]["json"]
+    assert payload["metrics"] == ["usage", "requests", "prompt_tokens"]
+    assert payload["dimensions"] == ["date"]
+    assert payload["granularity"] == "day"
+    assert payload["order_by"] == {"field": "date", "direction": "asc"}
+    assert "filters" not in payload
+    assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
+    assert usage.raw["analytics_query"]["metadata"]["row_count"] == 1
+    assert "activity" not in usage.raw
+    assert {row["metric"]: row["value"] for row in OpenRouterAdapter.native_observations(usage.raw)} == {
+        "openrouter_account_spend": 1.25,
+        "openrouter_account_requests": 2.0,
+        "openrouter_account_prompt_tokens": 3.0,
+    }
+
+
+def test_openrouter_analytics_query_rejects_truncated_or_malformed_results():
+    payload = {"data": {"data": [], "metadata": {"query_time_ms": 1, "row_count": 0, "truncated": True}}}
+    with pytest.raises(ValueError, match="incomplete"):
+        OpenRouterAdapter._sanitize_analytics_query(payload, ["usage"])
+    payload["data"]["metadata"] = {"query_time_ms": 1, "row_count": 1, "truncated": False}
+    with pytest.raises(ValueError, match="incomplete"):
+        OpenRouterAdapter._sanitize_analytics_query(payload, ["usage"])

@@ -12,6 +12,8 @@ from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 
 class OpenRouterAdapter(ProviderAdapter):
+    _analytics_origin = "https://openrouter.ai/api/v1"
+    _analytics_days = 30
     id = "openrouter"
     name = "OpenRouter"
     description = "OpenRouter API key limits or account-wide credit balances."
@@ -137,34 +139,132 @@ class OpenRouterAdapter(ProviderAdapter):
                 return self.parse_usage(resp.json())
 
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            credits_resp = await client.get("https://openrouter.ai/api/v1/credits", headers=headers)
+            credits_resp = await client.get(f"{self._analytics_origin}/credits", headers=headers)
             credits_resp.raise_for_status()
             credits = credits_resp.json()
+            analytics = None
             activity = None
             analytics_status = "failed"
             analytics_error = None
             try:
-                activity_resp = await client.get("https://openrouter.ai/api/v1/activity", headers=headers)
-                activity_resp.raise_for_status()
-                parsed = activity_resp.json()
-                activity = self._sanitize_activity(parsed)
-                analytics_status = "success" if activity["data"] else "empty"
+                analytics = await self._fetch_analytics(client, headers)
+                analytics_status = "success" if analytics["data"] else "empty"
             except httpx.HTTPStatusError as exc:
                 analytics_error = (
                     "permission_or_upstream_error" if exc.response.status_code in {401, 403, 404} else "upstream_error"
                 )
             except (httpx.HTTPError, ValueError):
                 analytics_error = "malformed_or_network_error"
+            if analytics is None:
+                try:
+                    activity_resp = await client.get(f"{self._analytics_origin}/activity", headers=headers)
+                    activity_resp.raise_for_status()
+                    activity = self._sanitize_activity(activity_resp.json())
+                    analytics_status = "success" if activity["data"] else "empty"
+                    analytics_error = None
+                except httpx.HTTPStatusError as exc:
+                    analytics_error = (
+                        "permission_or_upstream_error" if exc.response.status_code in {401, 403, 404} else "upstream_error"
+                    )
+                except (httpx.HTTPError, ValueError):
+                    analytics_error = "malformed_or_network_error"
         usage = self.parse_account_usage(credits)
         usage.analytics_status = analytics_status
         usage.analytics_error = analytics_error
-        usage.raw["analytics"] = {
-            "status": analytics_status,
-            "error": analytics_error,
-        }
-        if activity is not None:
+        usage.raw["analytics"] = {"status": analytics_status, "error": analytics_error}
+        if analytics is not None:
+            usage.raw["analytics_query"] = analytics
+        elif activity is not None:
             usage.raw["activity"] = activity
         return usage
+
+    async def _fetch_analytics(self, client: httpx.AsyncClient, headers: dict[str, str]) -> dict:
+        meta_response = await client.get(f"{self._analytics_origin}/analytics/meta", headers=headers)
+        meta_response.raise_for_status()
+        meta = self._sanitize_analytics_meta(meta_response.json())
+        metric_names = {metric["name"] for metric in meta["metrics"]}
+        dimensions = {dimension["name"] for dimension in meta["dimensions"]}
+        granularities = {granularity["name"] for granularity in meta["granularities"]}
+        metrics = [metric for metric in ("usage", "requests", "prompt_tokens", "completion_tokens", "reasoning_tokens") if metric in metric_names]
+        if not metrics or "day" not in granularities:
+            raise ValueError("OpenRouter analytics metadata lacks supported daily account metrics")
+        payload = {
+            "metrics": metrics,
+            "granularity": "day",
+            "time_range": self._analytics_time_range(),
+            "limit": 1000,
+            "order_by": {"field": "date", "direction": "asc"},
+        }
+        if "date" in dimensions:
+            payload["dimensions"] = ["date"]
+        query_response = await client.post(f"{self._analytics_origin}/analytics/query", headers=headers, json=payload)
+        query_response.raise_for_status()
+        return self._sanitize_analytics_query(query_response.json(), metrics)
+
+    @classmethod
+    def _analytics_time_range(cls) -> dict[str, str]:
+        end = datetime.now(UTC).replace(microsecond=0)
+        start = (end - timedelta(days=cls._analytics_days)).replace(hour=0, minute=0, second=0)
+        return {"start": start.isoformat().replace("+00:00", "Z"), "end": end.isoformat().replace("+00:00", "Z")}
+
+    @staticmethod
+    def _sanitize_analytics_meta(data: object) -> dict:
+        info = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(info, dict):
+            raise ValueError("OpenRouter analytics metadata response must contain data")
+        result = {}
+        for field in ("metrics", "dimensions", "granularities", "operators"):
+            values = info.get(field)
+            if not isinstance(values, list):
+                raise ValueError(f"OpenRouter analytics metadata {field} must be a list")
+            normalized = []
+            for value in values:
+                if not isinstance(value, dict) or not isinstance(value.get("name"), str) or not value["name"].strip():
+                    raise ValueError(f"OpenRouter analytics metadata {field} contains an invalid entry")
+                normalized.append({"name": value["name"].strip()})
+            result[field] = normalized
+        return result
+
+    @staticmethod
+    def _sanitize_analytics_query(data: object, metrics: list[str]) -> dict:
+        outer = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(outer, dict) or not isinstance(outer.get("data"), list) or not isinstance(outer.get("metadata"), dict):
+            raise ValueError("OpenRouter analytics query response must contain data and metadata")
+        metadata = outer["metadata"]
+        if (
+            isinstance(metadata.get("query_time_ms"), bool)
+            or not isinstance(metadata.get("query_time_ms"), (int, float))
+            or isinstance(metadata.get("row_count"), bool)
+            or not isinstance(metadata.get("row_count"), int)
+            or not isinstance(metadata.get("truncated"), bool)
+            or metadata["row_count"] < 0
+        ):
+            raise ValueError("OpenRouter analytics query metadata is invalid")
+        if metadata["truncated"] or metadata["row_count"] != len(outer["data"]):
+            raise ValueError("OpenRouter analytics query results are incomplete")
+        rows = []
+        for row in outer["data"]:
+            if not isinstance(row, dict) or parse_time(row.get("date")) is None:
+                raise ValueError("OpenRouter analytics query contains an invalid row")
+            item = {"date": row["date"]}
+            for metric in metrics:
+                if metric not in row:
+                    continue
+                value = OpenRouterAdapter._decimal(row[metric])
+                if value is None or value < 0:
+                    raise ValueError("OpenRouter analytics query contains an invalid metric")
+                if metric != "usage" and value != value.to_integral_value():
+                    raise ValueError("OpenRouter analytics query contains a non-integral count")
+                item[metric] = int(value) if metric != "usage" else OpenRouterAdapter._number(value)
+            if any(metric in item for metric in metrics):
+                rows.append(item)
+        warnings = outer.get("warnings")
+        cached_at = outer.get("cached_at", outer.get("cachedAt"))
+        if warnings is not None and (not isinstance(warnings, list) or not all(isinstance(item, str) for item in warnings)):
+            raise ValueError("OpenRouter analytics query warnings are invalid")
+        if cached_at is not None and OpenRouterAdapter._number(cached_at) is None:
+            raise ValueError("OpenRouter analytics query cached_at is invalid")
+        return {"data": rows, "metadata": metadata, "warnings": warnings or [], "cached_at": cached_at}
 
     @staticmethod
     def _sanitize_activity(data: object) -> dict:
@@ -216,8 +316,11 @@ class OpenRouterAdapter(ProviderAdapter):
     @staticmethod
     def native_observations(raw: dict) -> list[dict]:
         """Normalize documented, completed UTC activity rows into observations."""
-        activity = raw.get("activity") if isinstance(raw, dict) else None
-        rows = activity.get("data") if isinstance(activity, dict) else None
+        if not isinstance(raw, dict):
+            return []
+        query = raw.get("analytics_query")
+        activity = raw.get("activity")
+        rows = query.get("data") if isinstance(query, dict) else activity.get("data") if isinstance(activity, dict) else None
         if not isinstance(rows, list):
             return []
         observations = []
