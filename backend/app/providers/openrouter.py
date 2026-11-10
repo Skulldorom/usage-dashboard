@@ -164,7 +164,9 @@ class OpenRouterAdapter(ProviderAdapter):
                     analytics_error = None
                 except httpx.HTTPStatusError as exc:
                     analytics_error = (
-                        "permission_or_upstream_error" if exc.response.status_code in {401, 403, 404} else "upstream_error"
+                        "permission_or_upstream_error"
+                        if exc.response.status_code in {401, 403, 404}
+                        else "upstream_error"
                     )
                 except (httpx.HTTPError, ValueError):
                     analytics_error = "malformed_or_network_error"
@@ -185,7 +187,11 @@ class OpenRouterAdapter(ProviderAdapter):
         metric_names = {metric["name"] for metric in meta["metrics"]}
         dimensions = {dimension["name"] for dimension in meta["dimensions"]}
         granularities = {granularity["name"] for granularity in meta["granularities"]}
-        metrics = [metric for metric in ("usage", "requests", "prompt_tokens", "completion_tokens", "reasoning_tokens") if metric in metric_names]
+        metrics = [
+            metric
+            for metric in ("usage", "requests", "prompt_tokens", "completion_tokens", "reasoning_tokens")
+            if metric in metric_names
+        ]
         if not metrics or "day" not in granularities:
             raise ValueError("OpenRouter analytics metadata lacks supported daily account metrics")
         payload = {
@@ -228,7 +234,11 @@ class OpenRouterAdapter(ProviderAdapter):
     @staticmethod
     def _sanitize_analytics_query(data: object, metrics: list[str]) -> dict:
         outer = data.get("data") if isinstance(data, dict) else None
-        if not isinstance(outer, dict) or not isinstance(outer.get("data"), list) or not isinstance(outer.get("metadata"), dict):
+        if (
+            not isinstance(outer, dict)
+            or not isinstance(outer.get("data"), list)
+            or not isinstance(outer.get("metadata"), dict)
+        ):
             raise ValueError("OpenRouter analytics query response must contain data and metadata")
         metadata = outer["metadata"]
         if (
@@ -260,7 +270,9 @@ class OpenRouterAdapter(ProviderAdapter):
                 rows.append(item)
         warnings = outer.get("warnings")
         cached_at = outer.get("cached_at", outer.get("cachedAt"))
-        if warnings is not None and (not isinstance(warnings, list) or not all(isinstance(item, str) for item in warnings)):
+        if warnings is not None and (
+            not isinstance(warnings, list) or not all(isinstance(item, str) for item in warnings)
+        ):
             raise ValueError("OpenRouter analytics query warnings are invalid")
         if cached_at is not None and OpenRouterAdapter._number(cached_at) is None:
             raise ValueError("OpenRouter analytics query cached_at is invalid")
@@ -320,7 +332,13 @@ class OpenRouterAdapter(ProviderAdapter):
             return []
         query = raw.get("analytics_query")
         activity = raw.get("activity")
-        rows = query.get("data") if isinstance(query, dict) else activity.get("data") if isinstance(activity, dict) else None
+        rows = (
+            query.get("data")
+            if isinstance(query, dict)
+            else activity.get("data")
+            if isinstance(activity, dict)
+            else None
+        )
         if not isinstance(rows, list):
             return []
         observations = []

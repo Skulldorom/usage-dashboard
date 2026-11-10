@@ -391,6 +391,7 @@ def test_openrouter_native_observations_reject_incomplete_current_utc_day(monkey
     )
     assert observations == []
 
+
 @pytest.mark.asyncio
 async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeypatch):
     calls, client_options = [], []
