@@ -553,6 +553,16 @@ async def list_configs(session: AsyncSession = Depends(get_session)):
     return [_config_read(row) for row in rows]
 
 
+async def _poll_new_config(config_id: int) -> None:
+    """Poll one newly-created enabled config without blocking the create response."""
+    Session = async_sessionmaker(engine, expire_on_commit=False)
+    async with _auto_poll_lock:
+        async with Session() as session:
+            config = await session.get(ProviderConfig, config_id)
+            if config and config.is_enabled:
+                await _poll_one(config, session)
+
+
 @router.post(
     "/configs",
     response_model=ProviderConfigRead,
@@ -598,6 +608,8 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
             status_code=409, detail="Provider label already exists or database rejected the config"
         ) from exc
     await session.refresh(config)
+    if config.is_enabled:
+        asyncio.create_task(_poll_new_config(config.id))
     return _config_read(config)
 
 
