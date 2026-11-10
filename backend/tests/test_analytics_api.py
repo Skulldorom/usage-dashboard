@@ -161,6 +161,7 @@ async def test_analytics_isolates_provider_observation_revisions(sqlite_db):
     assert history.status_code == 200, history.text
     assert sum(bucket["total"] or 0 for bucket in history.json()["buckets"]) == 7.0
 
+
 @pytest.mark.asyncio
 async def test_legacy_provider_observations_are_only_read_at_revision_one(sqlite_db):
     Session = sqlite_db
@@ -168,16 +169,21 @@ async def test_legacy_provider_observations_are_only_read_at_revision_one(sqlite
     base = datetime.now(UTC) - timedelta(days=1)
     await _seed_observations(Session, config, [{"metric": "usage_daily", "value": 4.0, "observed_at": base}])
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        first = await client.get(f"/api/v1/analytics/providers/{config.id}/timeseries", params={"metric": "usage_daily"}, headers=ADMIN_AUTH)
+        first = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries", params={"metric": "usage_daily"}, headers=ADMIN_AUTH
+        )
     assert first.status_code == 200, first.text
     async with Session() as session:
         current = await session.get(ProviderConfig, config.id)
         current.usage_revision = 2
         await session.commit()
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        switched = await client.get(f"/api/v1/analytics/providers/{config.id}/timeseries", params={"metric": "usage_daily"}, headers=ADMIN_AUTH)
+        switched = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/timeseries", params={"metric": "usage_daily"}, headers=ADMIN_AUTH
+        )
     assert switched.status_code == 200, switched.text
     assert all(bucket["total"] in (None, 0) for bucket in switched.json()["buckets"])
+
 
 @pytest.mark.asyncio
 async def test_provider_analytics_info(sqlite_db):
