@@ -745,8 +745,10 @@ export default function DashboardPage() {
     } catch (err) {
       if (generation === refreshGeneration.current) setError(err.message);
     } finally {
-      if (generation === refreshGeneration.current) setLoading(false);
-      manualLoading.current = false;
+      if (generation === refreshGeneration.current) {
+        setLoading(false);
+        manualLoading.current = false;
+      }
     }
   }
 
@@ -765,6 +767,8 @@ export default function DashboardPage() {
       return undefined;
     }
     if (refreshPendingBatch.current !== pendingBatch) {
+      if (refreshTimer.current !== null) window.clearInterval(refreshTimer.current);
+      refreshTimer.current = null;
       refreshPendingBatch.current = pendingBatch;
       refreshExpiredBatch.current = null;
       refreshDeadline.current = null;
