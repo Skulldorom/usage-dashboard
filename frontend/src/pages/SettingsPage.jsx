@@ -401,6 +401,7 @@ const initialForm = {
   subscription_currency: "USD",
   billing_cadence: "monthly",
   billing_anchor: "",
+  openrouter_monitoring_mode: "individual_key",
 };
 
 export default function SettingsPage() {
@@ -479,7 +480,23 @@ export default function SettingsPage() {
   );
   const isCustom = form.provider === "custom_http";
   const isCodex = form.provider === "codex";
-  const setup = PROVIDER_SETUP[form.provider];
+  const isOpenRouter = form.provider === "openrouter";
+  const isOpenRouterAccountWide = isOpenRouter && form.openrouter_monitoring_mode === "account_wide";
+  const setup = isOpenRouter
+    ? (isOpenRouterAccountWide
+      ? {
+          title: "OpenRouter Management API key",
+          steps: [
+            "Open OpenRouter Management API Keys and create a Management API key.",
+            "Paste it below; Usage Dashboard only sends read-only GET requests to OpenRouter.",
+            "Management API keys have elevated administrative permissions. Set an expiration and store this credential carefully.",
+          ],
+          url: "https://openrouter.ai/settings/management-keys",
+          linkLabel: "Open OpenRouter Management API Keys",
+          keyPlaceholder: "Management API key",
+        }
+      : PROVIDER_SETUP.openrouter)
+    : PROVIDER_SETUP[form.provider];
   const thresholdProviderMetrics = useMemo(() => {
     if (!thresholdDialog) return [];
     const provider = providers.find(
@@ -566,7 +583,7 @@ export default function SettingsPage() {
       api_key: form.api_key.trim(),
       base_url: form.base_url.trim() || null,
       is_enabled: true,
-      extra: {},
+      extra: isOpenRouter ? { monitoring_mode: form.openrouter_monitoring_mode } : {},
       pricing_model: form.pricing_model,
       subscription_amount: form.pricing_model === "subscription" && form.subscription_amount !== "" ? Number(form.subscription_amount) : null,
       subscription_currency: form.subscription_currency.trim().toUpperCase() || "USD",
@@ -2375,12 +2392,34 @@ export default function SettingsPage() {
                 )}
               </Box>
             )}
+            {isOpenRouter && (
+              <FormControl fullWidth>
+                <InputLabel>Monitoring mode</InputLabel>
+                <Select
+                  label="Monitoring mode"
+                  value={form.openrouter_monitoring_mode}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      openrouter_monitoring_mode: event.target.value,
+                      api_key: "",
+                    })
+                  }
+                >
+                  <MenuItem value="individual_key">Individual API key</MenuItem>
+                  <MenuItem value="account_wide">Account-wide credits</MenuItem>
+                </Select>
+                <FormHelperText>Account-wide monitoring requires an elevated Management API key. Usage Dashboard performs only read-only GET requests.</FormHelperText>
+              </FormControl>
+            )}
             <TextField
               label={
                 isCodex
                   ? "Manual OAuth token bundle fallback"
                   : isCustom
                     ? "Secret / API key"
+                    : isOpenRouterAccountWide
+                    ? "Management API key"
                     : "API key"
               }
               value={form.api_key}

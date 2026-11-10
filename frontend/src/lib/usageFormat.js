@@ -8,7 +8,7 @@ export const PREFERRED_METRICS = {
   deepseek: ['total_balance', 'granted_balance', 'topped_up_balance'],
   firecrawl: ['credits_remaining', 'credits_used', 'usage_percent', 'plan_credits'],
   openai: ['cost_30d'],
-  openrouter: ['limit_remaining', 'usage_monthly', 'usage_weekly'],
+  openrouter: ['account_credit_balance', 'account_credits_used', 'account_credits_purchased', 'limit_remaining', 'usage_monthly', 'usage_weekly'],
   'opencode-go': ['five_hour_used_percent', 'weekly_used_percent', 'monthly_used_percent', 'exhausted'],
   minimax: ['five_hour_used_percent', 'weekly_used_percent', 'exhausted'],
 }

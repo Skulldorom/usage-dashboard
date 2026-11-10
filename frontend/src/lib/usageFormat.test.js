@@ -666,3 +666,13 @@ describe('minimaxLimitSections', () => {
     ])
   })
 })
+
+describe('OpenRouter account metric ordering', () => {
+  it('prioritizes account balance over key limits', () => {
+    expect(PREFERRED_METRICS.openrouter.slice(0, 3)).toEqual([
+      'account_credit_balance',
+      'account_credits_used',
+      'account_credits_purchased',
+    ])
+  })
+})
