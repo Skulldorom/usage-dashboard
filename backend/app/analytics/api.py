@@ -11,7 +11,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import asc, desc, func, select
+from sqlalchemy import and_, asc, desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.analytics import aggregation
@@ -126,6 +126,16 @@ def _orm_to_observation(row: UsageObservation) -> Observation:
     )
 
 
+def _active_provider_observation_filter(config: ProviderConfig):
+    return or_(
+        UsageObservation.config_revision == config.usage_revision,
+        and_(
+            UsageObservation.config_revision.is_(None),
+            config.usage_revision == 1,
+        ),
+    )
+
+
 async def _load_observations(
     session: AsyncSession,
     config_id: int,
@@ -134,7 +144,11 @@ async def _load_observations(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[Observation]:
-    query = select(UsageObservation).where(UsageObservation.provider_config_id == config_id)
+    config = await _get_config(session, config_id)
+    query = select(UsageObservation).where(
+        UsageObservation.provider_config_id == config_id,
+        _active_provider_observation_filter(config),
+    )
     if metric:
         query = query.where(UsageObservation.metric == metric)
     if start is not None:
@@ -240,10 +254,16 @@ def _as_aware(value: datetime) -> datetime:
 
 
 async def _observed_metrics(session: AsyncSession, config_id: int) -> set[str]:
+    config = await _get_config(session, config_id)
     rows = (
         (
             await session.execute(
-                select(UsageObservation.metric).where(UsageObservation.provider_config_id == config_id).distinct()
+                select(UsageObservation.metric)
+                .where(
+                    UsageObservation.provider_config_id == config_id,
+                    _active_provider_observation_filter(config),
+                )
+                .distinct()
             )
         )
         .scalars()

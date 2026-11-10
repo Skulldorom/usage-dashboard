@@ -17,6 +17,8 @@ class ProviderUsage:
     summary: str
     metrics: list[Metric]
     raw: dict[str, Any] = field(default_factory=dict)
+    analytics_status: str | None = None
+    analytics_error: str | None = None
 
 
 class ProviderAdapter(ABC):

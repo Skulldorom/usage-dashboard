@@ -404,6 +404,23 @@ const initialForm = {
   openrouter_monitoring_mode: "individual_key",
 };
 
+function OpenRouterCredentialInstructions({ mode = "individual_key", rotation = false }) {
+  const accountWide = mode === "account_wide";
+  return (
+    <Alert severity="info" className="provider-setup-guide">
+      <Typography variant="body2">
+        {accountWide
+          ? `${rotation ? "Rotate with a new" : "Create a"} OpenRouter Management API key. It has elevated permissions, so set an expiration and store it securely.`
+          : `${rotation ? "Replace with a new" : "Use a standard"} OpenRouter API key for individual-key monitoring. Management keys must not be sent to custom individual-key endpoints.`}
+      </Typography>
+      <Button component="a" href={accountWide ? "https://openrouter.ai/settings/management-keys" : "https://openrouter.ai/settings/keys"} target="_blank" rel="noreferrer" size="small" sx={{ mt: 0.5 }}>
+        {accountWide ? "Open Management API keys" : "Open OpenRouter API keys"}
+      </Button>
+      {rotation && <Typography variant="caption" display="block" sx={{ mt: 0.5 }}>Previous-mode history remains separate after switching monitoring modes.</Typography>}
+    </Alert>
+  );
+}
+
 export default function SettingsPage() {
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState([]);
@@ -468,6 +485,7 @@ export default function SettingsPage() {
   const [billingForm, setBillingForm] = useState(null);
   const [billingSaving, setBillingSaving] = useState(false);
   const [credentialValue, setCredentialValue] = useState("");
+  const [credentialMode, setCredentialMode] = useState("individual_key");
   const [credentialSaving, setCredentialSaving] = useState(false);
   const [credentialStatus, setCredentialStatus] = useState("");
   const homepagePreview = useMemo(
@@ -581,7 +599,7 @@ export default function SettingsPage() {
       provider: form.provider,
       label: form.label.trim() || null,
       api_key: form.api_key.trim(),
-      base_url: form.base_url.trim() || null,
+      base_url: isOpenRouterAccountWide ? null : (form.base_url.trim() || null),
       is_enabled: true,
       extra: isOpenRouter ? { monitoring_mode: form.openrouter_monitoring_mode } : {},
       pricing_model: form.pricing_model,
@@ -681,8 +699,13 @@ export default function SettingsPage() {
     setCredentialStatus("");
     setCredentialSaving(true);
     try {
+      const switchingMode = credentialTarget.provider === "openrouter" && credentialMode !== (credentialTarget.extra?.monitoring_mode || "individual_key");
       await api.updateConfig(credentialTarget.id, {
         api_key: credentialValue.trim(),
+        ...(switchingMode ? {
+          extra: { monitoring_mode: credentialMode },
+          base_url: credentialMode === "account_wide" ? null : (credentialTarget.base_url || "https://openrouter.ai/api/v1"),
+        } : {}),
       });
       setCredentialValue("");
       setCredentialStatus("Credential replaced. The old token was overwritten and never displayed.");
@@ -1516,6 +1539,11 @@ export default function SettingsPage() {
                       <Typography variant="caption" color="text.secondary">
                         {providerDisplayName(config.provider)}
                       </Typography>
+                      {config.provider === "openrouter" && (
+                        <Typography variant="caption" display="block" color="text.secondary">
+                          Monitoring: {(config.extra?.monitoring_mode || "individual_key") === "account_wide" ? "Account-wide credits" : "Individual API key"}
+                        </Typography>
+                      )}
                       {(config.alert_thresholds || []).length > 0 && (
                         <div className="config-alert-summary">
                           {(config.alert_thresholds || []).map(
@@ -2402,6 +2430,7 @@ export default function SettingsPage() {
                     setForm({
                       ...form,
                       openrouter_monitoring_mode: event.target.value,
+                      ...(event.target.value === "account_wide" ? { base_url: "" } : {}),
                       api_key: "",
                     })
                   }
@@ -2412,6 +2441,7 @@ export default function SettingsPage() {
                 <FormHelperText>Account-wide monitoring requires an elevated Management API key. Usage Dashboard performs only read-only GET requests.</FormHelperText>
               </FormControl>
             )}
+            {isOpenRouter && <OpenRouterCredentialInstructions mode={form.openrouter_monitoring_mode} />}
             <TextField
               label={
                 isCodex
@@ -2438,7 +2468,7 @@ export default function SettingsPage() {
                     : `Use the ${setup?.title || "key"} described above.`
               }
             />
-            <TextField
+            {!isOpenRouterAccountWide && <TextField
               label="Base URL override"
               value={form.base_url}
               onChange={(event) =>
@@ -2450,7 +2480,7 @@ export default function SettingsPage() {
                   : "Optional -- provider default will be used"
               }
               required={isCustom}
-            />
+            />}
             <Typography className="dialog-section-label">Billing / value analytics</Typography>
             <FormControl fullWidth>
               <InputLabel>Pricing model</InputLabel>
@@ -2907,6 +2937,21 @@ export default function SettingsPage() {
                   </Alert>
                 )}
               </Box>
+            )}
+            {credentialTarget?.provider === "openrouter" && (
+              <>
+              <OpenRouterCredentialInstructions mode={credentialMode} rotation />
+              <FormControl fullWidth>
+                <InputLabel>Monitoring mode</InputLabel>
+                <Select label="Monitoring mode" value={credentialMode} onChange={(event) => setCredentialMode(event.target.value)}>
+                  <MenuItem value="individual_key">Individual API key</MenuItem>
+                  <MenuItem value="account_wide">Account-wide activity</MenuItem>
+                </Select>
+              </FormControl>
+              {credentialMode !== (credentialTarget.extra?.monitoring_mode || "individual_key") && (
+                <Alert severity="warning">Switching mode requires a new credential. Incompatible history will no longer be shown as current.</Alert>
+              )}
+              </>
             )}
             <TextField
               label={

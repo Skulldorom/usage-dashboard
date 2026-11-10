@@ -67,6 +67,9 @@ class ProviderConfig(Base):
     encrypted_api_key: Mapped[str] = mapped_column(Text)
     base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     extra: Mapped[dict] = mapped_column(MutableDict.as_mutable(json_type()), default=dict)
+    # Incremented only when credentials or usage scope changes. Snapshots and
+    # observations from older revisions remain available as separate history.
+    usage_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     alert_thresholds: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     is_visible: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -88,6 +91,8 @@ class UsageSnapshot(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     provider_config_id: Mapped[int] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"))
     provider: Mapped[str] = mapped_column(String(32), index=True)
+    # Null denotes a legacy snapshot created before revision isolation.
+    config_revision: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String(32))
     summary: Mapped[str] = mapped_column(String(255))
     metrics: Mapped[list] = mapped_column(MutableList.as_mutable(json_type()), default=list)
@@ -132,6 +137,8 @@ class UsageObservation(Base):
         ForeignKey("data_source_configs.id", ondelete="CASCADE"), index=True, nullable=True
     )
     provider: Mapped[str] = mapped_column(String(32), index=True)
+    # Null denotes observations created before revision-aware native history.
+    config_revision: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     metric: Mapped[str] = mapped_column(String(120), index=True)
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
