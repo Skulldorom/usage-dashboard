@@ -253,3 +253,92 @@ def test_custom_http_allowlist_bypasses_internal_host_rejection(monkeypatch):
     )
 
     assert config["url"] == "http://localhost/usage"
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        ({"data": {"total_credits": "0.3", "total_usage": "0.2"}}, 0.1),
+        ({"data": {"total_credits": "0", "total_usage": "0"}}, 0.0),
+        ({"data": {"total_credits": "1", "total_usage": "2"}}, -1.0),
+    ],
+)
+def test_openrouter_account_credits_uses_decimal_balance_arithmetic(payload, expected):
+    usage = OpenRouterAdapter.parse_account_usage(payload)
+    metrics = {metric.label: metric.value for metric in usage.metrics}
+    assert metrics["account_credit_balance"] == expected
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": {}},
+        {"data": {"total_credits": 1}},
+        {"data": {"total_credits": "no", "total_usage": 0}},
+        {"data": {"total_credits": "NaN", "total_usage": 0}},
+        {"data": {"total_credits": "Infinity", "total_usage": 0}},
+        {"data": {"total_credits": True, "total_usage": 0}},
+    ],
+)
+def test_openrouter_account_credits_rejects_invalid_totals(payload):
+    with pytest.raises(ValueError, match="finite total_credits or total_usage"):
+        OpenRouterAdapter.parse_account_usage(payload)
+
+
+@pytest.mark.asyncio
+async def test_openrouter_account_mode_uses_fixed_credits_endpoint_without_redirects(monkeypatch):
+    calls, client_options = [], []
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, **kwargs):
+            calls.append((url, kwargs))
+            return httpx.Response(
+                200, json={"data": {"total_credits": 1, "total_usage": 0.25}}, request=httpx.Request("GET", url)
+            )
+
+    def client_factory(**kwargs):
+        client_options.append(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr("app.providers.openrouter.httpx.AsyncClient", client_factory)
+    usage = await OpenRouterAdapter("management-secret", extra={"monitoring_mode": "account_wide"}).fetch_usage()
+    assert calls == [
+        (
+            "https://openrouter.ai/api/v1/credits",
+            {"headers": {"Authorization": "Bearer management-secret", "Accept": "application/json"}},
+        )
+    ]
+    assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
+    assert usage.metrics[0].value == 0.75
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://openrouter.ai/api/v1",
+        "https://evil.example/api/v1",
+        "https://user:pass@openrouter.ai/api/v1",
+        "https://openrouter.ai:443/api/v1",
+        "https://openrouter.ai/api/v1?target=evil",
+        "https://openrouter.ai/api/v1#evil",
+    ],
+)
+def test_openrouter_account_mode_rejects_untrusted_base_url(base_url):
+    with pytest.raises(ValueError, match="Management credentials may only be sent"):
+        OpenRouterAdapter("secret", base_url=base_url, extra={"monitoring_mode": "account_wide"})
+
+
+def test_openrouter_individual_mode_preserves_custom_base_url_support():
+    adapter = OpenRouterAdapter("secret", base_url="https://openrouter-proxy.example/api/v1")
+    assert adapter.base_url == "https://openrouter-proxy.example/api/v1"
+
+
+def test_openrouter_rejects_unknown_monitoring_mode():
+    with pytest.raises(ValueError, match="monitoring_mode"):
+        _ = OpenRouterAdapter("secret", extra={"monitoring_mode": "unknown"}).account_wide

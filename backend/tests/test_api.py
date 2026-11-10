@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.routes import _crypto
 from app.core.auth import _hash_secret
 from app.core.config import Settings, settings
 from app.database import get_session
@@ -257,6 +258,131 @@ async def test_patch_config_rotates_secret_without_exposing_token(sqlite_db):
 def test_admin_token_env_is_ignored_by_settings():
     configured = Settings(ENCRYPTION_KEY="x" * 32, ADMIN_TOKEN="legacy-static-admin-token-123")
     assert not hasattr(configured, "admin_token")
+
+
+@pytest.mark.asyncio
+async def test_openrouter_account_config_persists_mode_rotates_credential_and_polls(sqlite_db, monkeypatch):
+    class OpenRouterProbe(ProviderAdapter):
+        id = "openrouter"
+        name = "OpenRouter"
+        description = "test"
+        default_base_url = "https://openrouter.ai/api/v1"
+        metric_names = []
+        observed = []
+
+        async def fetch_usage(self) -> ProviderUsage:
+            type(self).observed.append((self.api_key, self.extra.copy()))
+            return ProviderUsage(
+                status="healthy",
+                summary="9 account credits available",
+                metrics=[
+                    Metric("account_credit_balance", 9, "credits"),
+                    Metric("account_credits_used", 1, "credits"),
+                    Metric("account_credits_purchased", 10, "credits"),
+                ],
+                raw={"credits": {"total_credits": 10, "total_usage": 1}},
+            )
+
+    monkeypatch.setitem(ADAPTERS, "openrouter", OpenRouterProbe)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/v1/configs",
+            json={
+                "provider": "openrouter",
+                "label": "account",
+                "api_key": "management-secret",
+                "extra": {"monitoring_mode": "account_wide"},
+            },
+            headers=auth,
+        )
+        assert created.status_code == 201, created.text
+        config_id = created.json()["id"]
+        assert created.json()["extra"] == {"monitoring_mode": "account_wide"}
+
+        reloaded = await client.get("/api/v1/configs", headers=auth)
+        assert reloaded.status_code == 200, reloaded.text
+        assert reloaded.json()[0]["extra"] == {"monitoring_mode": "account_wide"}
+
+        edited = await client.patch(f"/api/v1/configs/{config_id}", json={"label": "account credits"}, headers=auth)
+        assert edited.status_code == 200, edited.text
+        assert edited.json()["extra"] == {"monitoring_mode": "account_wide"}
+
+        polled = await client.post(f"/api/v1/configs/{config_id}/poll", headers=auth)
+        assert polled.status_code == 200, polled.text
+        assert OpenRouterProbe.observed == [("management-secret", {"monitoring_mode": "account_wide"})]
+        assert polled.json()["metrics"][0]["label"] == "account_credit_balance"
+
+        homepage = await client.get("/api/v1/homepage", headers=auth)
+        assert homepage.status_code == 200, homepage.text
+        assert homepage.json()["list"][0]["value"] == "9 credits left"
+
+        invalid_switches = [
+            {"extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": None, "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "", "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "   ", "extra": {"monitoring_mode": "individual_key"}},
+            {"api_key": "management-secret", "extra": {"monitoring_mode": "individual_key"}},
+            {
+                "api_key": "management-secret",
+                "base_url": "https://openrouter-proxy.example/api/v1",
+                "extra": {"monitoring_mode": "individual_key"},
+            },
+        ]
+        for invalid_switch in invalid_switches:
+            rejected = await client.patch(f"/api/v1/configs/{config_id}", json=invalid_switch, headers=auth)
+            assert rejected.status_code == 422
+            async with sqlite_db() as session:
+                config = await session.get(ProviderConfig, config_id)
+                assert config.extra == {"monitoring_mode": "account_wide"}
+                assert config.base_url is None
+                assert _crypto().decrypt(config.encrypted_api_key) == "management-secret"
+
+        switched = await client.patch(
+            f"/api/v1/configs/{config_id}",
+            json={"api_key": "individual-secret", "extra": {"monitoring_mode": "individual_key"}},
+            headers=auth,
+        )
+        assert switched.status_code == 200, switched.text
+        assert switched.json()["extra"] == {"monitoring_mode": "individual_key"}
+
+    async with sqlite_db() as session:
+        config = await session.get(ProviderConfig, config_id)
+        assert _crypto().decrypt(config.encrypted_api_key) == "individual-secret"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_legacy_config_defaults_to_individual_mode(sqlite_db, monkeypatch):
+    class OpenRouterProbe(ProviderAdapter):
+        id = "openrouter"
+        name = "OpenRouter"
+        description = "test"
+        default_base_url = "https://openrouter.ai/api/v1"
+        metric_names = []
+        observed = []
+
+        async def fetch_usage(self) -> ProviderUsage:
+            type(self).observed.append((self.api_key, self.extra.copy()))
+            return ProviderUsage(status="healthy", summary="legacy", metrics=[], raw={})
+
+    monkeypatch.setitem(ADAPTERS, "openrouter", OpenRouterProbe)
+    auth = {"Authorization": "Bearer test-admin-session-token-123"}
+    async with sqlite_db() as session:
+        config = ProviderConfig(
+            provider="openrouter",
+            label="legacy",
+            encrypted_api_key=_crypto().encrypt("legacy-secret"),
+            extra={},
+        )
+        session.add(config)
+        await session.commit()
+        config_id = config.id
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        polled = await client.post(f"/api/v1/configs/{config_id}/poll", headers=auth)
+
+    assert polled.status_code == 200, polled.text
+    assert OpenRouterProbe.observed == [("legacy-secret", {})]
 
 
 @pytest.mark.asyncio

@@ -799,6 +799,17 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
     config = await session.get(ProviderConfig, config_id)
     if not config:
         raise HTTPException(status_code=404, detail="Provider config not found")
+    if config.provider == "openrouter" and payload.has_update_for("extra"):
+        current_mode = (config.extra or {}).get("monitoring_mode", "individual_key")
+        requested_mode = (payload.extra or {}).get("monitoring_mode", "individual_key")
+        if requested_mode != current_mode:
+            replacement_key = payload.api_key.strip() if isinstance(payload.api_key, str) else ""
+            if not replacement_key or _crypto().decrypt(config.encrypted_api_key) == replacement_key:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Replacing the OpenRouter monitoring mode requires a new credential",
+                )
+            payload.api_key = replacement_key
     if payload.has_update_for("label") and payload.label is not None:
         config.label = payload.label
     if payload.has_update_for("api_key") and payload.api_key is not None:
