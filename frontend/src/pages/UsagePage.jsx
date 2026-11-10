@@ -881,6 +881,44 @@ function ActivityShare({ dimension }) {
   )
 }
 
+export function openRouterAnalyticsState(overview) {
+  const activity = overview?.activity || []
+  const rows = activity.filter((dimension) => (dimension.providers || []).some((row) => row.provider === 'openrouter'))
+  const explicit = overview?.openrouter || overview?.openrouter_analytics
+  const status = explicit?.status || overview?.openrouter_status
+  if (status === 'unavailable' || status === 'permission_or_upstream_error') return { state: 'unavailable', rows: [], scope: null }
+  if (!rows.length && !explicit) return { state: 'empty', rows: [], scope: null }
+  const scope = explicit && (explicit.scope || explicit.account_scope || explicit.workspace_scope)
+  const stale = explicit?.stale === true || explicit?.freshness?.state === 'stale'
+  const partial = explicit?.partial === true || explicit?.completeness?.state === 'partial'
+  return { state: stale ? 'stale' : partial ? 'partial' : 'ready', rows, scope: typeof scope === 'string' ? scope : null }
+}
+
+function OpenRouterAnalyticsPanel({ overview }) {
+  const result = openRouterAnalyticsState(overview)
+  const labels = { unavailable: 'OpenRouter account analytics unavailable', empty: 'No OpenRouter account activity in this range', stale: 'OpenRouter account analytics is stale', partial: 'OpenRouter account analytics is partial' }
+  if (result.state === 'empty' || result.state === 'unavailable') {
+    return <Alert severity={result.state === 'unavailable' ? 'warning' : 'info'}>{labels[result.state]}</Alert>
+  }
+  const totals = new Map(result.rows.map((row) => [row.dimension, row]))
+  const value = (name) => totals.get(name)?.total ?? '-'
+  return (
+    <Card variant="outlined" className="glass-panel" component="section" aria-label="OpenRouter account analytics">
+      <CardContent>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 1 }}>
+          <Box><Typography variant="overline" color="primary.main">OpenRouter account analytics</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>UTC reporting; account/workspace scope is shown only when explicitly provided.</Typography></Box>
+          {(result.state === 'stale' || result.state === 'partial') && <Chip size="small" color="warning" label={labels[result.state]} />}
+        </Stack>
+        <Grid container spacing={1.5} sx={{ mb: 2 }}>
+          {[['Spend', value('spend'), 'USD'], ['Requests', value('requests'), 'requests'], ['Tokens', value('tokens'), 'tokens']].map(([label, amount, unit]) => <Grid key={label} size={{ xs: 12, sm: 4 }}><Box className="overview-stat-card"><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h6">{amount === '-' ? amount : `${amount} ${unit}`}</Typography></Box></Grid>)}
+        </Grid>
+        <Stack spacing={1}>{result.rows.map((row) => <Box key={row.dimension}><Stack direction="row" sx={{ justifyContent: 'space-between' }}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{row.dimension} breakdown</Typography><Typography variant="body2" color="text.secondary">{row.providers?.length || 0} providers/models</Typography></Stack>{row.providers?.length === 0 && <Typography variant="caption" color="text.secondary">No breakdown data available.</Typography>}</Box>)}</Stack>
+        {result.scope && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Scope: {result.scope}</Typography>}
+      </CardContent>
+    </Card>
+  )
+}
+
 function EconomicsPanel({ economics }) {
   const [expanded, setExpanded] = useState({})
   if (!economics) return null
@@ -1234,6 +1272,7 @@ export default function UsagePage() {
           {selectedId === 'all' && overview && (
             <Stack id="usage-overview" spacing={2.5}>
               <OverviewSummaryCards overview={overview} />
+              <OpenRouterAnalyticsPanel overview={overview} />
               <EconomicsPanel economics={economics} />
               <Card variant="outlined" className="glass-panel">
                 <CardContent>

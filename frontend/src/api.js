@@ -104,6 +104,8 @@ export const api = {
   homepage: () => request('/homepage'),
   analyticsSummary: () => request('/analytics/summary'),
   analyticsOverview: (params = {}) => request(`/analytics/overview?${new URLSearchParams(params)}`),
+  // OpenRouter account analytics is part of the overview payload when explicitly available.
+  analyticsOpenRouter: (params = {}) => request(`/analytics/overview?${new URLSearchParams(params)}`),
   analyticsEconomics: (params = {}) => request(`/analytics/economics?${new URLSearchParams(params)}`),
   analyticsProvider: (id) => request(`/analytics/providers/${id}`),
   analyticsTimeseries: (id, params = {}) => request(`/analytics/providers/${id}/timeseries?${new URLSearchParams(params)}`),
