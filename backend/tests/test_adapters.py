@@ -308,12 +308,11 @@ async def test_openrouter_account_mode_uses_fixed_credits_endpoint_without_redir
 
     monkeypatch.setattr("app.providers.openrouter.httpx.AsyncClient", client_factory)
     usage = await OpenRouterAdapter("management-secret", extra={"monitoring_mode": "account_wide"}).fetch_usage()
-    assert calls == [
-        (
-            "https://openrouter.ai/api/v1/credits",
-            {"headers": {"Authorization": "Bearer management-secret", "Accept": "application/json"}},
-        )
-    ]
+    assert calls[0] == (
+        "https://openrouter.ai/api/v1/credits",
+        {"headers": {"Authorization": "Bearer management-secret", "Accept": "application/json"}},
+    )
+    assert calls[1][0] == "https://openrouter.ai/api/v1/activity"
     assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
     assert usage.metrics[0].value == 0.75
 
@@ -342,3 +341,31 @@ def test_openrouter_individual_mode_preserves_custom_base_url_support():
 def test_openrouter_rejects_unknown_monitoring_mode():
     with pytest.raises(ValueError, match="monitoring_mode"):
         _ = OpenRouterAdapter("secret", extra={"monitoring_mode": "unknown"}).account_wide
+
+
+def test_openrouter_native_observations_preserve_empty_and_zero_metrics():
+    observations = OpenRouterAdapter.native_observations(
+        {
+            "activity": {
+                "data": [
+                    {
+                        "date": "2026-11-09",
+                        "usage": 0,
+                        "requests": 3,
+                        "prompt_tokens": 0,
+                        "completion_tokens": 12,
+                        "reasoning_tokens": None,
+                        "workspace_id": "ws_1",
+                    }
+                ]
+            }
+        }
+    )
+    values = {item["metric"]: item["value"] for item in observations}
+    assert values == {
+        "openrouter_account_spend": 0.0,
+        "openrouter_account_requests": 3.0,
+        "openrouter_account_prompt_tokens": 0.0,
+        "openrouter_account_completion_tokens": 12.0,
+    }
+    assert all(item["scope"] == "ws_1" for item in observations)

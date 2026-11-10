@@ -137,6 +137,8 @@ class UsageObservation(Base):
         ForeignKey("data_source_configs.id", ondelete="CASCADE"), index=True, nullable=True
     )
     provider: Mapped[str] = mapped_column(String(32), index=True)
+    # Null denotes observations created before revision-aware native history.
+    config_revision: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     metric: Mapped[str] = mapped_column(String(120), index=True)
     value: Mapped[float] = mapped_column(Float)
     unit: Mapped[str | None] = mapped_column(String(32), nullable=True)

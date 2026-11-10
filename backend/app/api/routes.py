@@ -980,6 +980,7 @@ def _observation_row(config: ProviderConfig, obs) -> UsageObservation:
     return UsageObservation(
         provider_config_id=config.id,
         provider=config.provider,
+        config_revision=config.usage_revision,
         metric=obs.metric,
         value=obs.value,
         unit=obs.unit,
@@ -1043,6 +1044,7 @@ async def _ingest_observations(
                     await session.execute(
                         select(UsageObservation).where(
                             UsageObservation.provider_config_id == config.id,
+                            UsageObservation.config_revision == config.usage_revision,
                             UsageObservation.source == "native",
                             UsageObservation.observed_at >= lower,
                             UsageObservation.observed_at <= upper,

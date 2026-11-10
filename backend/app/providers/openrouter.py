@@ -1,8 +1,11 @@
-from decimal import Decimal, InvalidOperation
 import math
+from datetime import UTC, timedelta
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 import httpx
+
+from app.analytics.normalizer import parse_time
 
 from app.analytics.capabilities import analytics_spec, metric_spec
 from app.providers.base import Metric, ProviderAdapter, ProviderUsage
@@ -22,6 +25,11 @@ class OpenRouterAdapter(ProviderAdapter):
         "account_credit_balance",
         "account_credits_used",
         "account_credits_purchased",
+        "openrouter_account_spend",
+        "openrouter_account_requests",
+        "openrouter_account_prompt_tokens",
+        "openrouter_account_completion_tokens",
+        "openrouter_account_reasoning_tokens",
     ]
     alert_metrics = [
         {"metric": "limit_remaining", "label": "Limit remaining", "unit": "credits", "direction": "decreasing"},
@@ -37,7 +45,7 @@ class OpenRouterAdapter(ProviderAdapter):
     ]
     analytics = analytics_spec(
         supported=True,
-        native_history=False,
+        native_history=True,
         metrics={
             "limit_remaining": metric_spec(
                 type_="remaining", unit="credits", direction="decreasing", capacity_metric="limit", utilization=True
@@ -56,6 +64,21 @@ class OpenRouterAdapter(ProviderAdapter):
             "account_credits_used": metric_spec(type_="gauge", unit="credits", direction="increasing", deltas=False),
             "account_credits_purchased": metric_spec(
                 type_="gauge", unit="credits", direction="increasing", deltas=False
+            ),
+            "openrouter_account_spend": metric_spec(
+                type_="counter", unit="USD", direction="increasing", aggregations=["daily"], overview=True
+            ),
+            "openrouter_account_requests": metric_spec(
+                type_="counter", unit="requests", direction="increasing", aggregations=["daily"]
+            ),
+            "openrouter_account_prompt_tokens": metric_spec(
+                type_="counter", unit="tokens", direction="increasing", aggregations=["daily"]
+            ),
+            "openrouter_account_completion_tokens": metric_spec(
+                type_="counter", unit="tokens", direction="increasing", aggregations=["daily"]
+            ),
+            "openrouter_account_reasoning_tokens": metric_spec(
+                type_="counter", unit="tokens", direction="increasing", aggregations=["daily"]
             ),
         },
     )
@@ -90,15 +113,82 @@ class OpenRouterAdapter(ProviderAdapter):
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
-        account_wide = self.account_wide
-        url = f"{self.base_url}/key"
-        if account_wide:
-            url = "https://openrouter.ai/api/v1/credits"
+        if not self.account_wide:
+            async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
+                resp = await client.get(f"{self.base_url}/key", headers=headers)
+                resp.raise_for_status()
+                return self.parse_usage(resp.json())
+
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-        return self.parse_account_usage(data) if account_wide else self.parse_usage(data)
+            credits_resp = await client.get("https://openrouter.ai/api/v1/credits", headers=headers)
+            credits_resp.raise_for_status()
+            credits = credits_resp.json()
+            activity = None
+            try:
+                params = {}
+                workspace_id = self.extra.get("workspace_id")
+                if workspace_id:
+                    params["workspace_id"] = workspace_id
+                if self.extra.get("activity_group_by_workspace"):
+                    params["group_by"] = "workspace"
+                activity_resp = await client.get(
+                    "https://openrouter.ai/api/v1/activity", headers=headers, params=params or None
+                )
+                activity_resp.raise_for_status()
+                parsed = activity_resp.json()
+                if isinstance(parsed, dict):
+                    activity = parsed
+            except (httpx.HTTPError, ValueError):
+                # Credits remain authoritative when the optional activity API is unavailable.
+                activity = None
+        usage = self.parse_account_usage(credits)
+        if activity is not None:
+            usage.raw["activity"] = activity
+        return usage
+
+    @staticmethod
+    def native_observations(raw: dict) -> list[dict]:
+        """Normalize documented, completed UTC activity rows into observations."""
+        activity = raw.get("activity") if isinstance(raw, dict) else None
+        rows = activity.get("data") if isinstance(activity, dict) else None
+        if not isinstance(rows, list):
+            return []
+        observations = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            day = parse_time(row.get("date"))
+            if day is None:
+                continue
+            start = day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            end = start + timedelta(days=1)
+            dimensions = {
+                "openrouter_account_spend": (row.get("usage"), "USD"),
+                "openrouter_account_requests": (row.get("requests"), "requests"),
+                "openrouter_account_prompt_tokens": (row.get("prompt_tokens"), "tokens"),
+                "openrouter_account_completion_tokens": (row.get("completion_tokens"), "tokens"),
+                "openrouter_account_reasoning_tokens": (row.get("reasoning_tokens"), "tokens"),
+            }
+            scope = row.get("workspace_id")
+            for metric, (value, unit) in dimensions.items():
+                number = OpenRouterAdapter._number(value)
+                if number is None:
+                    continue
+                observations.append(
+                    {
+                        "metric": metric,
+                        "value": number,
+                        "unit": unit,
+                        "observed_at": start,
+                        "window_start": start,
+                        "window_end": end,
+                        "kind": "delta",
+                        "scope": scope,
+                        "model": row.get("model"),
+                        "provider_mapping": row.get("provider_name"),
+                    }
+                )
+        return observations
 
     @staticmethod
     def _decimal(value) -> Decimal | None:
