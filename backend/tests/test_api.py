@@ -211,6 +211,7 @@ async def test_patch_config_base_url_null_clears_override(sqlite_db):
             headers=auth,
         )
         assert created.status_code == 201, created.text
+        await routes.wait_initial_polls()
         config_id = created.json()["id"]
 
         updated = await client.patch(f"/api/v1/configs/{config_id}", json={"base_url": None}, headers=auth)
@@ -301,6 +302,7 @@ async def test_openrouter_account_config_persists_mode_rotates_credential_and_po
             headers=auth,
         )
         assert created.status_code == 201, created.text
+        await routes.wait_initial_polls()
         config_id = created.json()["id"]
         assert created.json()["extra"] == {"monitoring_mode": "account_wide"}
 
@@ -314,7 +316,10 @@ async def test_openrouter_account_config_persists_mode_rotates_credential_and_po
 
         polled = await client.post(f"/api/v1/configs/{config_id}/poll", headers=auth)
         assert polled.status_code == 200, polled.text
-        assert OpenRouterProbe.observed == [("management-secret", {"monitoring_mode": "account_wide"})]
+        assert OpenRouterProbe.observed == [
+            ("management-secret", {"monitoring_mode": "account_wide"}),
+            ("management-secret", {"monitoring_mode": "account_wide"}),
+        ]
         assert polled.json()["metrics"][0]["label"] == "account_credit_balance"
 
         homepage = await client.get("/api/v1/homepage", headers=auth)
@@ -1318,11 +1323,12 @@ async def test_snapshot_retention_prunes_old_rows_but_preserves_each_latest(
         )
         second = await client.post(
             "/api/v1/configs",
-            json={"provider": "fake", "label": "old-only", "api_key": "good-key"},
+            json={"provider": "fake", "label": "old-only", "api_key": "good-key", "is_enabled": False},
             headers=auth,
         )
         assert first.status_code == 201, first.text
         assert second.status_code == 201, second.text
+        await routes.wait_initial_polls()
         first_id = first.json()["id"]
         second_id = second.json()["id"]
 

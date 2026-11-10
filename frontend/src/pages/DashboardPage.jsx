@@ -740,6 +740,8 @@ export default function DashboardPage() {
   }
   useEffect(() => {
     load();
+    const refresh = window.setInterval(() => load(), 5000);
+    return () => window.clearInterval(refresh);
   }, []);
 
   const visibleItems = items.filter((item) => item.config.is_visible);

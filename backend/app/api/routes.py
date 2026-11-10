@@ -586,8 +586,8 @@ def _initial_poll_done(task: asyncio.Task) -> None:
     except HTTPException as exc:
         if exc.status_code != 409:
             _logger.warning("Initial provider poll failed: status=%s", exc.status_code)
-    except Exception:
-        _logger.exception("Unexpected initial provider poll failure")
+    except Exception as exc:
+        _logger.error("Unexpected initial provider poll failure: type=%s", type(exc).__name__)
 
 
 def _schedule_initial_poll(config_id: int) -> None:
@@ -603,6 +603,12 @@ async def stop_initial_polls() -> None:
     if tasks:
         await asyncio.gather(*tasks, return_exceptions=True)
     _initial_poll_tasks.clear()
+
+
+async def wait_initial_polls() -> None:
+    """Wait for currently scheduled initial polls without cancelling them."""
+    while _initial_poll_tasks:
+        await asyncio.gather(*tuple(_initial_poll_tasks), return_exceptions=True)
 
 
 @router.post(
