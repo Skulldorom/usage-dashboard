@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api import routes
 from app.api.routes import _crypto
 from app.core.auth import _hash_secret
 from app.core.config import Settings, settings
@@ -53,7 +54,10 @@ async def sqlite_db(monkeypatch):
             yield session
 
     app.dependency_overrides[get_session] = override_session
+    monkeypatch.setattr(routes, "engine", engine)
+    monkeypatch.setattr(routes, "_auto_poll_lock", asyncio.Lock())
     yield Session
+    await routes.stop_initial_polls()
     app.dependency_overrides.clear()
     await engine.dispose()
     if DB.exists():

@@ -1,6 +1,7 @@
 import asyncio
 import errno
 import html
+import logging
 import threading
 from dataclasses import asdict, dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -101,6 +102,8 @@ class CodexBrowserFlowState:
 
 
 _codex_browser_flows: dict[str, CodexBrowserFlowState] = {}
+_initial_poll_tasks: set[asyncio.Task] = set()
+_logger = logging.getLogger(__name__)
 _codex_browser_listener: ThreadingHTTPServer | None = None
 _codex_browser_listener_thread: threading.Thread | None = None
 _codex_device_lock = asyncio.Lock()
@@ -554,13 +557,52 @@ async def list_configs(session: AsyncSession = Depends(get_session)):
 
 
 async def _poll_new_config(config_id: int) -> None:
-    """Poll one newly-created enabled config without blocking the create response."""
+    """Poll a new config once, unless another poll already populated it."""
     Session = async_sessionmaker(engine, expire_on_commit=False)
     async with _auto_poll_lock:
         async with Session() as session:
             config = await session.get(ProviderConfig, config_id)
-            if config and config.is_enabled:
-                await _poll_one(config, session)
+            if not config or not config.is_enabled:
+                return
+            has_snapshot = await session.scalar(
+                select(UsageSnapshot.id)
+                .where(
+                    UsageSnapshot.provider_config_id == config.id,
+                    UsageSnapshot.config_revision == config.usage_revision,
+                )
+                .limit(1)
+            )
+            if has_snapshot is not None:
+                return
+            await _poll_one(config, session)
+
+
+def _initial_poll_done(task: asyncio.Task) -> None:
+    _initial_poll_tasks.discard(task)
+    if task.cancelled():
+        return
+    try:
+        task.result()
+    except HTTPException as exc:
+        if exc.status_code != 409:
+            _logger.warning("Initial provider poll failed: status=%s", exc.status_code)
+    except Exception:
+        _logger.exception("Unexpected initial provider poll failure")
+
+
+def _schedule_initial_poll(config_id: int) -> None:
+    task = asyncio.create_task(_poll_new_config(config_id))
+    _initial_poll_tasks.add(task)
+    task.add_done_callback(_initial_poll_done)
+
+
+async def stop_initial_polls() -> None:
+    tasks = tuple(_initial_poll_tasks)
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
+    _initial_poll_tasks.clear()
 
 
 @router.post(
@@ -609,7 +651,7 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
         ) from exc
     await session.refresh(config)
     if config.is_enabled:
-        asyncio.create_task(_poll_new_config(config.id))
+        _schedule_initial_poll(config.id)
     return _config_read(config)
 
 
@@ -1188,12 +1230,13 @@ async def stop_auto_polling() -> None:
     "/configs/{config_id}/poll", response_model=UsageSnapshotRead, dependencies=[Depends(require_scope("poll:write"))]
 )
 async def poll_config(config_id: int, session: AsyncSession = Depends(get_session)):
-    config = await session.get(ProviderConfig, config_id)
-    if not config:
-        raise HTTPException(status_code=404, detail="Provider config not found")
-    if not config.is_enabled:
-        raise HTTPException(status_code=409, detail="Provider config is disabled")
-    return await _poll_one(config, session)
+    async with _auto_poll_lock:
+        config = await session.get(ProviderConfig, config_id)
+        if not config:
+            raise HTTPException(status_code=404, detail="Provider config not found")
+        if not config.is_enabled:
+            raise HTTPException(status_code=409, detail="Provider config is disabled")
+        return await _poll_one(config, session)
 
 
 async def _poll_one(config: ProviderConfig, session: AsyncSession) -> UsageSnapshot:

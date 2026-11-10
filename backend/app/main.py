@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.analytics.api import router as analytics_router
-from app.api.routes import router as api_router, start_auto_polling, stop_auto_polling
+from app.api.routes import router as api_router, start_auto_polling, stop_auto_polling, stop_initial_polls
 from app.core.config import settings
 from app.datasources.api import router as datasources_router
 from app.datasources.scheduler import start_data_source_polling, stop_data_source_polling
@@ -15,6 +15,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await stop_initial_polls()
         await stop_data_source_polling()
         await stop_auto_polling()
 
