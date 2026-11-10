@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+import math
 from urllib.parse import urlparse
 
 import httpx
@@ -112,11 +113,26 @@ class OpenRouterAdapter(ProviderAdapter):
     @staticmethod
     def _number(value):
         number = OpenRouterAdapter._decimal(value)
-        return float(number) if number is not None else None
+        if number is None:
+            return None
+        try:
+            converted = float(number)
+        except (OverflowError, ValueError):
+            return None
+        return converted if math.isfinite(converted) else None
+
+    @staticmethod
+    def _object(data, context):
+        if not isinstance(data, dict):
+            raise ValueError(f"OpenRouter {context} response must be an object")
+        info = data.get("data", data)
+        if not isinstance(info, dict):
+            raise ValueError(f"OpenRouter {context} response data must be an object")
+        return info
 
     @staticmethod
     def parse_usage(data: dict) -> ProviderUsage:
-        info = data.get("data") or data
+        info = OpenRouterAdapter._object(data, "key")
         remaining = OpenRouterAdapter._number(info.get("limit_remaining"))
         limit = OpenRouterAdapter._number(info.get("limit"))
         metrics = [
@@ -132,15 +148,19 @@ class OpenRouterAdapter(ProviderAdapter):
 
     @staticmethod
     def parse_account_usage(data: dict) -> ProviderUsage:
-        info = data.get("data") or data
+        info = OpenRouterAdapter._object(data, "credits")
         purchased = OpenRouterAdapter._decimal(info.get("total_credits"))
         used = OpenRouterAdapter._decimal(info.get("total_usage"))
         if purchased is None or used is None:
             raise ValueError("OpenRouter credits response is missing finite total_credits or total_usage")
-        balance = purchased - used
-        purchased_value = float(purchased)
-        used_value = float(used)
-        balance_value = float(balance)
+        try:
+            balance = purchased - used
+            values = [float(item) for item in (balance, used, purchased)]
+        except (ArithmeticError, OverflowError, ValueError):
+            raise ValueError("OpenRouter credits response contains an unsupported numeric value") from None
+        if not all(math.isfinite(item) for item in values):
+            raise ValueError("OpenRouter credits response contains an unsupported numeric value")
+        balance_value, used_value, purchased_value = values
         metrics = [
             Metric("account_credit_balance", balance_value, "credits"),
             Metric("account_credits_used", used_value, "credits"),

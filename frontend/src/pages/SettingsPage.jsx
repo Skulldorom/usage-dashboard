@@ -581,7 +581,7 @@ export default function SettingsPage() {
       provider: form.provider,
       label: form.label.trim() || null,
       api_key: form.api_key.trim(),
-      base_url: form.base_url.trim() || null,
+      base_url: isOpenRouterAccountWide ? null : (form.base_url.trim() || null),
       is_enabled: true,
       extra: isOpenRouter ? { monitoring_mode: form.openrouter_monitoring_mode } : {},
       pricing_model: form.pricing_model,
@@ -2402,6 +2402,7 @@ export default function SettingsPage() {
                     setForm({
                       ...form,
                       openrouter_monitoring_mode: event.target.value,
+                      ...(event.target.value === "account_wide" ? { base_url: "" } : {}),
                       api_key: "",
                     })
                   }

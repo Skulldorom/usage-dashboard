@@ -560,6 +560,7 @@ async def list_configs(session: AsyncSession = Depends(get_session)):
     dependencies=[Depends(require_admin_auth)],
 )
 async def create_config(payload: ProviderConfigCreate, session: AsyncSession = Depends(get_session)):
+    _validate_openrouter_config(payload.provider, payload.base_url, payload.extra)
     try:
         get_adapter_class(payload.provider)
         encrypted = _crypto().encrypt(payload.api_key)
@@ -586,6 +587,7 @@ async def create_config(payload: ProviderConfigCreate, session: AsyncSession = D
         billing_cadence=payload.billing_cadence,
         billing_anchor=payload.billing_anchor,
     )
+    _validate_openrouter_config(config.provider, config.base_url, config.extra)
     _normalize_and_validate_billing(config)
     session.add(config)
     try:
@@ -608,7 +610,8 @@ async def test_config(payload: ProviderConfigCreate):
         )
         usage = await adapter.fetch_usage()
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        detail = "Provider connection test failed" if payload.provider == "openrouter" else str(exc)
+        raise HTTPException(status_code=400, detail=detail) from None
     return {
         "status": usage.status,
         "summary": usage.summary,
@@ -757,6 +760,34 @@ async def reorder_configs(payload: ProviderConfigOrderUpdate, session: AsyncSess
     return [_config_read(row) for row in rows]
 
 
+def _validate_openrouter_config(provider: str, base_url: str | None, extra: dict | None) -> None:
+    if provider != "openrouter":
+        return
+    extra = extra or {}
+    mode = extra.get("monitoring_mode", "individual_key")
+    if mode not in {"individual_key", "account_wide"}:
+        raise HTTPException(status_code=422, detail="OpenRouter monitoring_mode must be individual_key or account_wide")
+    if mode != "account_wide":
+        return
+    from urllib.parse import urlparse
+
+    parsed = urlparse((base_url or "https://openrouter.ai/api/v1").rstrip("/"))
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "openrouter.ai"
+        or parsed.username
+        or parsed.password
+        or parsed.port is not None
+        or parsed.path != "/api/v1"
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise HTTPException(
+            status_code=422, detail="OpenRouter account-wide monitoring requires https://openrouter.ai/api/v1"
+        )
+
+
 def _normalize_and_validate_billing(config: ProviderConfig) -> None:
     """Validate the *resulting persisted* billing combination, not just the PATCH.
 
@@ -836,6 +867,7 @@ async def update_config(config_id: int, payload: ProviderConfigUpdate, session: 
         config.billing_cadence = payload.billing_cadence
     if payload.has_update_for("billing_anchor"):
         config.billing_anchor = payload.billing_anchor
+    _validate_openrouter_config(config.provider, config.base_url, config.extra)
     _normalize_and_validate_billing(config)
     await session.commit()
     await session.refresh(config)
