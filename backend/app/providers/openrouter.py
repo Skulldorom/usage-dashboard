@@ -61,17 +61,22 @@ class OpenRouterAdapter(ProviderAdapter):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._validate_base_url()
+        self._validate_endpoint()
 
     @property
     def account_wide(self) -> bool:
-        return (self.extra.get("monitoring_mode") or "individual_key") == "account_wide"
+        mode = self.extra.get("monitoring_mode", "individual_key")
+        if mode not in {"individual_key", "account_wide"}:
+            raise ValueError("OpenRouter monitoring_mode must be individual_key or account_wide")
+        return mode == "account_wide"
 
-    def _validate_base_url(self) -> None:
+    def _validate_endpoint(self) -> None:
         parsed = urlparse(self.base_url)
         if (
             parsed.scheme != "https"
             or parsed.hostname != "openrouter.ai"
+            or parsed.username is not None
+            or parsed.password is not None
             or parsed.port is not None
             or parsed.path.rstrip("/") != "/api/v1"
             or parsed.params
@@ -82,21 +87,30 @@ class OpenRouterAdapter(ProviderAdapter):
 
     async def fetch_usage(self) -> ProviderUsage:
         headers = {"Authorization": f"Bearer {self.api_key}", "Accept": "application/json"}
-        endpoint = "credits" if self.account_wide else "key"
+        account_wide = self.account_wide
+        url = f"{self.base_url}/key"
+        if account_wide:
+            url = "https://openrouter.ai/api/v1/credits"
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            resp = await client.get(f"{self.base_url}/{endpoint}", headers=headers)
+            resp = await client.get(url, headers=headers)
             resp.raise_for_status()
             data = resp.json()
-        return self.parse_account_usage(data) if self.account_wide else self.parse_usage(data)
+        return self.parse_account_usage(data) if account_wide else self.parse_usage(data)
 
     @staticmethod
-    def _number(value):
+    def _decimal(value) -> Decimal | None:
         if value is None or isinstance(value, bool):
             return None
         try:
-            return float(Decimal(str(value)))
+            result = Decimal(str(value))
         except (InvalidOperation, ValueError):
             return None
+        return result if result.is_finite() else None
+
+    @staticmethod
+    def _number(value):
+        number = OpenRouterAdapter._decimal(value)
+        return float(number) if number is not None else None
 
     @staticmethod
     def parse_usage(data: dict) -> ProviderUsage:
@@ -117,19 +131,22 @@ class OpenRouterAdapter(ProviderAdapter):
     @staticmethod
     def parse_account_usage(data: dict) -> ProviderUsage:
         info = data.get("data") or data
-        purchased = OpenRouterAdapter._number(info.get("total_credits"))
-        used = OpenRouterAdapter._number(info.get("total_usage"))
+        purchased = OpenRouterAdapter._decimal(info.get("total_credits"))
+        used = OpenRouterAdapter._decimal(info.get("total_usage"))
         if purchased is None or used is None:
-            raise ValueError("OpenRouter credits response is missing total_credits or total_usage")
+            raise ValueError("OpenRouter credits response is missing finite total_credits or total_usage")
         balance = purchased - used
+        purchased_value = float(purchased)
+        used_value = float(used)
+        balance_value = float(balance)
         metrics = [
-            Metric("account_credit_balance", balance, "credits"),
-            Metric("account_credits_used", used, "credits"),
-            Metric("account_credits_purchased", purchased, "credits"),
+            Metric("account_credit_balance", balance_value, "credits"),
+            Metric("account_credits_used", used_value, "credits"),
+            Metric("account_credits_purchased", purchased_value, "credits"),
         ]
         return ProviderUsage(
             status="healthy",
             summary=f"{balance} account credits available",
             metrics=metrics,
-            raw={"credits": {"total_credits": purchased, "total_usage": used}},
+            raw={"credits": {"total_credits": purchased_value, "total_usage": used_value}},
         )
