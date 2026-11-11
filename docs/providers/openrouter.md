@@ -14,15 +14,15 @@ The dashboard calls `GET /api/v1/key` and shows key-level limit, remaining limit
 
 ## Account-wide credits and analytics
 
-The dashboard calls `GET https://openrouter.ai/api/v1/credits`, then prefers the official Analytics Query API. `GET /analytics/meta` validates available metrics, dimensions, granularities, and operators. `POST /analytics/query` requests only available documented account metrics (`usage`, requests, and token counts) at daily granularity for a bounded 30-day UTC range. It does not invent workspace filters, dimensions, or pagination.
+The dashboard calls `GET https://openrouter.ai/api/v1/credits`, then prefers the official Analytics Query API. `GET /analytics/meta` validates available metrics, dimensions, granularities, and operators. `POST /analytics/query` requests only metadata-advertised metrics at daily granularity. It uses `request_count` and `date__day` from the Query API response, and requests workspace, model, or upstream-provider dimensions only when metadata advertises them.
 
-The query response must contain complete `data.data` rows and `data.metadata` (`query_time_ms`, `row_count`, and `truncated`). Truncated, malformed, inconsistent, or unavailable results are rejected. On failure, the documented Activity endpoint remains the fallback. The current UTC day, future days, and invalid rows are excluded from native observations. Valid query rows replace—not add to—Activity fallback rows; native persistence upserts each day within the active configuration revision, preventing repeat-poll double counting.
+The Usage page supports 7-, 30-, 90-, and 365-day ranges plus the current calendar month. Queries and persisted totals use UTC boundaries. Account rows are authoritative; workspace, model, and provider rows are persisted and returned only as separate breakdowns, never added to account totals. The current UTC day, future days, and invalid rows are excluded from completed-day observations. Polling uses a bounded range, so it does not issue an annual historical request on every refresh.
+
+The query response must contain complete `data.data` rows and `data.metadata` (`query_time_ms`, `row_count`, and `truncated`). Truncated, malformed, inconsistent, or unavailable results are rejected. On failure, the documented Activity endpoint remains the fallback. Valid Query rows replace—not add to—Activity fallback rows; native persistence upserts each day within the active configuration revision, preventing repeat-poll double counting.
 
 Credits provide point-in-time balance; valid completed UTC-day native rows provide scoped historical spend and request/token dimensions. `account_credit_balance` is `total_credits - total_usage`; lifetime purchased and used credits are financial state, not workload or historical spend. The credits endpoint does not provide reliable account-wide daily, weekly, or monthly totals, so unavailable values are not estimated from snapshots or individual-key data.
 
 Analytics metadata distinguishes available, genuinely empty, malformed/failed, and stale compatible analytics. Unavailable analytics are not presented as zero. Credit balance remains visible when Analytics Query and Activity parsing fail. The implementation uses a fixed origin, disabled redirects, and the configured bounded request timeout for Management credentials.
-
-Workspace-wide analytics and complete arbitrary-period reporting remain unsupported under issue #242.
 
 ## Alerts and aggregation
 

@@ -409,10 +409,13 @@ async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeyp
                 "https://openrouter.ai/api/v1/credits": {"data": {"total_credits": 2, "total_usage": 0.5}},
                 "https://openrouter.ai/api/v1/analytics/meta": {
                     "data": {
-                        "metrics": [{"name": name} for name in ("usage", "requests", "prompt_tokens")],
-                        "dimensions": [{"name": "date"}],
-                        "granularities": [{"name": "day"}],
-                        "operators": [{"name": "eq"}],
+                        "metrics": [
+                            {"name": name, "display_label": name, "display_format": "number", "is_rate": False}
+                            for name in ("usage", "request_count", "prompt_tokens")
+                        ],
+                        "dimensions": [{"name": "workspace", "display_label": "Workspace"}],
+                        "granularities": [{"name": "day", "display_label": "Day"}],
+                        "operators": [{"name": "eq", "value_type": "string"}],
                     }
                 },
             }
@@ -420,14 +423,17 @@ async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeyp
 
         async def post(self, url, **kwargs):
             calls.append(("POST", url, kwargs))
+            row = {"date__day": "2026-11-09T00:00:00Z", "usage": "1.25", "request_count": 2, "prompt_tokens": 3}
+            if kwargs["json"].get("dimensions") == ["workspace"]:
+                row["workspace"] = "ws_fixture"
             return httpx.Response(
                 200,
                 json={
                     "data": {
-                        "data": [{"date": "2026-11-09T00:00:00Z", "usage": "1.25", "requests": 2, "prompt_tokens": 3}],
+                        "data": [row],
                         "metadata": {"query_time_ms": 4.0, "row_count": 1, "truncated": False},
                         "warnings": [],
-                        "cached_at": 1_731_110_400,
+                        "cachedAt": 1_731_110_400,
                     }
                 },
                 request=httpx.Request("POST", url),
@@ -444,15 +450,19 @@ async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeyp
         ("GET", "https://openrouter.ai/api/v1/credits"),
         ("GET", "https://openrouter.ai/api/v1/analytics/meta"),
         ("POST", "https://openrouter.ai/api/v1/analytics/query"),
+        ("POST", "https://openrouter.ai/api/v1/analytics/query"),
     ]
-    payload = calls[-1][2]["json"]
-    assert payload["metrics"] == ["usage", "requests", "prompt_tokens"]
-    assert payload["dimensions"] == ["date"]
-    assert payload["granularity"] == "day"
-    assert payload["order_by"] == {"field": "date", "direction": "asc"}
-    assert "filters" not in payload
+    account_payload, workspace_payload = (call[2]["json"] for call in calls[2:])
+    assert account_payload["metrics"] == ["usage", "request_count", "prompt_tokens"]
+    assert account_payload["granularity"] == "day"
+    assert account_payload["order_by"] == {"field": "date", "direction": "asc"}
+    assert "dimensions" not in account_payload
+    assert "filters" not in account_payload
+    assert workspace_payload["dimensions"] == ["workspace"]
+    assert workspace_payload["metrics"] == account_payload["metrics"]
     assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
-    assert usage.raw["analytics_query"]["metadata"]["row_count"] == 1
+    assert usage.raw["analytics_query"]["account"]["metadata"]["row_count"] == 1
+    assert usage.raw["analytics_query"]["groups"]["workspace"]["metadata"]["row_count"] == 1
     assert "activity" not in usage.raw
     assert {row["metric"]: row["value"] for row in OpenRouterAdapter.native_observations(usage.raw)} == {
         "openrouter_account_spend": 1.25,

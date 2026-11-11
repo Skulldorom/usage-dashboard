@@ -354,3 +354,21 @@ class EconomicsResponse(BaseModel):
     summary: EconomicsSummary
     providers: list[EconomicsProvider]
     provider_level: list[EconomicsProviderLevel] = Field(default_factory=list)
+
+
+class OpenRouterAnalyticsGroup(BaseModel):
+    dimension: str
+    value: str
+    totals: dict[str, float]
+
+
+class OpenRouterAnalyticsResponse(BaseModel):
+    config_id: int
+    scope: str = "account"
+    state: str
+    start: datetime
+    end: datetime
+    last_success_at: datetime | None = None
+    totals: dict[str, float] = Field(default_factory=dict)
+    groups: list[OpenRouterAnalyticsGroup] = Field(default_factory=list)
+    coverage: CoverageInfo

@@ -1,22 +1,29 @@
 import { describe, expect, it } from 'vitest'
 import { openRouterAnalyticsState } from './UsagePage.jsx'
 
+const response = {
+  config_id: 7,
+  scope: 'account',
+  state: 'ready',
+  start: '2026-10-01T00:00:00Z',
+  end: '2026-11-01T00:00:00Z',
+  last_success_at: '2026-10-31T00:00:00Z',
+  totals: { openrouter_account_spend: 12.5, openrouter_account_requests: 8 },
+  groups: [{ dimension: 'workspace', value: 'ws_alpha', totals: { openrouter_account_spend: 12.5, openrouter_account_requests: 8 } }],
+  coverage: { first_observed_at: '2026-10-01T00:00:00Z', last_observed_at: '2026-10-31T00:00:00Z', samples: 31 },
+}
+
 describe('openRouterAnalyticsState', () => {
-  it('keeps absent OpenRouter fields compatible and reports empty data', () => {
-    expect(openRouterAnalyticsState({})).toEqual({ state: 'empty', rows: [], scope: null })
-  })
-
-  it('only exposes explicitly supplied scope and preserves breakdown rows', () => {
-    const result = openRouterAnalyticsState({
-      openrouter: { account_scope: 'workspace', completeness: { state: 'partial' } },
-      activity: [{ dimension: 'spend', total: 12, providers: [{ provider: 'openrouter', label: 'workspace' }] }],
+  it('consumes the provider-scoped OpenRouter response without overview fields', () => {
+    expect(openRouterAnalyticsState(response)).toMatchObject({
+      state: 'ready', scope: 'account', totals: response.totals, lastSuccessAt: response.last_success_at,
     })
-    expect(result).toMatchObject({ state: 'partial', scope: 'workspace' })
-    expect(result.rows[0].dimension).toBe('spend')
+    expect(openRouterAnalyticsState(response).rows).toEqual(response.groups)
   })
 
-  it('surfaces stale and unavailable states without inventing scope', () => {
-    expect(openRouterAnalyticsState({ openrouter_analytics: { freshness: { state: 'stale' } } }).state).toBe('stale')
-    expect(openRouterAnalyticsState({ openrouter_status: 'permission_or_upstream_error' })).toEqual({ state: 'unavailable', rows: [], scope: null })
+  it('keeps unavailable and empty endpoint states truthful', () => {
+    expect(openRouterAnalyticsState(null)).toEqual({ state: 'unavailable', rows: [], scope: null })
+    expect(openRouterAnalyticsState({ ...response, state: 'empty', groups: [] })).toMatchObject({ state: 'empty', rows: [] })
+    expect(openRouterAnalyticsState({ ...response, state: 'unavailable' })).toEqual({ state: 'unavailable', rows: [], scope: null })
   })
 })

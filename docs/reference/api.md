@@ -29,6 +29,7 @@ All analytics endpoints require `analytics:read`.
 | `GET /analytics/overview` | `from`, `to`, `interval=hour|day|week`, `timezone` |
 | `GET /analytics/economics` | `from`, `to`, `provider`, `config_id` |
 | `GET /analytics/providers/{id}` | — |
+| `GET /analytics/providers/{id}/openrouter` | `from`, `to`, `group_by=workspace|model|provider`; authoritative account totals with separate complete grouped rows |
 | `GET /analytics/providers/{id}/capacity` | `metric`, `timezone` |
 | `GET /analytics/providers/{id}/timeseries` | `metric`, `interval`, `from`, `to`, `timezone` |
 | `GET /analytics/providers/{id}/daily` | `metric`, `from`, `to`, `timezone` |

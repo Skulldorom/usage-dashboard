@@ -80,6 +80,9 @@ async def _seed_observations(Session, config, observations):
                     window_end=obs.get("window_end"),
                     reset_at=obs.get("reset_at"),
                     config_revision=obs.get("config_revision"),
+                    model=obs.get("model"),
+                    provider_mapping=obs.get("provider_mapping"),
+                    profile=obs.get("profile"),
                 )
             )
         await session.commit()
@@ -1738,3 +1741,68 @@ async def test_overview_reconciliation_clean_when_hermes_agrees(sqlite_db):
     activity = row["audit"]["activity"]
     assert activity["reconciliation"]["has_disagreement"] is False
     assert activity["reconciliation"]["confidence_impact"] == 0
+
+
+@pytest.mark.asyncio
+async def test_openrouter_grouped_dimensions_survive_persistence_and_are_not_account_totals(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="openrouter")
+    day = (datetime.now(UTC) - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "openrouter_account_spend",
+                "value": 10,
+                "unit": "USD",
+                "source": "native",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 7,
+                "unit": "USD",
+                "source": "native_grouped",
+                "profile": "ws_a",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 3,
+                "unit": "USD",
+                "source": "native_grouped",
+                "profile": "ws_b",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 7,
+                "unit": "USD",
+                "source": "native_grouped",
+                "model": "openai/gpt",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+        ],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        account = await client.get(f"/api/v1/analytics/providers/{config.id}/openrouter", headers=ADMIN_AUTH)
+        workspaces = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/openrouter", params={"group_by": "workspace"}, headers=ADMIN_AUTH
+        )
+        models = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/openrouter", params={"group_by": "model"}, headers=ADMIN_AUTH
+        )
+    assert account.status_code == workspaces.status_code == models.status_code == 200
+    assert account.json()["totals"]["openrouter_account_spend"] == 10
+    assert {row["value"]: row["totals"]["openrouter_account_spend"] for row in workspaces.json()["groups"]} == {
+        "ws_a": 7,
+        "ws_b": 3,
+    }
+    assert models.json()["groups"] == [
+        {"dimension": "model", "value": "openai/gpt", "totals": {"openrouter_account_spend": 7}}
+    ]

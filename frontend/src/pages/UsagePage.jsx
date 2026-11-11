@@ -881,42 +881,30 @@ function ActivityShare({ dimension }) {
   )
 }
 
-export function openRouterAnalyticsState(overview) {
-  const activity = overview?.activity || []
-  const rows = activity.filter((dimension) => (dimension.providers || []).some((row) => row.provider === 'openrouter'))
-  const explicit = overview?.openrouter || overview?.openrouter_analytics
-  const status = explicit?.status || overview?.openrouter_status
-  if (status === 'unavailable' || status === 'permission_or_upstream_error') return { state: 'unavailable', rows: [], scope: null }
-  if (!rows.length && !explicit) return { state: 'empty', rows: [], scope: null }
-  const scope = explicit && (explicit.scope || explicit.account_scope || explicit.workspace_scope)
-  const stale = explicit?.stale === true || explicit?.freshness?.state === 'stale'
-  const partial = explicit?.partial === true || explicit?.completeness?.state === 'partial'
-  return { state: stale ? 'stale' : partial ? 'partial' : 'ready', rows, scope: typeof scope === 'string' ? scope : null }
+export function openRouterAnalyticsState(data) {
+  if (!data || data.state === 'unavailable') return { state: data?.state || 'unavailable', rows: [], scope: null }
+  return { state: data.state || 'unavailable', rows: data.groups || [], scope: data.scope || null, totals: data.totals || {}, coverage: data.coverage, lastSuccessAt: data.last_success_at }
 }
 
-function OpenRouterAnalyticsPanel({ overview }) {
-  const result = openRouterAnalyticsState(overview)
-  const labels = { unavailable: 'OpenRouter account analytics unavailable', empty: 'No OpenRouter account activity in this range', stale: 'OpenRouter account analytics is stale', partial: 'OpenRouter account analytics is partial' }
-  if (result.state === 'empty' || result.state === 'unavailable') {
-    return <Alert severity={result.state === 'unavailable' ? 'warning' : 'info'}>{labels[result.state]}</Alert>
-  }
-  const totals = new Map(result.rows.map((row) => [row.dimension, row]))
-  const value = (name) => totals.get(name)?.total ?? '-'
-  return (
-    <Card variant="outlined" className="glass-panel" component="section" aria-label="OpenRouter account analytics">
-      <CardContent>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 1 }}>
-          <Box><Typography variant="overline" color="primary.main">OpenRouter account analytics</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>UTC reporting; account/workspace scope is shown only when explicitly provided.</Typography></Box>
-          {(result.state === 'stale' || result.state === 'partial') && <Chip size="small" color="warning" label={labels[result.state]} />}
-        </Stack>
-        <Grid container spacing={1.5} sx={{ mb: 2 }}>
-          {[['Spend', value('spend'), 'USD'], ['Requests', value('requests'), 'requests'], ['Tokens', value('tokens'), 'tokens']].map(([label, amount, unit]) => <Grid key={label} size={{ xs: 12, sm: 4 }}><Box className="overview-stat-card"><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h6">{amount === '-' ? amount : `${amount} ${unit}`}</Typography></Box></Grid>)}
-        </Grid>
-        <Stack spacing={1}>{result.rows.map((row) => <Box key={row.dimension}><Stack direction="row" sx={{ justifyContent: 'space-between' }}><Typography variant="body2" sx={{ textTransform: 'capitalize' }}>{row.dimension} breakdown</Typography><Typography variant="body2" color="text.secondary">{row.providers?.length || 0} providers/models</Typography></Stack>{row.providers?.length === 0 && <Typography variant="caption" color="text.secondary">No breakdown data available.</Typography>}</Box>)}</Stack>
-        {result.scope && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Scope: {result.scope}</Typography>}
-      </CardContent>
-    </Card>
-  )
+function OpenRouterAnalyticsPanel({ data, groupBy, onGroupBy }) {
+  const result = openRouterAnalyticsState(data)
+  const labels = { unavailable: 'OpenRouter Analytics Query is unavailable for this credential or range.', empty: 'No completed OpenRouter UTC days are available in this range.' }
+  if (result.state === 'unavailable' || result.state === 'empty') return <Alert severity={result.state === 'unavailable' ? 'warning' : 'info'}>{labels[result.state]}</Alert>
+  const totals = result.totals
+  const metric = (key, unit) => totals[key] == null ? '—' : formatMetricValue(totals[key], unit)
+  return <Card variant="outlined" className="glass-panel" component="section" aria-label="OpenRouter account analytics">
+    <CardContent>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 1 }}>
+        <Box><Typography variant="overline" color="primary.main">OpenRouter Analytics Query</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Authoritative account totals are separate from grouped results. Completed UTC days only.</Typography></Box>
+        <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Breakdown</InputLabel><Select value={groupBy} label="Breakdown" onChange={(event) => onGroupBy(event.target.value)}><MenuItem value="workspace">Workspaces</MenuItem><MenuItem value="model">Models</MenuItem><MenuItem value="provider">Upstream providers</MenuItem></Select></FormControl>
+      </Stack>
+      <Grid container spacing={1.5} sx={{ mb: 2 }}>
+        {[["Spend", metric('openrouter_account_spend', 'USD')], ["Requests", metric('openrouter_account_requests', 'requests')], ["Prompt tokens", metric('openrouter_account_prompt_tokens', 'tokens')], ["Completion tokens", metric('openrouter_account_completion_tokens', 'tokens')]].map(([label, amount]) => <Grid key={label} size={{ xs: 6, md: 3 }}><Box className="overview-stat-card"><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h6">{amount}</Typography></Box></Grid>)}
+      </Grid>
+      {result.rows.length ? <Stack spacing={0.75}>{result.rows.map((row) => <Stack key={row.value} direction="row" sx={{ justifyContent: 'space-between', gap: 2 }}><Typography variant="body2">{row.value}</Typography><Typography variant="body2" color="text.secondary">{formatMetricValue(row.totals.openrouter_account_spend, 'USD')} · {formatMetricValue(row.totals.openrouter_account_requests, 'requests')}</Typography></Stack>)}</Stack> : <Typography variant="body2" color="text.secondary">No complete {groupBy} breakdown is available. This does not change the account total.</Typography>}
+      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Scope: {result.scope}. Last completed day: {result.lastSuccessAt ? String(result.lastSuccessAt).slice(0, 10) : '—'}.</Typography>
+    </CardContent>
+  </Card>
 }
 
 function EconomicsPanel({ economics }) {
@@ -1068,6 +1056,8 @@ export default function UsagePage() {
   const [comparison, setComparison] = useState(null)
   const [forecast, setForecast] = useState(null)
   const [capacity, setCapacity] = useState(null)
+  const [openRouterAnalytics, setOpenRouterAnalytics] = useState(null)
+  const [openRouterGroupBy, setOpenRouterGroupBy] = useState('workspace')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [overviewMode, setOverviewMode] = useState('capacity')
@@ -1132,6 +1122,7 @@ export default function UsagePage() {
       setComparison(null)
       setForecast(null)
       setCapacity(null)
+      setOpenRouterAnalytics(null)
       try {
         const info = await api.analyticsProvider(selectedId)
         if (cancelled) return
@@ -1171,13 +1162,15 @@ export default function UsagePage() {
         setComparison(comparisonData)
         setForecast(forecastData)
         setEconomics(economicsData)
+        const selectedConfig = configs.find((item) => String(item.config.id) === String(selectedId))
+        if (selectedConfig?.config?.provider === 'openrouter') setOpenRouterAnalytics(await api.analyticsOpenRouter(selectedId, { from, to, group_by: openRouterGroupBy }).catch(() => null))
       } catch (err) {
         if (!cancelled) setError(err.message)
       }
     }
     loadData()
     return () => { cancelled = true }
-  }, [selectedId, metric, interval, range])
+  }, [selectedId, metric, interval, range, openRouterGroupBy, configs])
 
   const metricType = useMemo(() => {
     if (!providerInfo) return 'gauge'
@@ -1263,6 +1256,7 @@ export default function UsagePage() {
                     <MenuItem value="hour">Hourly</MenuItem>
                     <MenuItem value="day">Daily</MenuItem>
                     <MenuItem value="week">Weekly</MenuItem>
+                    <MenuItem value="month">Calendar month</MenuItem>
                   </Select>
                 </FormControl>
               </Stack>
@@ -1343,6 +1337,8 @@ export default function UsagePage() {
           {providerInfo && !providerInfo.supported && (
             <Alert severity="info">This provider exposes generic point history only - advanced analytics (forecasts, pacing) are unavailable.</Alert>
           )}
+
+          {providerInfo && openRouterAnalytics && <OpenRouterAnalyticsPanel data={openRouterAnalytics} groupBy={openRouterGroupBy} onGroupBy={setOpenRouterGroupBy} />}
 
           {providerInfo && economics && <EconomicsPanel economics={economics} />}
 

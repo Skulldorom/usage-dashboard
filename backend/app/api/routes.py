@@ -1033,6 +1033,9 @@ def _observation_row(config: ProviderConfig, obs) -> UsageObservation:
         window_start=obs.window_start,
         window_end=obs.window_end,
         reset_at=obs.reset_at,
+        model=obs.model,
+        provider_mapping=obs.provider_mapping,
+        profile=obs.profile,
     )
 
 
@@ -1043,6 +1046,10 @@ def _observation_key(obs) -> tuple:
         _as_utc(getattr(obs, "window_start", None)),
         _as_utc(getattr(obs, "window_end", None)),
         _as_utc(obs.observed_at),
+        getattr(obs, "model", None),
+        getattr(obs, "provider_mapping", None),
+        getattr(obs, "profile", None),
+        getattr(obs, "source", None),
     )
 
 

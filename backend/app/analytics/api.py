@@ -46,6 +46,8 @@ from app.analytics.schemas import (
     OverviewPressure,
     OverviewProvider,
     OverviewRisk,
+    OpenRouterAnalyticsGroup,
+    OpenRouterAnalyticsResponse,
     ProviderCapacity,
 )
 from app.analytics.types import Observation
@@ -295,6 +297,64 @@ async def provider_analytics(config_id: int, session: AsyncSession = Depends(get
         native_history=bool(capabilities.get("native_history")),
         metrics=metric_infos,
         preferred_metric=preferred,
+    )
+
+
+@router.get(
+    "/providers/{config_id}/openrouter",
+    response_model=OpenRouterAnalyticsResponse,
+    dependencies=[Depends(require_scope("analytics:read"))],
+)
+async def openrouter_analytics(
+    config_id: int,
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    group_by: str | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    config = await _get_config(session, config_id)
+    if config.provider != "openrouter":
+        raise HTTPException(status_code=404, detail="OpenRouter analytics is unavailable for this provider")
+    if group_by not in {None, "workspace", "model", "provider"}:
+        raise HTTPException(status_code=400, detail="group_by must be workspace, model, or provider")
+    now = datetime.now(UTC)
+    end = _as_aware(to_) if to_ else now
+    start = _as_aware(from_) if from_ else end - timedelta(days=DEFAULT_RANGE_DAYS)
+    if end <= start or end - start > timedelta(days=370):
+        raise HTTPException(status_code=400, detail="range must be positive and no longer than 370 days")
+    observations = await _load_observations(session, config_id, start=start, end=end)
+    account = [obs for obs in observations if obs.source == "native" and obs.metric.startswith("openrouter_account_")]
+    grouped = [
+        obs for obs in observations if obs.source == "native_grouped" and obs.metric.startswith("openrouter_account_")
+    ]
+    latest = max((obs.observed_at for obs in account), default=None)
+    state = "ready" if account else "unavailable"
+    totals = _delta_sums_by_metric(account, start, end)
+    group_rows = []
+    if group_by:
+        field = {"workspace": "profile", "model": "model", "provider": "provider_mapping"}[group_by]
+        grouped_totals: dict[str, dict[str, float]] = {}
+        for obs in grouped:
+            value = getattr(obs, field)
+            if not value:
+                continue
+            bucket = grouped_totals.setdefault(value, {})
+            bucket[obs.metric] = round(bucket.get(obs.metric, 0.0) + obs.value, 4)
+        group_rows = [
+            OpenRouterAnalyticsGroup(dimension=group_by, value=value, totals=totals)
+            for value, totals in sorted(grouped_totals.items())
+        ]
+    coverage = series_coverage(account)
+    return OpenRouterAnalyticsResponse(
+        config_id=config.id,
+        scope="workspace" if group_by == "workspace" else "account",
+        state=state,
+        start=start,
+        end=end,
+        last_success_at=latest,
+        totals=totals,
+        groups=group_rows,
+        coverage=CoverageInfo(**coverage),
     )
 
 
@@ -812,7 +872,7 @@ def _delta_sums_by_metric(observations: list[Observation], start: datetime, end:
         if obs.kind != "delta" or not (start <= obs.observed_at < end):
             continue
         totals[obs.metric] = totals.get(obs.metric, 0.0) + obs.value
-    return {metric: round(value, 4) for metric, value in sorted(totals.items()) if value}
+    return {metric: round(value, 4) for metric, value in sorted(totals.items())}
 
 
 def _provider_total_for_hermes_metric(

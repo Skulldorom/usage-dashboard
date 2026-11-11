@@ -161,10 +161,13 @@ def normalize_native(native: list[dict]) -> list[Observation]:
                 unit=item.get("unit"),
                 observed_at=item["observed_at"],
                 kind=item.get("kind") or "delta",
-                source="native",
+                source=item.get("source") or "native",
                 window_start=item.get("window_start"),
                 window_end=item.get("window_end"),
                 reset_at=item.get("reset_at"),
+                model=item.get("model"),
+                provider_mapping=item.get("provider_mapping"),
+                profile=item.get("scope"),
             )
         )
     return observations
