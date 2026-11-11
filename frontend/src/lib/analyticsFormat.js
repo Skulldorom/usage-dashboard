@@ -81,6 +81,7 @@ export const RANGE_OPTIONS = [
   { value: '30d', label: '30 days', days: 30 },
   { value: 'month', label: 'This month', days: null },
   { value: '90d', label: '90 days', days: 90 },
+  { value: '365d', label: 'Past year', days: 365 },
 ]
 
 export const DEFAULT_RANGE = '30d'

@@ -80,6 +80,9 @@ async def _seed_observations(Session, config, observations):
                     window_end=obs.get("window_end"),
                     reset_at=obs.get("reset_at"),
                     config_revision=obs.get("config_revision"),
+                    model=obs.get("model"),
+                    provider_mapping=obs.get("provider_mapping"),
+                    profile=obs.get("profile"),
                 )
             )
         await session.commit()
@@ -1738,3 +1741,166 @@ async def test_overview_reconciliation_clean_when_hermes_agrees(sqlite_db):
     activity = row["audit"]["activity"]
     assert activity["reconciliation"]["has_disagreement"] is False
     assert activity["reconciliation"]["confidence_impact"] == 0
+
+
+@pytest.mark.asyncio
+async def test_openrouter_grouped_dimensions_survive_persistence_and_are_not_account_totals(sqlite_db):
+    Session = sqlite_db
+    config = await _create_config(Session, provider="openrouter")
+    day = (datetime.now(UTC) - timedelta(days=2)).replace(hour=0, minute=0, second=0, microsecond=0)
+    await _seed_observations(
+        Session,
+        config,
+        [
+            {
+                "metric": "openrouter_account_spend",
+                "value": 10,
+                "unit": "USD",
+                "source": "native",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 7,
+                "unit": "USD",
+                "source": "native_grouped",
+                "profile": "ws_a",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 3,
+                "unit": "USD",
+                "source": "native_grouped",
+                "profile": "ws_b",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+            {
+                "metric": "openrouter_account_spend",
+                "value": 7,
+                "unit": "USD",
+                "source": "native_grouped",
+                "model": "openai/gpt",
+                "observed_at": day,
+                "config_revision": 1,
+            },
+        ],
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        account = await client.get(f"/api/v1/analytics/providers/{config.id}/openrouter", headers=ADMIN_AUTH)
+        workspaces = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/openrouter", params={"group_by": "workspace"}, headers=ADMIN_AUTH
+        )
+        models = await client.get(
+            f"/api/v1/analytics/providers/{config.id}/openrouter", params={"group_by": "model"}, headers=ADMIN_AUTH
+        )
+    assert account.status_code == workspaces.status_code == models.status_code == 200
+    assert account.json()["totals"]["openrouter_account_spend"] == 10
+    # Legacy grouped rows have no matching verified query window. They may not
+    # be represented as an authoritative complete breakdown.
+    assert workspaces.json()["groups"] == []
+    assert workspaces.json()["grouping_state"] == "partial"
+    assert models.json()["groups"] == []
+    assert models.json()["grouping_state"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_grouped_native_polls_are_idempotent_and_dimensioned(sqlite_db, monkeypatch):
+    """Account and each breakdown bucket are separate, replaceable identities."""
+    Session = sqlite_db
+    monkeypatch.setitem(ADAPTERS, "nativefake", NativeFakeAdapter)
+    config = await _create_config(Session, provider="nativefake")
+    day = datetime(2026, 9, 1, tzinfo=UTC)
+    NativeFakeAdapter.native = [
+        {
+            "metric": "openrouter_account_spend",
+            "value": 10,
+            "unit": "USD",
+            "kind": "delta",
+            "source": "native",
+            "observed_at": day,
+        },
+        {
+            "metric": "openrouter_account_spend",
+            "value": 4,
+            "unit": "USD",
+            "kind": "delta",
+            "source": "native_grouped",
+            "scope": "ws-a",
+            "observed_at": day,
+        },
+        {
+            "metric": "openrouter_account_spend",
+            "value": 6,
+            "unit": "USD",
+            "kind": "delta",
+            "source": "native_grouped",
+            "scope": "ws-b",
+            "observed_at": day,
+        },
+        {
+            "metric": "openrouter_account_spend",
+            "value": 10,
+            "unit": "USD",
+            "kind": "delta",
+            "source": "native_grouped",
+            "model": "model-a",
+            "observed_at": day,
+        },
+        {
+            "metric": "openrouter_account_spend",
+            "value": 10,
+            "unit": "USD",
+            "kind": "delta",
+            "source": "native_grouped",
+            "provider_mapping": "upstream-a",
+            "observed_at": day,
+        },
+    ]
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        for _ in range(3):
+            assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
+
+    async with Session() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(UsageObservation).where(
+                        UsageObservation.provider_config_id == config.id,
+                        UsageObservation.source.in_(("native", "native_grouped")),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 5
+    assert sum(row.value for row in rows if row.source == "native") == 10
+    assert {(row.profile, row.model, row.provider_mapping) for row in rows if row.source == "native_grouped"} == {
+        ("ws-a", None, None),
+        ("ws-b", None, None),
+        (None, "model-a", None),
+        (None, None, "upstream-a"),
+    }
+
+    NativeFakeAdapter.native[1]["value"] = 5
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.post(f"/api/v1/configs/{config.id}/poll", headers=ADMIN_AUTH)).status_code == 200
+    async with Session() as session:
+        rows = (
+            (
+                await session.execute(
+                    select(UsageObservation).where(
+                        UsageObservation.provider_config_id == config.id,
+                        UsageObservation.source.in_(("native", "native_grouped")),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert len(rows) == 5
+    assert next(row.value for row in rows if row.profile == "ws-a") == 5

@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 
 from app.analytics.types import Observation
 
-INTERVALS = {"hour": "hourly", "day": "daily", "week": "weekly"}
+INTERVALS = {"hour": "hourly", "day": "daily", "week": "weekly", "month": "monthly"}
 
 
 @dataclass(slots=True)
@@ -47,9 +47,19 @@ def bucket_start(dt: datetime, interval: str, tz: ZoneInfo) -> datetime:
         floored = local.replace(hour=0, minute=0, second=0, microsecond=0)
     elif interval == "week":
         floored = (local - timedelta(days=local.weekday())).replace(hour=0, minute=0, second=0, microsecond=0)
+    elif interval == "month":
+        floored = local.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     else:
         raise ValueError(f"Unsupported interval: {interval}")
     return floored
+
+
+def bucket_end(start: datetime, interval: str) -> datetime:
+    if interval == "month":
+        return (
+            start.replace(year=start.year + 1, month=1) if start.month == 12 else start.replace(month=start.month + 1)
+        )
+    return start + bucket_span(interval)
 
 
 def bucket_span(interval: str) -> timedelta:
@@ -112,7 +122,7 @@ def bucketize(
     if interval not in INTERVALS:
         raise ValueError(f"Unsupported interval: {interval}")
     zone = resolve_tz(tz)
-    span = bucket_span(interval)
+    span = bucket_span(interval) if interval != "month" else timedelta(days=31)
     relevant = [obs for obs in observations if obs.metric == metric]
     if start is not None:
         relevant = [obs for obs in relevant if obs.observed_at >= _as_aware(start)]
@@ -161,7 +171,7 @@ def bucketize(
         buckets.append(
             Bucket(
                 start=key,
-                end=key + span,
+                end=bucket_end(key, interval),
                 total=entry["total"],
                 value=entry["value"],
                 min=entry["min"],
@@ -185,7 +195,6 @@ def fill_buckets(
 ) -> list[Bucket]:
     """Insert empty buckets between ``start`` and ``end`` so gaps are explicit."""
     zone = resolve_tz(tz)
-    span = bucket_span(interval)
     existing = {bucket.start: bucket for bucket in buckets}
     if start is not None and end is not None:
         first = bucket_start(_as_aware(start), interval, zone)
@@ -193,6 +202,6 @@ def fill_buckets(
         cursor = first
         while cursor <= last:
             if cursor not in existing:
-                existing[cursor] = Bucket(start=cursor, end=cursor + span)
-            cursor += span
+                existing[cursor] = Bucket(start=cursor, end=bucket_end(cursor, interval))
+            cursor = bucket_end(cursor, interval)
     return [existing[key] for key in sorted(existing)]

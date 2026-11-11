@@ -314,7 +314,8 @@ async def test_openrouter_account_mode_uses_fixed_credits_endpoint_without_redir
         "https://openrouter.ai/api/v1/credits",
         {"headers": {"Authorization": "Bearer management-secret", "Accept": "application/json"}},
     )
-    assert calls[1][0] == "https://openrouter.ai/api/v1/activity"
+    assert calls[1][0] == "https://openrouter.ai/api/v1/analytics/meta"
+    assert calls[2][0] == "https://openrouter.ai/api/v1/activity"
     assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
     assert usage.metrics[0].value == 0.75
 
@@ -389,3 +390,107 @@ def test_openrouter_native_observations_reject_incomplete_current_utc_day(monkey
         {"activity": {"data": [{"date": "2026-11-10T00:00:00Z", "usage": 1}]}}
     )
     assert observations == []
+
+
+@pytest.mark.asyncio
+async def test_openrouter_account_mode_prefers_validated_analytics_query(monkeypatch):
+    calls, client_options = [], []
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, url, **kwargs):
+            calls.append(("GET", url, kwargs))
+            payloads = {
+                "https://openrouter.ai/api/v1/credits": {"data": {"total_credits": 2, "total_usage": 0.5}},
+                "https://openrouter.ai/api/v1/analytics/meta": {
+                    "data": {
+                        "metrics": [
+                            {"name": name, "display_label": name, "display_format": "number", "is_rate": False}
+                            for name in ("usage", "request_count", "prompt_tokens")
+                        ],
+                        "dimensions": [{"name": "workspace", "display_label": "Workspace"}],
+                        "granularities": [{"name": "day", "display_label": "Day"}],
+                        "operators": [{"name": "eq", "value_type": "string"}],
+                    }
+                },
+            }
+            return httpx.Response(200, json=payloads[url], request=httpx.Request("GET", url))
+
+        async def post(self, url, **kwargs):
+            calls.append(("POST", url, kwargs))
+            row = {"date__day": "2026-11-09T00:00:00Z", "usage": "1.25", "request_count": 2, "prompt_tokens": 3}
+            if kwargs["json"].get("dimensions") == ["workspace"]:
+                row["workspace"] = "ws_fixture"
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "data": [row],
+                        "metadata": {"query_time_ms": 4.0, "row_count": 1, "truncated": False},
+                        "warnings": [],
+                        "cachedAt": 1_731_110_400,
+                    }
+                },
+                request=httpx.Request("POST", url),
+            )
+
+    def client_factory(**kwargs):
+        client_options.append(kwargs)
+        return FakeClient()
+
+    monkeypatch.setattr("app.providers.openrouter.httpx.AsyncClient", client_factory)
+    usage = await OpenRouterAdapter("management-secret", extra={"monitoring_mode": "account_wide"}).fetch_usage()
+
+    assert [call[:2] for call in calls] == [
+        ("GET", "https://openrouter.ai/api/v1/credits"),
+        ("GET", "https://openrouter.ai/api/v1/analytics/meta"),
+        ("POST", "https://openrouter.ai/api/v1/analytics/query"),
+        ("POST", "https://openrouter.ai/api/v1/analytics/query"),
+    ]
+    account_payload, workspace_payload = (call[2]["json"] for call in calls[2:])
+    assert account_payload["metrics"] == ["usage", "request_count", "prompt_tokens"]
+    assert account_payload["granularity"] == "day"
+    assert account_payload["order_by"] == {"field": "date", "direction": "asc"}
+    assert "dimensions" not in account_payload
+    assert "filters" not in account_payload
+    assert workspace_payload["dimensions"] == ["workspace"]
+    assert workspace_payload["metrics"] == account_payload["metrics"]
+    assert client_options == [{"timeout": 20.0, "follow_redirects": False}]
+    assert usage.raw["analytics_query"]["account"]["metadata"]["row_count"] == 1
+    assert usage.raw["analytics_query"]["groups"]["workspace"]["metadata"]["row_count"] == 1
+    assert "activity" not in usage.raw
+    assert {row["metric"]: row["value"] for row in OpenRouterAdapter.native_observations(usage.raw)} == {
+        "openrouter_account_spend": 1.25,
+        "openrouter_account_requests": 2.0,
+        "openrouter_account_prompt_tokens": 3.0,
+    }
+
+
+def test_openrouter_analytics_query_rejects_truncated_or_malformed_results():
+    payload = {"data": {"data": [], "metadata": {"query_time_ms": 1, "row_count": 0, "truncated": True}}}
+    with pytest.raises(ValueError, match="incomplete"):
+        OpenRouterAdapter._sanitize_analytics_query(payload, ["usage"])
+    payload["data"]["metadata"] = {"query_time_ms": 1, "row_count": 1, "truncated": False}
+    with pytest.raises(ValueError, match="incomplete"):
+        OpenRouterAdapter._sanitize_analytics_query(payload, ["usage"])
+
+
+def test_openrouter_backfill_uses_bounded_windows_and_stops_after_completion(monkeypatch):
+    adapter = OpenRouterAdapter("test", extra={"monitoring_mode": "account_wide", "_analytics_revision": 1})
+    monkeypatch.setattr(
+        "app.providers.openrouter.datetime",
+        type("Clock", (), {"now": staticmethod(lambda _tz: datetime(2026, 11, 11, tzinfo=_tz))}),
+    )
+    first, is_backfill = adapter._analytics_time_range()
+    assert is_backfill is True
+    assert first["start"] == "2025-11-11T00:00:00Z"
+    assert first["end"] == "2025-12-11T00:00:00Z"
+    adapter.extra["_analytics_state"] = {"next_backfill_start": "2026-11-11T00:00:00Z", "backfill_complete": True}
+    recent, is_backfill = adapter._analytics_time_range()
+    assert is_backfill is False
+    assert recent == {"start": "2026-10-12T00:00:00Z", "end": "2026-11-11T00:00:00Z"}

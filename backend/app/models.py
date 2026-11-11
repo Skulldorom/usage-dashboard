@@ -112,6 +112,23 @@ class UsageObservation(Base):
 
     __tablename__ = "usage_observations"
     __table_args__ = (
+        # A provider may refresh the same completed daily bucket concurrently.
+        # Group dimensions are part of identity; NULL dimensions are normalized
+        # so account rows and each independent breakdown remain distinct.
+        Index(
+            "ux_usage_observations_native_identity",
+            "provider_config_id",
+            text("coalesce(config_revision, 1)"),
+            "source",
+            "metric",
+            "observed_at",
+            text("coalesce(model, '')"),
+            text("coalesce(provider_mapping, '')"),
+            text("coalesce(profile, '')"),
+            unique=True,
+            sqlite_where=text("source IN ('native', 'native_grouped')"),
+            postgresql_where=text("source IN ('native', 'native_grouped')"),
+        ),
         # Idempotency guard for data-source telemetry: within a single data
         # source, each source event ID is unique. Provider observations leave
         # data_source_id/source_event_id NULL, so the partial predicate keeps
@@ -155,6 +172,80 @@ class UsageObservation(Base):
     cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OpenRouterAnalyticsWindow(Base):
+    """A verified, completed UTC query window.  Rows are immutable coverage evidence."""
+
+    __tablename__ = "openrouter_analytics_windows"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_config_id",
+            "config_revision",
+            "scope",
+            "workspace_id",
+            "grouping",
+            "window_start",
+            "window_end",
+            name="uq_openrouter_analytics_window_identity",
+        ),
+        Index(
+            "ix_openrouter_analytics_windows_lookup",
+            "provider_config_id",
+            "config_revision",
+            "scope",
+            "workspace_id",
+            "grouping",
+            "window_start",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_config_id: Mapped[int] = mapped_column(
+        ForeignKey("provider_configs.id", ondelete="CASCADE"), nullable=False
+    )
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    grouping: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_empty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class OpenRouterAnalyticsState(Base):
+    """Persisted OpenRouter query evidence, scoped to a credential revision."""
+
+    __tablename__ = "openrouter_analytics_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_config_id",
+            "config_revision",
+            "scope",
+            "workspace_id",
+            "grouping",
+            name="uq_openrouter_analytics_state_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_config_id: Mapped[int] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    grouping: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    requested_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    backfill_cursor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backfill_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class DataSourceConfig(Base):

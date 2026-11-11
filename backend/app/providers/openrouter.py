@@ -2,6 +2,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
 
@@ -12,6 +13,9 @@ from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 
 
 class OpenRouterAdapter(ProviderAdapter):
+    _analytics_origin = "https://openrouter.ai/api/v1"
+    _analytics_days = 30
+    _analytics_retention_days = 365
     id = "openrouter"
     name = "OpenRouter"
     description = "OpenRouter API key limits or account-wide credit balances."
@@ -137,34 +141,262 @@ class OpenRouterAdapter(ProviderAdapter):
                 return self.parse_usage(resp.json())
 
         async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=False) as client:
-            credits_resp = await client.get("https://openrouter.ai/api/v1/credits", headers=headers)
+            credits_resp = await client.get(f"{self._analytics_origin}/credits", headers=headers)
             credits_resp.raise_for_status()
             credits = credits_resp.json()
+            analytics = None
             activity = None
             analytics_status = "failed"
             analytics_error = None
             try:
-                activity_resp = await client.get("https://openrouter.ai/api/v1/activity", headers=headers)
-                activity_resp.raise_for_status()
-                parsed = activity_resp.json()
-                activity = self._sanitize_activity(parsed)
-                analytics_status = "success" if activity["data"] else "empty"
+                analytics = await self._fetch_analytics(client, headers)
+                analytics_status = "success" if analytics["account"]["data"] else "empty"
             except httpx.HTTPStatusError as exc:
                 analytics_error = (
                     "permission_or_upstream_error" if exc.response.status_code in {401, 403, 404} else "upstream_error"
                 )
             except (httpx.HTTPError, ValueError):
                 analytics_error = "malformed_or_network_error"
+            if analytics is None:
+                try:
+                    activity_resp = await client.get(f"{self._analytics_origin}/activity", headers=headers)
+                    activity_resp.raise_for_status()
+                    activity = self._sanitize_activity(activity_resp.json())
+                    analytics_status = "success" if activity["data"] else "empty"
+                    analytics_error = None
+                except httpx.HTTPStatusError as exc:
+                    analytics_error = (
+                        "permission_or_upstream_error"
+                        if exc.response.status_code in {401, 403, 404}
+                        else "upstream_error"
+                    )
+                except (httpx.HTTPError, ValueError):
+                    analytics_error = "malformed_or_network_error"
         usage = self.parse_account_usage(credits)
         usage.analytics_status = analytics_status
         usage.analytics_error = analytics_error
-        usage.raw["analytics"] = {
-            "status": analytics_status,
-            "error": analytics_error,
-        }
-        if activity is not None:
+        usage.raw["analytics"] = {"status": analytics_status, "error": analytics_error}
+        if analytics is not None:
+            usage.raw["analytics_query"] = analytics
+        elif activity is not None:
             usage.raw["activity"] = activity
         return usage
+
+    _analytics_metric_aliases = {
+        "openrouter_account_spend": ("usage", "spend", "cost"),
+        "openrouter_account_requests": ("request_count",),
+        "openrouter_account_prompt_tokens": ("prompt_tokens", "input_tokens"),
+        "openrouter_account_completion_tokens": ("completion_tokens", "output_tokens"),
+        "openrouter_account_reasoning_tokens": ("reasoning_tokens",),
+    }
+    _analytics_group_dimensions = ("workspace", "model", "provider")
+
+    async def _fetch_analytics(self, client: httpx.AsyncClient, headers: dict[str, str]) -> dict:
+        meta_response = await client.get(f"{self._analytics_origin}/analytics/meta", headers=headers)
+        meta_response.raise_for_status()
+        meta = self._sanitize_analytics_meta(meta_response.json())
+        metric_by_name = {metric["name"]: metric for metric in meta["metrics"]}
+        granularities = {item["name"] for item in meta["granularities"]}
+        if "day" not in granularities:
+            raise ValueError("OpenRouter analytics metadata lacks daily granularity")
+        metrics = self._supported_metrics(metric_by_name)
+        if not metrics:
+            raise ValueError("OpenRouter analytics metadata lacks supported account metrics")
+        time_range, backfill = self._analytics_time_range()
+        workspace_id = self._analytics_workspace_id(meta)
+        filters = [{"field": "workspace", "operator": "eq", "value": workspace_id}] if workspace_id else None
+        account = await self._query_analytics(client, headers, metrics, time_range, filters=filters)
+        groups = {}
+        supported_dimensions = {item["name"] for item in meta["dimensions"]}
+        for dimension in self._analytics_group_dimensions:
+            if dimension not in supported_dimensions:
+                continue
+            try:
+                groups[dimension] = await self._query_analytics(
+                    client, headers, metrics, time_range, dimensions=[dimension], filters=filters
+                )
+            except httpx.HTTPStatusError as exc:
+                groups[dimension] = {
+                    "error": "unauthorized" if exc.response.status_code in {401, 403} else "unavailable"
+                }
+            except (httpx.HTTPError, ValueError):
+                # Persist a failure marker.  A stale grouped result is never complete.
+                groups[dimension] = {"error": "malformed_or_unavailable"}
+        return {
+            "account": account,
+            "groups": groups,
+            "meta": meta,
+            "metric_map": metrics,
+            "window": time_range,
+            "backfill": backfill,
+            "scope": "workspace" if workspace_id else "account",
+            "workspace_id": workspace_id,
+        }
+
+    def _analytics_workspace_id(self, meta: dict) -> str | None:
+        workspace_id = self.extra.get("analytics_workspace_id")
+        if workspace_id is None:
+            return None
+        if not isinstance(workspace_id, str):
+            raise ValueError("OpenRouter analytics_workspace_id must be a workspace UUID")
+        try:
+            workspace_id = str(UUID(workspace_id.strip()))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("OpenRouter analytics_workspace_id must be a workspace UUID") from exc
+        dimensions = {item["name"] for item in meta["dimensions"]}
+        operators = {item["name"] for item in meta["operators"]}
+        if "workspace" not in dimensions or "eq" not in operators:
+            raise ValueError("OpenRouter analytics metadata does not support workspace eq filtering")
+        return workspace_id
+
+    @classmethod
+    def _supported_metrics(cls, metric_by_name: dict[str, dict]) -> dict[str, str]:
+        selected = {}
+        for native_metric, aliases in cls._analytics_metric_aliases.items():
+            name = next((alias for alias in aliases if alias in metric_by_name), None)
+            if name:
+                selected[native_metric] = name
+        return selected
+
+    async def _query_analytics(
+        self,
+        client,
+        headers: dict[str, str],
+        metric_map: dict[str, str],
+        time_range: dict[str, str],
+        dimensions: list[str] | None = None,
+        filters: list[dict] | None = None,
+    ) -> dict:
+        payload = {
+            "metrics": list(metric_map.values()),
+            "granularity": "day",
+            "time_range": time_range,
+            "limit": 1000,
+            "order_by": {"field": "date", "direction": "asc"},
+        }
+        if filters:
+            payload["filters"] = filters
+        if dimensions:
+            if len(dimensions) > 2:
+                raise ValueError("OpenRouter supports at most two analytics dimensions")
+            payload["dimensions"] = dimensions
+        response = await client.post(f"{self._analytics_origin}/analytics/query", headers=headers, json=payload)
+        response.raise_for_status()
+        return self._sanitize_analytics_query(response.json(), metric_map, dimensions or [])
+
+    def _analytics_time_range(self) -> tuple[dict[str, str], bool]:
+        """Return one bounded UTC window; initial history advances across polls."""
+        now = datetime.now(UTC).replace(microsecond=0)
+        completed_end = now.replace(hour=0, minute=0, second=0)
+        state = self.extra.get("_analytics_state", {})
+        state = state if isinstance(state, dict) else {}
+        cursor = parse_time(state.get("next_backfill_start"))
+        retention_start = completed_end - timedelta(days=self._analytics_retention_days)
+        if cursor is None and not state.get("backfill_complete"):
+            cursor = retention_start
+        if cursor is not None and cursor < completed_end:
+            start = max(cursor.astimezone(UTC), retention_start)
+            end = min(start + timedelta(days=self._analytics_days), completed_end)
+            backfill = True
+        else:
+            start = max(completed_end - timedelta(days=self._analytics_days), retention_start)
+            end = completed_end
+            backfill = False
+        return (
+            {"start": start.isoformat().replace("+00:00", "Z"), "end": end.isoformat().replace("+00:00", "Z")},
+            backfill,
+        )
+
+    @staticmethod
+    def _sanitize_analytics_meta(data: object) -> dict:
+        info = data.get("data") if isinstance(data, dict) else None
+        if not isinstance(info, dict):
+            raise ValueError("OpenRouter analytics metadata response must contain data")
+        required = {
+            "metrics": ("name", "display_label", "display_format", "is_rate"),
+            "dimensions": ("name", "display_label"),
+            "granularities": ("name", "display_label"),
+            "operators": ("name", "value_type"),
+        }
+        result = {}
+        for field, keys in required.items():
+            values = info.get(field)
+            if not isinstance(values, list):
+                raise ValueError(f"OpenRouter analytics metadata {field} must be a list")
+            normalized = []
+            for value in values:
+                if not isinstance(value, dict) or any(
+                    not isinstance(value.get(key), str) and key != "is_rate" for key in keys
+                ):
+                    raise ValueError(f"OpenRouter analytics metadata {field} contains an invalid entry")
+                if not isinstance(value.get("name"), str) or not value["name"].strip():
+                    raise ValueError(f"OpenRouter analytics metadata {field} contains an invalid name")
+                item = {key: value[key] for key in keys}
+                if field == "metrics" and not isinstance(item["is_rate"], bool):
+                    raise ValueError("OpenRouter analytics metric is_rate must be boolean")
+                normalized.append(item)
+            result[field] = normalized
+        return result
+
+    @staticmethod
+    def _sanitize_analytics_query(
+        data: object, metric_map: dict[str, str] | list[str], dimensions: list[str] | None = None
+    ) -> dict:
+        if isinstance(metric_map, list):
+            metric_map = {metric: metric for metric in metric_map}
+        dimensions = dimensions or []
+        outer = data.get("data") if isinstance(data, dict) else None
+        if (
+            not isinstance(outer, dict)
+            or not isinstance(outer.get("data"), list)
+            or not isinstance(outer.get("metadata"), dict)
+        ):
+            raise ValueError("OpenRouter analytics query response must contain data and metadata")
+        metadata = outer["metadata"]
+        if (
+            isinstance(metadata.get("query_time_ms"), bool)
+            or not isinstance(metadata.get("query_time_ms"), (int, float))
+            or isinstance(metadata.get("row_count"), bool)
+            or not isinstance(metadata.get("row_count"), int)
+            or not isinstance(metadata.get("truncated"), bool)
+            or metadata["row_count"] < 0
+        ):
+            raise ValueError("OpenRouter analytics query metadata is invalid")
+        if metadata["truncated"] or metadata["row_count"] != len(outer["data"]):
+            raise ValueError("OpenRouter analytics query results are incomplete")
+        rows = []
+        for row in outer["data"]:
+            date = row.get("date__day") if isinstance(row, dict) else None
+            if parse_time(date) is None:
+                raise ValueError("OpenRouter analytics query contains an invalid UTC daily row")
+            item = {"date": date}
+            for dimension in dimensions:
+                value = row.get(dimension)
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError("OpenRouter analytics query contains an invalid dimension")
+                item[dimension] = value.strip()
+            for native_metric, upstream_metric in metric_map.items():
+                if upstream_metric not in row:
+                    continue
+                value = OpenRouterAdapter._number(row[upstream_metric])
+                if value is None or value < 0:
+                    raise ValueError("OpenRouter analytics query contains an invalid metric")
+                item[native_metric] = value
+            if any(metric in item for metric in metric_map):
+                rows.append(item)
+        warnings = outer.get("warnings", [])
+        if not isinstance(warnings, list) or not all(isinstance(item, str) for item in warnings):
+            raise ValueError("OpenRouter analytics query warnings are invalid")
+        cached_at = outer.get("cachedAt")
+        if cached_at is not None and OpenRouterAdapter._number(cached_at) is None:
+            raise ValueError("OpenRouter analytics query cachedAt is invalid")
+        return {
+            "data": rows,
+            "metadata": metadata,
+            "warnings": warnings,
+            "cached_at": cached_at,
+            "dimensions": dimensions,
+        }
 
     @staticmethod
     def _sanitize_activity(data: object) -> dict:
@@ -215,48 +447,64 @@ class OpenRouterAdapter(ProviderAdapter):
 
     @staticmethod
     def native_observations(raw: dict) -> list[dict]:
-        """Normalize documented, completed UTC activity rows into observations."""
-        activity = raw.get("activity") if isinstance(raw, dict) else None
-        rows = activity.get("data") if isinstance(activity, dict) else None
-        if not isinstance(rows, list):
+        """Persist completed account rows and non-authoritative grouped rows separately."""
+        if not isinstance(raw, dict):
             return []
+        query = raw.get("analytics_query")
+        activity = raw.get("activity")
+        sources = []
+        if isinstance(query, dict):
+            account = query.get("account")
+            if isinstance(account, dict):
+                sources.append((account.get("data"), "native", query.get("workspace_id"), None))
+            for dimension, grouped in (query.get("groups") or {}).items():
+                if isinstance(grouped, dict):
+                    sources.append((grouped.get("data"), "native_grouped", query.get("workspace_id"), dimension))
+        elif isinstance(activity, dict):
+            sources.append((activity.get("data"), "native", None, None))
         observations = []
-        for row in rows:
-            if not isinstance(row, dict):
+        for rows, source, scope_override, group_dimension in sources:
+            if not isinstance(rows, list):
                 continue
-            day = parse_time(row.get("date"))
-            if day is None:
-                continue
-            start = day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            end = start + timedelta(days=1)
-            if end > datetime.now(UTC):
-                continue
-            dimensions = {
-                "openrouter_account_spend": (row.get("usage"), "USD"),
-                "openrouter_account_requests": (row.get("requests"), "requests"),
-                "openrouter_account_prompt_tokens": (row.get("prompt_tokens"), "tokens"),
-                "openrouter_account_completion_tokens": (row.get("completion_tokens"), "tokens"),
-                "openrouter_account_reasoning_tokens": (row.get("reasoning_tokens"), "tokens"),
-            }
-            scope = row.get("workspace_id")
-            for metric, (value, unit) in dimensions.items():
-                number = OpenRouterAdapter._number(value)
-                if number is None:
+            for row in rows:
+                if not isinstance(row, dict):
                     continue
-                observations.append(
-                    {
-                        "metric": metric,
-                        "value": number,
-                        "unit": unit,
-                        "observed_at": start,
-                        "window_start": start,
-                        "window_end": end,
-                        "kind": "delta",
-                        "scope": scope,
-                        "model": row.get("model"),
-                        "provider_mapping": row.get("provider_name"),
-                    }
-                )
+                day = parse_time(row.get("date"))
+                if day is None:
+                    continue
+                start = day.astimezone(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+                end = start + timedelta(days=1)
+                if end > datetime.now(UTC):
+                    continue
+                scope = scope_override or row.get("workspace") or row.get("workspace_id")
+                model = row.get("model")
+                upstream = row.get("provider") or row.get("provider_name")
+                for metric, unit, legacy in (
+                    ("openrouter_account_spend", "USD", "usage"),
+                    ("openrouter_account_requests", "requests", "requests"),
+                    ("openrouter_account_prompt_tokens", "tokens", "prompt_tokens"),
+                    ("openrouter_account_completion_tokens", "tokens", "completion_tokens"),
+                    ("openrouter_account_reasoning_tokens", "tokens", "reasoning_tokens"),
+                ):
+                    number = OpenRouterAdapter._number(row.get(metric, row.get(legacy)))
+                    if number is None:
+                        continue
+                    observations.append(
+                        {
+                            "metric": metric,
+                            "value": number,
+                            "unit": unit,
+                            "observed_at": start,
+                            "window_start": start,
+                            "window_end": end,
+                            "kind": "delta",
+                            "source": source,
+                            "scope": scope,
+                            "model": model,
+                            "provider_mapping": upstream,
+                            "group_dimension": group_dimension,
+                        }
+                    )
         return observations
 
     @staticmethod
