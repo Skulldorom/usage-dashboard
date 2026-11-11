@@ -67,7 +67,13 @@ from app.analytics.reconciliation import (
 from app.analytics.utilization import utilization_metric, utilization_metrics, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
-from app.models import DataSourceConfig, OpenRouterAnalyticsState, OpenRouterAnalyticsWindow, ProviderConfig, UsageObservation
+from app.models import (
+    DataSourceConfig,
+    OpenRouterAnalyticsState,
+    OpenRouterAnalyticsWindow,
+    ProviderConfig,
+    UsageObservation,
+)
 from app.providers.registry import get_adapter_class
 from app.schemas import (
     Attribution,
@@ -311,9 +317,12 @@ async def provider_analytics(config_id: int, session: AsyncSession = Depends(get
     dependencies=[Depends(require_scope("analytics:read"))],
 )
 async def openrouter_analytics(
-    config_id: int, from_: datetime | None = Query(default=None, alias="from"),
-    to_: datetime | None = Query(default=None, alias="to"), group_by: str | None = None,
-    workspace_id: str | None = Query(default=None, min_length=1, max_length=128), session: AsyncSession = Depends(get_session),
+    config_id: int,
+    from_: datetime | None = Query(default=None, alias="from"),
+    to_: datetime | None = Query(default=None, alias="to"),
+    group_by: str | None = None,
+    workspace_id: str | None = Query(default=None, min_length=1, max_length=128),
+    session: AsyncSession = Depends(get_session),
 ):
     config = await _get_config(session, config_id)
     if config.provider != "openrouter":
@@ -333,16 +342,41 @@ async def openrouter_analytics(
     start = _as_aware(from_) if from_ else end - timedelta(days=DEFAULT_RANGE_DAYS)
     if end <= start or end - start > timedelta(days=370):
         raise HTTPException(status_code=400, detail="range must be positive and no longer than 370 days")
-    states = (await session.execute(select(OpenRouterAnalyticsState).where(
-        OpenRouterAnalyticsState.provider_config_id == config.id, OpenRouterAnalyticsState.config_revision == config.usage_revision,
-        OpenRouterAnalyticsState.scope == scope, OpenRouterAnalyticsState.workspace_id == workspace))).scalars().all()
+    states = (
+        (
+            await session.execute(
+                select(OpenRouterAnalyticsState).where(
+                    OpenRouterAnalyticsState.provider_config_id == config.id,
+                    OpenRouterAnalyticsState.config_revision == config.usage_revision,
+                    OpenRouterAnalyticsState.scope == scope,
+                    OpenRouterAnalyticsState.workspace_id == workspace,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
     evidence = {row.grouping: row for row in states}
     account_evidence = evidence.get("")
-    windows = (await session.execute(select(OpenRouterAnalyticsWindow).where(
-        OpenRouterAnalyticsWindow.provider_config_id == config.id, OpenRouterAnalyticsWindow.config_revision == config.usage_revision,
-        OpenRouterAnalyticsWindow.scope == scope, OpenRouterAnalyticsWindow.workspace_id == workspace,
-        OpenRouterAnalyticsWindow.grouping == "", OpenRouterAnalyticsWindow.window_end > start,
-        OpenRouterAnalyticsWindow.window_start < end).order_by(OpenRouterAnalyticsWindow.window_start))).scalars().all()
+    windows = (
+        (
+            await session.execute(
+                select(OpenRouterAnalyticsWindow)
+                .where(
+                    OpenRouterAnalyticsWindow.provider_config_id == config.id,
+                    OpenRouterAnalyticsWindow.config_revision == config.usage_revision,
+                    OpenRouterAnalyticsWindow.scope == scope,
+                    OpenRouterAnalyticsWindow.workspace_id == workspace,
+                    OpenRouterAnalyticsWindow.grouping == "",
+                    OpenRouterAnalyticsWindow.window_end > start,
+                    OpenRouterAnalyticsWindow.window_start < end,
+                )
+                .order_by(OpenRouterAnalyticsWindow.window_start)
+            )
+        )
+        .scalars()
+        .all()
+    )
     cursor, covered = start, timedelta()
     for window in windows:
         left, right = max(cursor, window.window_start), min(end, window.window_end)
@@ -351,16 +385,37 @@ async def openrouter_analytics(
             cursor = max(cursor, right)
     expected = max(0, int((end - start).total_seconds() // 86400))
     actual = min(expected, int(covered.total_seconds() // 86400))
-    coverage = CoverageInfo(expected=expected, actual=actual, coverage=round(actual / expected, 4) if expected else 0.0, span_seconds=expected * 86400)
+    coverage = CoverageInfo(
+        expected=expected,
+        actual=actual,
+        coverage=round(actual / expected, 4) if expected else 0.0,
+        span_seconds=expected * 86400,
+    )
     observations = await _load_observations(session, config_id, start=start, end=end, include_grouped=True)
-    account = [o for o in observations if o.source == "native" and o.metric.startswith("openrouter_account_") and (not workspace_id or o.profile == workspace_id)]
-    grouped = [o for o in observations if o.source == "native_grouped" and o.metric.startswith("openrouter_account_") and (not workspace_id or o.profile == workspace_id)]
+    account = [
+        o
+        for o in observations
+        if o.source == "native"
+        and o.metric.startswith("openrouter_account_")
+        and (not workspace_id or o.profile == workspace_id)
+    ]
+    grouped = [
+        o
+        for o in observations
+        if o.source == "native_grouped"
+        and o.metric.startswith("openrouter_account_")
+        and (not workspace_id or o.profile == workspace_id)
+    ]
     if account_evidence is None:
         state = "partial" if account else "unavailable"
-    elif account_evidence.status == "failed": state = "stale" if account_evidence.last_success_at else "unavailable"
-    elif actual < expected: state = "partial"
-    elif account_evidence.status == "empty": state = "empty"
-    else: state = "ready"
+    elif account_evidence.status == "failed":
+        state = "stale" if account_evidence.last_success_at else "unavailable"
+    elif actual < expected:
+        state = "partial"
+    elif account_evidence.status == "empty":
+        state = "empty"
+    else:
+        state = "ready"
     totals = _delta_sums_by_metric(account, start, end) if state in {"ready", "partial", "stale"} else {}
     group_evidence = evidence.get(group_by or "")
     group_rows = []
@@ -369,12 +424,35 @@ async def openrouter_analytics(
         field = {"workspace": "profile", "model": "model", "provider": "provider_mapping"}[group_by]
         aggregate: dict[str, dict[str, float]] = {}
         for obs in grouped:
-            if value := getattr(obs, field): aggregate.setdefault(value, {})[obs.metric] = round(aggregate.setdefault(value, {}).get(obs.metric, 0) + obs.value, 4)
-        group_rows = [OpenRouterAnalyticsGroup(dimension=group_by, value=k, totals=v) for k, v in sorted(aggregate.items())]
-    return OpenRouterAnalyticsResponse(config_id=config.id, scope=scope, workspace_id=workspace_id, state=state, start=start, end=end,
-        last_success_at=account_evidence.last_success_at if account_evidence else None, last_observed_at=max((o.observed_at for o in account), default=None), totals=totals, groups=group_rows, coverage=coverage,
-        capabilities={"workspace_filter": bool(configured_workspace), "account_scope": not bool(configured_workspace), "grouping": bool(group_ready)},
-        grouping_state=group_evidence.status if group_evidence else ("partial" if group_by and grouped else "unavailable"))
+            if value := getattr(obs, field):
+                aggregate.setdefault(value, {})[obs.metric] = round(
+                    aggregate.setdefault(value, {}).get(obs.metric, 0) + obs.value, 4
+                )
+        group_rows = [
+            OpenRouterAnalyticsGroup(dimension=group_by, value=k, totals=v) for k, v in sorted(aggregate.items())
+        ]
+    return OpenRouterAnalyticsResponse(
+        config_id=config.id,
+        scope=scope,
+        workspace_id=workspace_id,
+        state=state,
+        start=start,
+        end=end,
+        last_success_at=account_evidence.last_success_at if account_evidence else None,
+        last_observed_at=max((o.observed_at for o in account), default=None),
+        totals=totals,
+        groups=group_rows,
+        coverage=coverage,
+        capabilities={
+            "workspace_filter": bool(configured_workspace),
+            "account_scope": not bool(configured_workspace),
+            "grouping": bool(group_ready),
+        },
+        grouping_state=group_evidence.status
+        if group_evidence
+        else ("partial" if group_by and grouped else "unavailable"),
+    )
+
 
 @router.get(
     "/providers/{config_id}/capacity",

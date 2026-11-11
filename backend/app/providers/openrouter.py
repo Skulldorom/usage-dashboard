@@ -216,7 +216,9 @@ class OpenRouterAdapter(ProviderAdapter):
                     client, headers, metrics, time_range, dimensions=[dimension], filters=filters
                 )
             except httpx.HTTPStatusError as exc:
-                groups[dimension] = {"error": "unauthorized" if exc.response.status_code in {401, 403} else "unavailable"}
+                groups[dimension] = {
+                    "error": "unauthorized" if exc.response.status_code in {401, 403} else "unavailable"
+                }
             except (httpx.HTTPError, ValueError):
                 # Persist a failure marker.  A stale grouped result is never complete.
                 groups[dimension] = {"error": "malformed_or_unavailable"}
