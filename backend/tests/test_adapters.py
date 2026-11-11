@@ -478,3 +478,19 @@ def test_openrouter_analytics_query_rejects_truncated_or_malformed_results():
     payload["data"]["metadata"] = {"query_time_ms": 1, "row_count": 1, "truncated": False}
     with pytest.raises(ValueError, match="incomplete"):
         OpenRouterAdapter._sanitize_analytics_query(payload, ["usage"])
+
+
+def test_openrouter_backfill_uses_bounded_windows_and_stops_after_completion(monkeypatch):
+    adapter = OpenRouterAdapter("test", extra={"monitoring_mode": "account_wide", "_analytics_revision": 1})
+    monkeypatch.setattr(
+        "app.providers.openrouter.datetime",
+        type("Clock", (), {"now": staticmethod(lambda _tz: datetime(2026, 11, 11, tzinfo=_tz))}),
+    )
+    first, is_backfill = adapter._analytics_time_range()
+    assert is_backfill is True
+    assert first["start"] == "2025-11-11T00:00:00Z"
+    assert first["end"] == "2025-12-11T00:00:00Z"
+    adapter.extra["_analytics_state"] = {"next_backfill_start": "2026-11-11T00:00:00Z", "backfill_complete": True}
+    recent, is_backfill = adapter._analytics_time_range()
+    assert is_backfill is False
+    assert recent == {"start": "2026-10-12T00:00:00Z", "end": "2026-11-11T00:00:00Z"}

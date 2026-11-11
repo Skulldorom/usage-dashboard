@@ -317,8 +317,14 @@ async def test_openrouter_account_config_persists_mode_rotates_credential_and_po
         polled = await client.post(f"/api/v1/configs/{config_id}/poll", headers=auth)
         assert polled.status_code == 200, polled.text
         assert OpenRouterProbe.observed == [
-            ("management-secret", {"monitoring_mode": "account_wide"}),
-            ("management-secret", {"monitoring_mode": "account_wide"}),
+            (
+                "management-secret",
+                {"monitoring_mode": "account_wide", "_analytics_revision": 1, "_analytics_state": {}},
+            ),
+            (
+                "management-secret",
+                {"monitoring_mode": "account_wide", "_analytics_revision": 1, "_analytics_state": {}},
+            ),
         ]
         assert polled.json()["metrics"][0]["label"] == "account_credit_balance"
 

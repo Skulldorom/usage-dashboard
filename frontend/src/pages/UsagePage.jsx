@@ -881,27 +881,40 @@ function ActivityShare({ dimension }) {
   )
 }
 
-export function openRouterAnalyticsState(data) {
-  if (!data || data.state === 'unavailable') return { state: data?.state || 'unavailable', rows: [], scope: null }
-  return { state: data.state || 'unavailable', rows: data.groups || [], scope: data.scope || null, totals: data.totals || {}, coverage: data.coverage, lastSuccessAt: data.last_success_at }
+export function openRouterAnalyticsState(data, requestedGroupBy = null) {
+  const allowedStates = new Set(['ready', 'empty', 'partial', 'stale', 'unavailable', 'unsupported', 'unauthorized'])
+  const state = allowedStates.has(data?.state) ? data.state : 'unavailable'
+  const available = state === 'ready' || state === 'partial' || state === 'stale'
+  const rows = available ? (data?.groups || []).filter((row) => !requestedGroupBy || row.dimension === requestedGroupBy) : []
+  return { state, rows, scope: available ? data?.scope || null : null, workspace: available ? data?.workspace || null : null, grouping: available ? data?.grouping || requestedGroupBy || null : null, totals: available ? data?.totals || {} : {}, coverage: available ? data?.coverage : undefined, lastSuccessAt: available ? data?.last_success_at : undefined }
 }
 
-function OpenRouterAnalyticsPanel({ data, groupBy, onGroupBy }) {
-  const result = openRouterAnalyticsState(data)
-  const labels = { unavailable: 'OpenRouter Analytics Query is unavailable for this credential or range.', empty: 'No completed OpenRouter UTC days are available in this range.' }
-  if (result.state === 'unavailable' || result.state === 'empty') return <Alert severity={result.state === 'unavailable' ? 'warning' : 'info'}>{labels[result.state]}</Alert>
+export function OpenRouterAnalyticsPanel({ data, groupBy, onGroupBy, error = '', loading = false }) {
+  const result = openRouterAnalyticsState(data, groupBy)
+  const labels = {
+    empty: 'No completed OpenRouter UTC days are available in this range.',
+    partial: 'OpenRouter Analytics data is partial for this range; totals may be incomplete.',
+    stale: 'OpenRouter Analytics data is stale; the last successful result is shown.',
+    unavailable: 'OpenRouter Analytics Query is unavailable for this credential or range.',
+    unsupported: 'OpenRouter Analytics is unsupported for this credential.',
+    unauthorized: 'OpenRouter Analytics is unauthorized for this credential.'
+  }
+  if (loading) return <Alert severity="info">Loading OpenRouter Analytics…</Alert>
+  if (error) return <Alert severity="error">OpenRouter Analytics request failed: {error}</Alert>
+  if (result.state !== 'ready') return <Alert severity={['unavailable', 'unsupported', 'unauthorized'].includes(result.state) ? 'warning' : 'info'}>{labels[result.state]}</Alert>
   const totals = result.totals
+  const groupLabel = result.grouping || groupBy
   const metric = (key, unit) => totals[key] == null ? '—' : formatMetricValue(totals[key], unit)
   return <Card variant="outlined" className="glass-panel" component="section" aria-label="OpenRouter account analytics">
     <CardContent>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} sx={{ justifyContent: 'space-between', mb: 1 }}>
-        <Box><Typography variant="overline" color="primary.main">OpenRouter Analytics Query</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Authoritative account totals are separate from grouped results. Completed UTC days only.</Typography></Box>
+        <Box><Typography variant="overline" color="primary.main">OpenRouter Analytics Query</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Authoritative account totals are separate from grouped results. Completed UTC days only.</Typography><Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>Scope: {result.scope || '—'}{result.workspace ? ` · Workspace: ${result.workspace}` : ''} · Grouping: {groupLabel || 'none'}</Typography></Box>
         <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Breakdown</InputLabel><Select value={groupBy} label="Breakdown" onChange={(event) => onGroupBy(event.target.value)}><MenuItem value="workspace">Workspaces</MenuItem><MenuItem value="model">Models</MenuItem><MenuItem value="provider">Upstream providers</MenuItem></Select></FormControl>
       </Stack>
       <Grid container spacing={1.5} sx={{ mb: 2 }}>
         {[["Spend", metric('openrouter_account_spend', 'USD')], ["Requests", metric('openrouter_account_requests', 'requests')], ["Prompt tokens", metric('openrouter_account_prompt_tokens', 'tokens')], ["Completion tokens", metric('openrouter_account_completion_tokens', 'tokens')]].map(([label, amount]) => <Grid key={label} size={{ xs: 6, md: 3 }}><Box className="overview-stat-card"><Typography variant="caption" color="text.secondary">{label}</Typography><Typography variant="h6">{amount}</Typography></Box></Grid>)}
       </Grid>
-      {result.rows.length ? <Stack spacing={0.75}>{result.rows.map((row) => <Stack key={row.value} direction="row" sx={{ justifyContent: 'space-between', gap: 2 }}><Typography variant="body2">{row.value}</Typography><Typography variant="body2" color="text.secondary">{formatMetricValue(row.totals.openrouter_account_spend, 'USD')} · {formatMetricValue(row.totals.openrouter_account_requests, 'requests')}</Typography></Stack>)}</Stack> : <Typography variant="body2" color="text.secondary">No complete {groupBy} breakdown is available. This does not change the account total.</Typography>}
+      {result.rows.length ? <Stack spacing={0.75}>{result.rows.map((row) => <Stack key={row.value} direction="row" sx={{ justifyContent: 'space-between', gap: 2 }}><Typography variant="body2">{row.value}</Typography><Typography variant="body2" color="text.secondary">{formatMetricValue(row.totals.openrouter_account_spend, 'USD')} · {formatMetricValue(row.totals.openrouter_account_requests, 'requests')}</Typography></Stack>)}</Stack> : <Typography variant="body2" color="text.secondary">No complete {groupLabel} breakdown is available. This does not change the account total.</Typography>}
       <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Scope: {result.scope}. Last completed day: {result.lastSuccessAt ? String(result.lastSuccessAt).slice(0, 10) : '—'}.</Typography>
     </CardContent>
   </Card>
@@ -1057,6 +1070,8 @@ export default function UsagePage() {
   const [forecast, setForecast] = useState(null)
   const [capacity, setCapacity] = useState(null)
   const [openRouterAnalytics, setOpenRouterAnalytics] = useState(null)
+  const [openRouterAnalyticsError, setOpenRouterAnalyticsError] = useState('')
+  const [openRouterAnalyticsLoading, setOpenRouterAnalyticsLoading] = useState(false)
   const [openRouterGroupBy, setOpenRouterGroupBy] = useState('workspace')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -1123,6 +1138,8 @@ export default function UsagePage() {
       setForecast(null)
       setCapacity(null)
       setOpenRouterAnalytics(null)
+      setOpenRouterAnalyticsError('')
+      setOpenRouterAnalyticsLoading(false)
       try {
         const info = await api.analyticsProvider(selectedId)
         if (cancelled) return
@@ -1163,7 +1180,18 @@ export default function UsagePage() {
         setForecast(forecastData)
         setEconomics(economicsData)
         const selectedConfig = configs.find((item) => String(item.config.id) === String(selectedId))
-        if (selectedConfig?.config?.provider === 'openrouter') setOpenRouterAnalytics(await api.analyticsOpenRouter(selectedId, { from, to, group_by: openRouterGroupBy }).catch(() => null))
+        if (selectedConfig?.config?.provider === 'openrouter') {
+          setOpenRouterAnalyticsLoading(true)
+          setOpenRouterAnalyticsError('')
+          try {
+            const analytics = await api.analyticsOpenRouter(selectedId, { from, to, group_by: openRouterGroupBy })
+            if (!cancelled) setOpenRouterAnalytics(analytics)
+          } catch (err) {
+            if (!cancelled) { setOpenRouterAnalytics(null); setOpenRouterAnalyticsError(err.message || 'Unknown error') }
+          } finally {
+            if (!cancelled) setOpenRouterAnalyticsLoading(false)
+          }
+        }
       } catch (err) {
         if (!cancelled) setError(err.message)
       }
@@ -1337,7 +1365,7 @@ export default function UsagePage() {
             <Alert severity="info">This provider exposes generic point history only - advanced analytics (forecasts, pacing) are unavailable.</Alert>
           )}
 
-          {providerInfo && openRouterAnalytics && <OpenRouterAnalyticsPanel data={openRouterAnalytics} groupBy={openRouterGroupBy} onGroupBy={setOpenRouterGroupBy} />}
+          {providerInfo?.provider === 'openrouter' && <OpenRouterAnalyticsPanel data={openRouterAnalytics} groupBy={openRouterGroupBy} onGroupBy={setOpenRouterGroupBy} error={openRouterAnalyticsError} loading={openRouterAnalyticsLoading} />}
 
           {providerInfo && economics && <EconomicsPanel economics={economics} />}
 

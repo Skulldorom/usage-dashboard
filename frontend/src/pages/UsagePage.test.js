@@ -1,5 +1,36 @@
+import React from 'react'
+import { renderToString } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { openRouterAnalyticsState } from './UsagePage.jsx'
+import { OpenRouterAnalyticsPanel, openRouterAnalyticsState } from './UsagePage.jsx'
+
+const renderPanel = (props) => renderToString(React.createElement(OpenRouterAnalyticsPanel, { groupBy: 'workspace', onGroupBy: () => {}, ...props }))
+
+const states = ['ready', 'empty', 'partial', 'stale', 'unavailable', 'unsupported', 'unauthorized']
+
+it.each(states)('preserves the %s response state', (state) => {
+  expect(openRouterAnalyticsState({ state }).state).toBe(state)
+})
+
+it('renders response errors instead of hiding failed analytics requests', () => {
+  expect(renderPanel({ data: null, error: 'Forbidden' })).toContain('OpenRouter Analytics request failed:')
+  expect(renderPanel({ data: null, error: 'Forbidden' })).toContain('Forbidden')
+})
+
+it('renders scope, workspace, and declared grouping without claiming unsupported groups', () => {
+  const html = renderPanel({ data: { state: 'ready', scope: 'account', workspace: 'ws_alpha', grouping: 'workspace', totals: {}, groups: [{ dimension: 'model', value: 'wrong', totals: {} }, { dimension: 'workspace', value: 'ws_alpha', totals: {} }] } })
+  expect(html).toContain('Workspace: ws_alpha')
+  expect(html).toContain('Grouping:')
+  expect(html).toContain('workspace')
+  expect(html).toContain('ws_alpha')
+  expect(html).not.toContain('wrong')
+})
+
+it('renders all non-ready contract states with their truthful labels', () => {
+  expect(renderPanel({ data: { state: 'partial' } })).toContain('data is partial')
+  expect(renderPanel({ data: { state: 'stale' } })).toContain('data is stale')
+  expect(renderPanel({ data: { state: 'unsupported' } })).toContain('unsupported')
+  expect(renderPanel({ data: { state: 'unauthorized' } })).toContain('unauthorized')
+})
 
 const response = {
   config_id: 7,
@@ -22,8 +53,8 @@ describe('openRouterAnalyticsState', () => {
   })
 
   it('keeps unavailable and empty endpoint states truthful', () => {
-    expect(openRouterAnalyticsState(null)).toEqual({ state: 'unavailable', rows: [], scope: null })
+    expect(openRouterAnalyticsState(null)).toMatchObject({ state: 'unavailable', rows: [], scope: null })
     expect(openRouterAnalyticsState({ ...response, state: 'empty', groups: [] })).toMatchObject({ state: 'empty', rows: [] })
-    expect(openRouterAnalyticsState({ ...response, state: 'unavailable' })).toEqual({ state: 'unavailable', rows: [], scope: null })
+    expect(openRouterAnalyticsState({ ...response, state: 'unavailable' })).toMatchObject({ state: 'unavailable', rows: [], scope: null })
   })
 })

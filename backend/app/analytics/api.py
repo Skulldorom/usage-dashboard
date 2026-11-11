@@ -67,7 +67,7 @@ from app.analytics.reconciliation import (
 from app.analytics.utilization import utilization_metric, utilization_metrics, utilization_observations
 from app.core.auth import require_scope
 from app.database import get_session
-from app.models import DataSourceConfig, ProviderConfig, UsageObservation
+from app.models import DataSourceConfig, OpenRouterAnalyticsState, ProviderConfig, UsageObservation
 from app.providers.registry import get_adapter_class
 from app.schemas import (
     Attribution,
@@ -315,6 +315,7 @@ async def openrouter_analytics(
     from_: datetime | None = Query(default=None, alias="from"),
     to_: datetime | None = Query(default=None, alias="to"),
     group_by: str | None = None,
+    workspace_id: str | None = Query(default=None, min_length=1, max_length=128),
     session: AsyncSession = Depends(get_session),
 ):
     config = await _get_config(session, config_id)
@@ -327,39 +328,114 @@ async def openrouter_analytics(
     start = _as_aware(from_) if from_ else end - timedelta(days=DEFAULT_RANGE_DAYS)
     if end <= start or end - start > timedelta(days=370):
         raise HTTPException(status_code=400, detail="range must be positive and no longer than 370 days")
+    configured_workspace = (config.extra or {}).get("analytics_workspace_id")
+    if workspace_id and configured_workspace != workspace_id:
+        raise HTTPException(status_code=403, detail="This credential is not authorized for the selected workspace")
+    scope, workspace = ("workspace", workspace_id) if workspace_id else ("account", "")
+    state_rows = (
+        (
+            await session.execute(
+                select(OpenRouterAnalyticsState).where(
+                    OpenRouterAnalyticsState.provider_config_id == config.id,
+                    OpenRouterAnalyticsState.config_revision == config.usage_revision,
+                    OpenRouterAnalyticsState.scope == scope,
+                    OpenRouterAnalyticsState.workspace_id == workspace,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    evidence = {row.grouping: row for row in state_rows}
+    account_evidence = evidence.get("")
+    if workspace_id and account_evidence is None:
+        return OpenRouterAnalyticsResponse(
+            config_id=config.id,
+            scope=scope,
+            workspace_id=workspace_id,
+            state="unavailable",
+            start=start,
+            end=end,
+            capabilities={"workspace_filter": True},
+            coverage=CoverageInfo(expected=0, actual=0, coverage=0.0, span_seconds=0),
+        )
     observations = await _load_observations(session, config_id, start=start, end=end, include_grouped=True)
-    account = [obs for obs in observations if obs.source == "native" and obs.metric.startswith("openrouter_account_")]
-    grouped = [
-        obs for obs in observations if obs.source == "native_grouped" and obs.metric.startswith("openrouter_account_")
+    account = [
+        obs
+        for obs in observations
+        if obs.source == "native"
+        and obs.metric.startswith("openrouter_account_")
+        and (not workspace_id or obs.profile == workspace_id)
     ]
-    latest = max((obs.observed_at for obs in account), default=None)
-    state = "ready" if account else "unavailable"
-    totals = _delta_sums_by_metric(account, start, end)
+    grouped = [
+        obs
+        for obs in observations
+        if obs.source == "native_grouped"
+        and obs.metric.startswith("openrouter_account_")
+        and (not workspace_id or obs.profile == workspace_id)
+    ]
+    requested_days = max(0, (end.date() - start.date()).days)
+    complete_days = 0
+    if account_evidence and account_evidence.completed_start and account_evidence.completed_end:
+        complete_days = max(
+            0,
+            (
+                min(end, account_evidence.completed_end).date() - max(start, account_evidence.completed_start).date()
+            ).days,
+        )
+    coverage = {
+        "expected": requested_days,
+        "actual": min(requested_days, complete_days),
+        "coverage": round(min(requested_days, complete_days) / requested_days, 4) if requested_days else 0.0,
+        "span_seconds": requested_days * 86400,
+    }
+    if account_evidence is None:
+        # Legacy rows predate persisted query evidence. They remain usable only as
+        # explicitly partial data; no observation spacing is treated as coverage.
+        state = "partial" if account else "unavailable"
+    elif account_evidence.status == "failed":
+        state = "stale" if account_evidence.last_success_at else "unavailable"
+    elif complete_days < requested_days:
+        state = "partial"
+    elif account_evidence.status == "empty":
+        state = "empty"
+    else:
+        state = "ready"
+    totals = _delta_sums_by_metric(account, start, end) if state in {"ready", "partial", "stale"} else {}
     group_rows = []
-    if group_by:
+    group_evidence = evidence.get(group_by or "")
+    if group_by and (group_evidence is None or group_evidence.status in {"ready", "empty"}):
         field = {"workspace": "profile", "model": "model", "provider": "provider_mapping"}[group_by]
         grouped_totals: dict[str, dict[str, float]] = {}
         for obs in grouped:
             value = getattr(obs, field)
-            if not value:
-                continue
-            bucket = grouped_totals.setdefault(value, {})
-            bucket[obs.metric] = round(bucket.get(obs.metric, 0.0) + obs.value, 4)
+            if value:
+                grouped_totals.setdefault(value, {})[obs.metric] = round(
+                    grouped_totals.setdefault(value, {}).get(obs.metric, 0.0) + obs.value, 4
+                )
         group_rows = [
-            OpenRouterAnalyticsGroup(dimension=group_by, value=value, totals=group_totals)
-            for value, group_totals in sorted(grouped_totals.items())
+            OpenRouterAnalyticsGroup(dimension=group_by, value=value, totals=values)
+            for value, values in sorted(grouped_totals.items())
         ]
-    coverage = series_coverage(account)
     return OpenRouterAnalyticsResponse(
         config_id=config.id,
-        scope="account",
+        scope=scope,
+        workspace_id=workspace_id,
         state=state,
         start=start,
         end=end,
-        last_success_at=latest,
+        last_success_at=account_evidence.last_success_at if account_evidence else None,
+        last_observed_at=max((obs.observed_at for obs in account), default=None),
         totals=totals,
         groups=group_rows,
         coverage=CoverageInfo(**coverage),
+        capabilities={
+            "workspace_filter": bool(configured_workspace),
+            "grouping": group_by in evidence if group_by else True,
+        },
+        grouping_state=group_evidence.status
+        if group_evidence
+        else ("partial" if group_by and grouped else ("unavailable" if group_by else None)),
     )
 
 

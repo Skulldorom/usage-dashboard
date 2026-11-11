@@ -14,6 +14,7 @@ from app.providers.base import Metric, ProviderAdapter, ProviderUsage
 class OpenRouterAdapter(ProviderAdapter):
     _analytics_origin = "https://openrouter.ai/api/v1"
     _analytics_days = 30
+    _analytics_retention_days = 365
     id = "openrouter"
     name = "OpenRouter"
     description = "OpenRouter API key limits or account-wide credit balances."
@@ -200,8 +201,10 @@ class OpenRouterAdapter(ProviderAdapter):
         metrics = self._supported_metrics(metric_by_name)
         if not metrics:
             raise ValueError("OpenRouter analytics metadata lacks supported account metrics")
-        time_range = self._analytics_time_range()
-        account = await self._query_analytics(client, headers, metrics, time_range)
+        time_range, backfill = self._analytics_time_range()
+        workspace_id = self._analytics_workspace_id(meta)
+        filters = [{"field": "workspace", "operator": "eq", "value": workspace_id}] if workspace_id else None
+        account = await self._query_analytics(client, headers, metrics, time_range, filters=filters)
         groups = {}
         supported_dimensions = {item["name"] for item in meta["dimensions"]}
         for dimension in self._analytics_group_dimensions:
@@ -209,13 +212,32 @@ class OpenRouterAdapter(ProviderAdapter):
                 continue
             try:
                 groups[dimension] = await self._query_analytics(
-                    client, headers, metrics, time_range, dimensions=[dimension]
+                    client, headers, metrics, time_range, dimensions=[dimension], filters=filters
                 )
             except (httpx.HTTPError, ValueError):
                 # The ungrouped query remains authoritative. A failed or incomplete
                 # breakdown is unavailable, never substituted into its total.
                 continue
-        return {"account": account, "groups": groups, "meta": meta, "metric_map": metrics}
+        return {
+            "account": account,
+            "groups": groups,
+            "meta": meta,
+            "metric_map": metrics,
+            "window": time_range,
+            "backfill": backfill,
+            "scope": "workspace" if workspace_id else "account",
+            "workspace_id": workspace_id,
+        }
+
+    def _analytics_workspace_id(self, meta: dict) -> str | None:
+        workspace_id = self.extra.get("analytics_workspace_id")
+        if workspace_id is None:
+            return None
+        if not isinstance(workspace_id, str) or not workspace_id.strip():
+            raise ValueError("OpenRouter analytics_workspace_id must be a non-empty workspace UUID")
+        if "workspace" not in {item["name"] for item in meta["dimensions"]}:
+            raise ValueError("OpenRouter analytics metadata does not support workspace filtering")
+        return workspace_id.strip()
 
     @classmethod
     def _supported_metrics(cls, metric_by_name: dict[str, dict]) -> dict[str, str]:
@@ -233,6 +255,7 @@ class OpenRouterAdapter(ProviderAdapter):
         metric_map: dict[str, str],
         time_range: dict[str, str],
         dimensions: list[str] | None = None,
+        filters: list[dict] | None = None,
     ) -> dict:
         payload = {
             "metrics": list(metric_map.values()),
@@ -241,6 +264,8 @@ class OpenRouterAdapter(ProviderAdapter):
             "limit": 1000,
             "order_by": {"field": "date", "direction": "asc"},
         }
+        if filters:
+            payload["filters"] = filters
         if dimensions:
             if len(dimensions) > 2:
                 raise ValueError("OpenRouter supports at most two analytics dimensions")
@@ -249,11 +274,28 @@ class OpenRouterAdapter(ProviderAdapter):
         response.raise_for_status()
         return self._sanitize_analytics_query(response.json(), metric_map, dimensions or [])
 
-    @classmethod
-    def _analytics_time_range(cls) -> dict[str, str]:
-        end = datetime.now(UTC).replace(microsecond=0)
-        start = (end - timedelta(days=cls._analytics_days)).replace(hour=0, minute=0, second=0)
-        return {"start": start.isoformat().replace("+00:00", "Z"), "end": end.isoformat().replace("+00:00", "Z")}
+    def _analytics_time_range(self) -> tuple[dict[str, str], bool]:
+        """Return one bounded UTC window; initial history advances across polls."""
+        now = datetime.now(UTC).replace(microsecond=0)
+        completed_end = now.replace(hour=0, minute=0, second=0)
+        state = self.extra.get("_analytics_state", {})
+        state = state if isinstance(state, dict) else {}
+        cursor = parse_time(state.get("next_backfill_start"))
+        retention_start = completed_end - timedelta(days=self._analytics_retention_days)
+        if cursor is None and not state.get("backfill_complete"):
+            cursor = retention_start
+        if cursor is not None and cursor < completed_end:
+            start = max(cursor.astimezone(UTC), retention_start)
+            end = min(start + timedelta(days=self._analytics_days), completed_end)
+            backfill = True
+        else:
+            start = max(completed_end - timedelta(days=self._analytics_days), retention_start)
+            end = completed_end
+            backfill = False
+        return (
+            {"start": start.isoformat().replace("+00:00", "Z"), "end": end.isoformat().replace("+00:00", "Z")},
+            backfill,
+        )
 
     @staticmethod
     def _sanitize_analytics_meta(data: object) -> dict:
@@ -404,14 +446,14 @@ class OpenRouterAdapter(ProviderAdapter):
         if isinstance(query, dict):
             account = query.get("account")
             if isinstance(account, dict):
-                sources.append((account.get("data"), "native", None))
+                sources.append((account.get("data"), "native", query.get("workspace_id"), None))
             for dimension, grouped in (query.get("groups") or {}).items():
                 if isinstance(grouped, dict):
-                    sources.append((grouped.get("data"), "native_grouped", dimension))
+                    sources.append((grouped.get("data"), "native_grouped", query.get("workspace_id"), dimension))
         elif isinstance(activity, dict):
-            sources.append((activity.get("data"), "native", None))
+            sources.append((activity.get("data"), "native", None, None))
         observations = []
-        for rows, source, group_dimension in sources:
+        for rows, source, scope_override, group_dimension in sources:
             if not isinstance(rows, list):
                 continue
             for row in rows:
@@ -424,7 +466,7 @@ class OpenRouterAdapter(ProviderAdapter):
                 end = start + timedelta(days=1)
                 if end > datetime.now(UTC):
                     continue
-                scope = row.get("workspace") or row.get("workspace_id")
+                scope = scope_override or row.get("workspace") or row.get("workspace_id")
                 model = row.get("model")
                 upstream = row.get("provider") or row.get("provider_name")
                 for metric, unit, legacy in (

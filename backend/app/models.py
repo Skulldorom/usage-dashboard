@@ -118,7 +118,7 @@ class UsageObservation(Base):
         Index(
             "ux_usage_observations_native_identity",
             "provider_config_id",
-            "config_revision",
+            text("coalesce(config_revision, 1)"),
             "source",
             "metric",
             "observed_at",
@@ -172,6 +172,40 @@ class UsageObservation(Base):
     cost_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
     provider_mapping: Mapped[str | None] = mapped_column(String(32), nullable=True)
     source_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class OpenRouterAnalyticsState(Base):
+    """Persisted OpenRouter query evidence, scoped to a credential revision."""
+
+    __tablename__ = "openrouter_analytics_states"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_config_id",
+            "config_revision",
+            "scope",
+            "workspace_id",
+            "grouping",
+            name="uq_openrouter_analytics_state_scope",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_config_id: Mapped[int] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), index=True)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    grouping: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    requested_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    requested_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_failure_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_category: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    backfill_cursor: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backfill_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class DataSourceConfig(Base):

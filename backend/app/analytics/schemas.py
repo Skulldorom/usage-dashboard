@@ -365,10 +365,14 @@ class OpenRouterAnalyticsGroup(BaseModel):
 class OpenRouterAnalyticsResponse(BaseModel):
     config_id: int
     scope: str = "account"
+    workspace_id: str | None = None
     state: str
     start: datetime
     end: datetime
     last_success_at: datetime | None = None
+    last_observed_at: datetime | None = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    grouping_state: str | None = None
     totals: dict[str, float] = Field(default_factory=dict)
     groups: list[OpenRouterAnalyticsGroup] = Field(default_factory=list)
     coverage: CoverageInfo
