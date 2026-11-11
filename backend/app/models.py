@@ -174,6 +174,29 @@ class UsageObservation(Base):
     source_event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class OpenRouterAnalyticsWindow(Base):
+    """A verified, completed UTC query window.  Rows are immutable coverage evidence."""
+
+    __tablename__ = "openrouter_analytics_windows"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_config_id", "config_revision", "scope", "workspace_id", "grouping", "window_start", "window_end",
+            name="uq_openrouter_analytics_window_identity",
+        ),
+        Index("ix_openrouter_analytics_windows_lookup", "provider_config_id", "config_revision", "scope", "workspace_id", "grouping", "window_start"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    provider_config_id: Mapped[int] = mapped_column(ForeignKey("provider_configs.id", ondelete="CASCADE"), nullable=False)
+    config_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    workspace_id: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    grouping: Mapped[str] = mapped_column(String(32), nullable=False, default="")
+    window_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    window_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    valid_empty: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
 class OpenRouterAnalyticsState(Base):
     """Persisted OpenRouter query evidence, scoped to a credential revision."""
 

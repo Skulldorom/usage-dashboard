@@ -2,6 +2,7 @@ import math
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
 
@@ -214,10 +215,11 @@ class OpenRouterAdapter(ProviderAdapter):
                 groups[dimension] = await self._query_analytics(
                     client, headers, metrics, time_range, dimensions=[dimension], filters=filters
                 )
+            except httpx.HTTPStatusError as exc:
+                groups[dimension] = {"error": "unauthorized" if exc.response.status_code in {401, 403} else "unavailable"}
             except (httpx.HTTPError, ValueError):
-                # The ungrouped query remains authoritative. A failed or incomplete
-                # breakdown is unavailable, never substituted into its total.
-                continue
+                # Persist a failure marker.  A stale grouped result is never complete.
+                groups[dimension] = {"error": "malformed_or_unavailable"}
         return {
             "account": account,
             "groups": groups,
@@ -233,11 +235,17 @@ class OpenRouterAdapter(ProviderAdapter):
         workspace_id = self.extra.get("analytics_workspace_id")
         if workspace_id is None:
             return None
-        if not isinstance(workspace_id, str) or not workspace_id.strip():
-            raise ValueError("OpenRouter analytics_workspace_id must be a non-empty workspace UUID")
-        if "workspace" not in {item["name"] for item in meta["dimensions"]}:
-            raise ValueError("OpenRouter analytics metadata does not support workspace filtering")
-        return workspace_id.strip()
+        if not isinstance(workspace_id, str):
+            raise ValueError("OpenRouter analytics_workspace_id must be a workspace UUID")
+        try:
+            workspace_id = str(UUID(workspace_id.strip()))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("OpenRouter analytics_workspace_id must be a workspace UUID") from exc
+        dimensions = {item["name"] for item in meta["dimensions"]}
+        operators = {item["name"] for item in meta["operators"]}
+        if "workspace" not in dimensions or "eq" not in operators:
+            raise ValueError("OpenRouter analytics metadata does not support workspace eq filtering")
+        return workspace_id
 
     @classmethod
     def _supported_metrics(cls, metric_by_name: dict[str, dict]) -> dict[str, str]:

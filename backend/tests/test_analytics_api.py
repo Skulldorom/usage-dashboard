@@ -1799,13 +1799,12 @@ async def test_openrouter_grouped_dimensions_survive_persistence_and_are_not_acc
         )
     assert account.status_code == workspaces.status_code == models.status_code == 200
     assert account.json()["totals"]["openrouter_account_spend"] == 10
-    assert {row["value"]: row["totals"]["openrouter_account_spend"] for row in workspaces.json()["groups"]} == {
-        "ws_a": 7,
-        "ws_b": 3,
-    }
-    assert models.json()["groups"] == [
-        {"dimension": "model", "value": "openai/gpt", "totals": {"openrouter_account_spend": 7}}
-    ]
+    # Legacy grouped rows have no matching verified query window. They may not
+    # be represented as an authoritative complete breakdown.
+    assert workspaces.json()["groups"] == []
+    assert workspaces.json()["grouping_state"] == "partial"
+    assert models.json()["groups"] == []
+    assert models.json()["grouping_state"] == "partial"
 
 
 @pytest.mark.asyncio

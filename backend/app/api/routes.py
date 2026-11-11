@@ -34,7 +34,7 @@ from app.core.crypto import CryptoError, CryptoService
 from app.core.thresholds import build_alerts, provider_alert_state
 from app.database import engine, get_session
 from app.health import default_max_stale_age, derive_health
-from app.models import ApiToken, OpenRouterAnalyticsState, ProviderConfig, UsageObservation, UsageSnapshot
+from app.models import ApiToken, OpenRouterAnalyticsState, OpenRouterAnalyticsWindow, ProviderConfig, UsageObservation, UsageSnapshot
 from app.providers import codex_oauth
 from app.providers.errors import classify_exception, log_provider_failure
 from app.providers.registry import get_adapter_class, list_providers
@@ -1138,19 +1138,30 @@ async def _ingest_observations(
                 else (None, None)
             )
             row.requested_start, row.requested_end = start, end
-            if isinstance(evidence, dict) and start is not None and end is not None:
+            if isinstance(evidence, dict) and start is not None and end is not None and not evidence.get("error"):
                 row.completed_start, row.completed_end = start, end
                 row.last_success_at, row.last_failure_at, row.error_category = now, None, None
                 row.status = "empty" if not evidence.get("data") else "ready"
+                # Unique identity makes retried/overlapping polls idempotent.  The
+                # evidence and observations commit in this same transaction.
+                existing_window = await session.scalar(select(OpenRouterAnalyticsWindow).where(
+                    OpenRouterAnalyticsWindow.provider_config_id == config.id,
+                    OpenRouterAnalyticsWindow.config_revision == config.usage_revision,
+                    OpenRouterAnalyticsWindow.scope == scope,
+                    OpenRouterAnalyticsWindow.workspace_id == workspace_id,
+                    OpenRouterAnalyticsWindow.grouping == grouping,
+                    OpenRouterAnalyticsWindow.window_start == start,
+                    OpenRouterAnalyticsWindow.window_end == end,
+                ))
+                if existing_window is None:
+                    session.add(OpenRouterAnalyticsWindow(provider_config_id=config.id, config_revision=config.usage_revision,
+                        scope=scope, workspace_id=workspace_id, grouping=grouping, window_start=start, window_end=end,
+                        valid_empty=not bool(evidence.get("data")), completed_at=now))
                 if grouping == "" and query_raw.get("backfill"):
-                    row.backfill_cursor = end
-                    row.backfill_complete = end >= datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-            elif grouping == "":
-                row.last_failure_at, row.error_category, row.status = (
-                    now,
-                    str(analytics_raw.get("error") or "upstream_error"),
-                    "failed",
-                )
+                    row.backfill_cursor = max(filter(None, [row.backfill_cursor, end]))
+                    row.backfill_complete = row.backfill_cursor >= datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+            else:
+                row.last_failure_at, row.error_category, row.status = now, str((evidence or {}).get("error") or analytics_raw.get("error") or "upstream_error"), "failed"
         if not query_items:
             row = by_group.get("")
             if row is None:
@@ -1255,13 +1266,19 @@ async def _poll_enabled_configs(session: AsyncSession) -> list[UsageSnapshot]:
             .scalars()
             .all()
         )
-        analytics_states = {
-            (row.provider_config_id, row.config_revision): {
-                "next_backfill_start": row.backfill_cursor.isoformat() if row.backfill_cursor else None,
-                "backfill_complete": row.backfill_complete,
-            }
-            for row in rows
-        }
+        # Select the state belonging to the configuration's authoritative
+        # effective scope; account and workspace cursors must never collide.
+        analytics_states = {}
+        by_config = {config.id: config for config in configs}
+        for row in rows:
+            config = by_config[row.provider_config_id]
+            configured_workspace = (config.extra or {}).get("analytics_workspace_id") if config.provider == "openrouter" else None
+            expected_scope, expected_workspace = ("workspace", str(configured_workspace)) if configured_workspace else ("account", "")
+            if row.config_revision == config.usage_revision and (row.scope, row.workspace_id) == (expected_scope, expected_workspace):
+                analytics_states[(row.provider_config_id, row.config_revision)] = {
+                    "next_backfill_start": row.backfill_cursor.isoformat() if row.backfill_cursor else None,
+                    "backfill_complete": row.backfill_complete,
+                }
     results = (
         await asyncio.gather(
             *(
