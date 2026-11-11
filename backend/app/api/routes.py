@@ -1102,7 +1102,7 @@ async def _ingest_observations(
                         select(UsageObservation).where(
                             UsageObservation.provider_config_id == config.id,
                             UsageObservation.config_revision == config.usage_revision,
-                            UsageObservation.source == "native",
+                            UsageObservation.source.in_(("native", "native_grouped")),
                             UsageObservation.observed_at >= lower,
                             UsageObservation.observed_at <= upper,
                         )

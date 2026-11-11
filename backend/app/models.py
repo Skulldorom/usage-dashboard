@@ -112,6 +112,23 @@ class UsageObservation(Base):
 
     __tablename__ = "usage_observations"
     __table_args__ = (
+        # A provider may refresh the same completed daily bucket concurrently.
+        # Group dimensions are part of identity; NULL dimensions are normalized
+        # so account rows and each independent breakdown remain distinct.
+        Index(
+            "ux_usage_observations_native_identity",
+            "provider_config_id",
+            "config_revision",
+            "source",
+            "metric",
+            "observed_at",
+            text("coalesce(model, '')"),
+            text("coalesce(provider_mapping, '')"),
+            text("coalesce(profile, '')"),
+            unique=True,
+            sqlite_where=text("source IN ('native', 'native_grouped')"),
+            postgresql_where=text("source IN ('native', 'native_grouped')"),
+        ),
         # Idempotency guard for data-source telemetry: within a single data
         # source, each source event ID is unique. Provider observations leave
         # data_source_id/source_event_id NULL, so the partial predicate keeps

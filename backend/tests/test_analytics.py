@@ -478,3 +478,17 @@ def test_utilization_ignores_capacity_from_after_observation():
         point_obs, metric="limit_remaining", spec=spec, capacity_observations=capacity_obs
     )
     assert result == []
+
+
+def test_calendar_month_buckets_handle_leap_year_and_rollover():
+    observations = [
+        _obs("tokens", 2.0, datetime(2024, 2, 29, 12, tzinfo=UTC)),
+        _obs("tokens", 3.0, datetime(2024, 3, 1, 1, tzinfo=UTC)),
+        _obs("tokens", 4.0, datetime(2024, 12, 31, 23, tzinfo=UTC)),
+    ]
+    buckets = bucketize(observations, metric="tokens", interval="month", tz="UTC")
+    assert [(bucket.start.date().isoformat(), bucket.end.date().isoformat(), bucket.total) for bucket in buckets] == [
+        ("2024-02-01", "2024-03-01", 2.0),
+        ("2024-03-01", "2024-04-01", 3.0),
+        ("2024-12-01", "2025-01-01", 4.0),
+    ]

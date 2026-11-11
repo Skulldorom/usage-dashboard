@@ -1266,7 +1266,6 @@ export default function UsagePage() {
           {selectedId === 'all' && overview && (
             <Stack id="usage-overview" spacing={2.5}>
               <OverviewSummaryCards overview={overview} />
-              <OpenRouterAnalyticsPanel overview={overview} />
               <EconomicsPanel economics={economics} />
               <Card variant="outlined" className="glass-panel">
                 <CardContent>

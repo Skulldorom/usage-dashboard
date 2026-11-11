@@ -167,7 +167,7 @@ def normalize_native(native: list[dict]) -> list[Observation]:
                 reset_at=item.get("reset_at"),
                 model=item.get("model"),
                 provider_mapping=item.get("provider_mapping"),
-                profile=item.get("scope"),
+                profile=item.get("profile") or item.get("scope"),
             )
         )
     return observations

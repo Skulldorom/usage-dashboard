@@ -145,12 +145,17 @@ async def _load_observations(
     metric: str | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
+    include_grouped: bool = False,
 ) -> list[Observation]:
     config = await _get_config(session, config_id)
     query = select(UsageObservation).where(
         UsageObservation.provider_config_id == config_id,
         _active_provider_observation_filter(config),
     )
+    # Breakdown rows describe the same account usage and are non-additive.
+    # Consumers must explicitly opt in before using them.
+    if not include_grouped:
+        query = query.where(UsageObservation.source != "native_grouped")
     if metric:
         query = query.where(UsageObservation.metric == metric)
     if start is not None:
@@ -322,7 +327,7 @@ async def openrouter_analytics(
     start = _as_aware(from_) if from_ else end - timedelta(days=DEFAULT_RANGE_DAYS)
     if end <= start or end - start > timedelta(days=370):
         raise HTTPException(status_code=400, detail="range must be positive and no longer than 370 days")
-    observations = await _load_observations(session, config_id, start=start, end=end)
+    observations = await _load_observations(session, config_id, start=start, end=end, include_grouped=True)
     account = [obs for obs in observations if obs.source == "native" and obs.metric.startswith("openrouter_account_")]
     grouped = [
         obs for obs in observations if obs.source == "native_grouped" and obs.metric.startswith("openrouter_account_")
@@ -341,13 +346,13 @@ async def openrouter_analytics(
             bucket = grouped_totals.setdefault(value, {})
             bucket[obs.metric] = round(bucket.get(obs.metric, 0.0) + obs.value, 4)
         group_rows = [
-            OpenRouterAnalyticsGroup(dimension=group_by, value=value, totals=totals)
-            for value, totals in sorted(grouped_totals.items())
+            OpenRouterAnalyticsGroup(dimension=group_by, value=value, totals=group_totals)
+            for value, group_totals in sorted(grouped_totals.items())
         ]
     coverage = series_coverage(account)
     return OpenRouterAnalyticsResponse(
         config_id=config.id,
-        scope="workspace" if group_by == "workspace" else "account",
+        scope="account",
         state=state,
         start=start,
         end=end,
