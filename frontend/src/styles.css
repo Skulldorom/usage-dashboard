@@ -85,13 +85,15 @@ input {
   width: var(--sidebar-width);
   z-index: 20;
   padding: 24px 18px;
+  overflow-y: auto;
   background: rgba(13, 9, 24, 0.98);
   border-right: 1px solid rgba(6, 200, 255, 0.14);
 }
 .side-navigation {
-  height: 100%;
+  min-height: 100%;
   display: flex;
   flex-direction: column;
+  gap: 18px;
 }
 .brand-lockup {
   display: flex;
@@ -1603,4 +1605,79 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+.sidebar-lower-section {
+  margin-top: auto;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.sidebar-copyright {
+  margin-top: 0;
+}
+.sidebar-version {
+  display: block;
+  color: #82798e;
+  font-size: 0.72rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.update-notification {
+  display: grid;
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(6, 200, 255, 0.3);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(6, 200, 255, 0.1), rgba(21, 16, 31, 0.86));
+  min-width: 0;
+}
+.update-notification-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #d8f8ff;
+  font-size: 0.8rem;
+}
+.update-notification-header .MuiIconButton-root {
+  margin-left: auto;
+  color: #aaa2b9;
+}
+.update-notification-copy {
+  color: #aaa2b9;
+  font-size: 0.75rem !important;
+  line-height: 1.45 !important;
+}
+.update-version-change {
+  color: #fbf9ff;
+  font-size: 0.78rem !important;
+  font-weight: 750 !important;
+  overflow-wrap: anywhere;
+}
+.update-version-change span { color: #14cbfa; padding-inline: 3px; }
+.update-release-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #63e3ff !important;
+  font-size: 0.74rem !important;
+  font-weight: 750 !important;
+  width: fit-content;
+}
+.mobile-update-slot { display: none; }
+@media (max-width: 900px) {
+  .mobile-update-slot { display: block; margin-bottom: 18px; }
+  .mobile-update-slot:empty { display: none; }
+  .mobile-update-notification {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 11px 13px;
+    border: 1px solid rgba(6, 200, 255, 0.26);
+    border-radius: 14px;
+    background: rgba(6, 200, 255, 0.07);
+  }
+  .mobile-update-notification .update-notification-header { flex: 1 1 155px; }
+  .mobile-update-notification .update-release-link { margin-left: auto; }
 }

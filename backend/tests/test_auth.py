@@ -1,14 +1,17 @@
 import logging
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app import updates
 from app.core.config import settings
 from app.database import get_session
 from app.main import app
-from app.models import Base
+from app.models import AdminCredential, Base
 
 
 @pytest_asyncio.fixture
@@ -133,3 +136,40 @@ async def test_password_reset_uses_backend_log_code(auth_db, caplog):
 
         protected = await client.get("/api/v1/configs", headers={"Authorization": f"Bearer {token}"})
         assert protected.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_update_endpoint_requires_valid_admin_session(auth_db, caplog, monkeypatch):
+    caplog.set_level(logging.WARNING, logger="app.core.auth")
+    updates.reset_cache()
+    monkeypatch.setattr(updates, "_next_check", datetime.now(UTC) + timedelta(hours=1))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        assert (await client.get("/api/v1/updates")).status_code == 401
+        await client.get("/api/v1/auth/status")
+        setup_code = next(
+            record.message.rsplit(" ", 1)[-1] for record in caplog.records if "Admin setup code:" in record.message
+        )
+        setup = await client.post(
+            "/api/v1/auth/setup", json={"code": setup_code, "password": "correct horse battery staple"}
+        )
+        token = setup.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        assert (await client.get("/api/v1/updates", headers=headers)).status_code == 200
+        scoped = await client.post(
+            "/api/v1/api-tokens", headers=headers, json={"name": "ingestion", "scopes": ["usage:read"]}
+        )
+        assert scoped.status_code == 201, scoped.text
+        scoped_headers = {"Authorization": f"Bearer {scoped.json()['token']}"}
+        assert (await client.get("/api/v1/updates", headers=scoped_headers)).status_code == 403
+        await client.post("/api/v1/auth/logout", headers=headers)
+        assert (await client.get("/api/v1/updates", headers=headers)).status_code == 401
+        login = await client.post("/api/v1/auth/login", json={"password": "correct horse battery staple"})
+        headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+        async with auth_db() as session:
+            credential = await session.scalar(select(AdminCredential))
+            credential.session_tokens = [
+                {**entry, "expires_at": "2000-01-01T00:00:00+00:00"} for entry in credential.session_tokens
+            ]
+            await session.commit()
+        assert (await client.get("/api/v1/updates", headers=headers)).status_code == 401
+    updates.reset_cache()

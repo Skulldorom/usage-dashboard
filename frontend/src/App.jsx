@@ -43,6 +43,8 @@ import {
   getAdminToken,
   setAdminToken,
 } from "./api.js";
+import UpdateNotification from "./components/UpdateNotification.jsx";
+import useUpdateStatus from "./lib/useUpdateStatus.js";
 import "./styles.css";
 
 const theme = createTheme({
@@ -293,7 +295,7 @@ function TopbarActions({ isAuthenticated, authStatus, onLogin, onLogout }) {
   );
 }
 
-function Navigation({ mobile = false, isAuthenticated = true }) {
+function Navigation({ mobile = false, isAuthenticated = true, update }) {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const showUsageSubmenu = !mobile && location.pathname.startsWith("/usage");
@@ -366,9 +368,12 @@ function Navigation({ mobile = false, isAuthenticated = true }) {
         </div>
       )}
       {!mobile && (
-        <span className="sidebar-copyright">
-          © {new Date().getFullYear()} Skulldorom
-        </span>
+        <div className="sidebar-lower-section">
+          <UpdateNotification update={update} />
+          <span className="sidebar-copyright">
+            © {new Date().getFullYear()} Skulldorom
+          </span>
+        </div>
       )}
     </nav>
   );
@@ -655,6 +660,8 @@ function Shell() {
       window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, []);
 
+  const update = useUpdateStatus(isAuthenticated && !authLoading);
+
   async function logout() {
     try {
       await api.logout();
@@ -672,7 +679,7 @@ function Shell() {
       <NetworkBackdrop />
       {isAuthenticated && (
         <aside className="sidebar">
-          <Navigation isAuthenticated={isAuthenticated} />
+          <Navigation isAuthenticated={isAuthenticated} update={update} />
         </aside>
       )}
       <header className="topbar">
@@ -711,15 +718,18 @@ function Shell() {
             onLogin={() => setAuthOpen(true)}
           />
         ) : (
-          <Routes>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-          </Routes>
+          <>
+            <div className="mobile-update-slot"><UpdateNotification update={update} compact /></div>
+            <Routes>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/usage" element={<UsagePage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+            </Routes>
+          </>
         )}
       </main>
       {isAuthenticated && (
-        <Navigation mobile isAuthenticated={isAuthenticated} />
+        <Navigation mobile isAuthenticated={isAuthenticated} update={update} />
       )}
       <AuthDialog
         open={authOpen}

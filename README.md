@@ -2,6 +2,8 @@
 
 # Usage Dashboard
 
+[![GitHub Release](https://img.shields.io/github/v/release/Skulldorom/usage-dashboard)](https://github.com/Skulldorom/usage-dashboard/releases)
+
 Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, MiniMax Token Plan, and custom HTTP endpoints. It tracks current quota and health, retains history, analyzes cost and value, attributes Hermes-observed workload by provider/model/profile, stores provider credentials encrypted at rest, and exposes integrations for Homepage Dashboard and the browser extension.
 
 <p align="center">

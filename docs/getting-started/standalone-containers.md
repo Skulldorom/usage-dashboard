@@ -57,6 +57,8 @@ Required environment variables:
 - `ENCRYPTION_KEY`: stable Fernet key of at least 32 characters. Generate it
   with the command in `.env.example` and back it up securely.
 
+`APP_VERSION` is injected into official release images. Set it to the exact release tag for custom native/backend builds; leave it unset for development builds so no false update notice is shown.
+
 Optional backend variables include `BACKEND_CORS_ORIGINS`, authentication
 expiry, polling, retention, and allowed-host settings listed in
 [Environment variables](/configuration/environment). The backend image has a

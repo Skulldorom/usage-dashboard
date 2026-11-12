@@ -43,3 +43,150 @@ image-related settings.
 The commands on this page apply only to Docker Compose. Native and standalone
 container deployments must follow their linked ordering so migrations complete
 before the new backend serves traffic.
+
+
+## Update notifications
+
+After an admin session is established, the sidebar shows the installed backend version and checks GitHub's published stable release about every six hours. It only offers an update when a newer valid semantic-version GitHub Release exists. Drafts, prereleases, malformed tags, and tags without a matching release page are ignored.
+
+The check is informational: it never pulls images, restarts containers, or runs migrations. Select **View release notes** to open the verified GitHub release page. Dismissing a notice stores that release tag only in the browser; the next release is shown again.
+
+Released container images receive `APP_VERSION` from their `v*` release tag. Native Linux installs run `sh scripts/build-release.sh` from a clean release checkout. This builds the frontend with the exact tag and writes `deploy/version.env`, loaded by the supplied backend systemd unit. Run this script after each upgrade; no manual version constant is required. Without Git at runtime, the built frontend and generated environment file retain the version. Default-branch builds use a SHA-bearing development prerelease; local builds without metadata use `unknown`. The UI compares the frontend build metadata with the backend version; mismatched or unknown artifact versions suppress update claims and show separate artifact labels. Use the same pinned tag for both standalone images and diagnose a mismatch with the image tag and backend `APP_VERSION`.
+
+The backend caches successful GitHub metadata in memory for six hours and uses conditional ETag revalidation. GitHub is optional: outages, rate limits, or invalid responses do not affect dashboard operation; the last trusted result may be reported as stale and no fresh update claim is made. The backend requires outbound HTTPS access to `api.github.com` only for a fresh check.
+
+Requests use a five-second timeout, no redirects or retries, and a 256 KiB response limit. Failed checks back off for 15 minutes. `GET /api/v1/updates` reports `status: check_failed` and `cache_status: stale` after a failed refresh, preserving the original `checked_at` timestamp and trusted release data but never advertising it as freshly verified. Each backend worker has its own bounded cache; restarts clear it. Only admin sessions can access the endpoint, not scoped API tokens. No session or provider credentials are sent to GitHub.
+
+The browser stops/ignores requests after logout and avoids checks while hidden. It checks on returning to a visible tab when due. Frontend and backend artifact metadata must match before an update banner or latest-version tooltip can appear. An installed version label alone does not assert freshness. Development/prerelease builds suppress update claims.
+
+The release workflow publishes a stable GitHub Release only after both tagged images are pushed. `latest` follows the default branch and reports a SHA-bearing development version; pin matching explicit release tags for stable installations. Old images without embedded metadata remain unknown. Production runtime does not require `.git`. For native installations, reinstall the updated systemd units when adopting the generated `deploy/version.env` mechanism. If versions are unknown, rebuild from a clean release checkout or deploy newly published tagged images; inspect backend `APP_VERSION` and frontend build metadata when labels disagree.
+
+## Application versioning policy
+
+Frontend and backend ship together under one canonical `vMAJOR.MINOR.PATCH` tag.
+`frontend/package.json` is package tooling metadata, not the application version.
+The README badge follows published stable GitHub Releases, not branch builds or tags.
+
+Maintainers classify every PR targeting `main` with exactly one repository label:
+
+| Label | Meaning | Example from v1.2.3 |
+| --- | --- | --- |
+| `release:patch` | Backward-compatible fixes | v1.2.4 |
+| `release:minor` | Backward-compatible features | v1.3.0 |
+| `release:major` | Breaking API/configuration/deployment behavior | v2.0.0 |
+| `release:none` | Explicitly reviewed skipped change (including docs/tests) | No increment |
+
+Create these labels in repository settings before adopting the workflow. The PR
+classification check rejects missing, conflicting, or unrecognized classifications
+on every PR targeting `main`, including documentation-only PRs. Label validation is
+independent of changed-file eligibility; choose `release:none` for skipped changes.
+Make it a required branch-protection check. Labels, not commit
+subjects, are authoritative; a `feat:` title alone is not sufficient. The planner reconstructs label events from the PR timeline up to its matching
+merge event, verifying merge commit and timestamp. Later relabeling cannot change
+the release intent. Missing/conflicting merge-time labels or incomplete history
+block planning; relabeling after merge cannot repair them. Include legacy history
+only through an explicitly reviewed initial baseline. Do not delete or rename
+release labels: GitHub timeline data is the audit source, not an immutable ledger.
+
+Application paths include backend application/migrations/dependencies, frontend
+source/public assets/dependencies, Dockerfiles, nginx/entrypoint assets, Compose,
+`deploy/`, and the native build script. Documentation, tests, and release tooling
+alone do not trigger a release, even with a release label. Use `release:none` only
+when a runtime-path change truly needs no installation update. This is a deliberate
+maintainer decision, recorded at merge time and printed with PR number and commit
+in planner logs. It skips the increment, not deployment tests or publication gates.
+A none-only batch creates no release; skipped commits are still included in the
+source of a later eligible batch. Labels cannot prove a change is non-breaking:
+require maintainer review and required checks before merging. Merge or squash
+runtime PRs into `main`; rebase merges and direct runtime commits lack reliable PR
+classification and block release planning rather than guessing intent.
+
+### Creating a release
+
+`Application release` runs weekly (Monday 10:00 UTC) and can be dispatched manually
+from `main`. It batches all changes since the last published stable release and
+applies the highest increment once. **Merging a PR does not immediately publish a
+new stable version.** There is no release per commit or per merge.
+A documentation-only/non-releasable batch does nothing. Ambiguous runtime changes
+fail planning before any tag is created. Fix missing labels before merging;
+after merge, editing labels does not rewrite intent. Legacy unlabeled history
+requires a reviewed bootstrap baseline rather than retroactive classification.
+
+For the **first release**, dispatch with `initial_base` set to a reviewed full
+40-character baseline commit SHA, exclusive. This explicitly selects the history
+being classified instead of guessing which legacy commits should ship. For this
+feature's adoption, use the pre-feature `main` commit as the baseline so the
+classified update-notification PR is included. The first published stable release is
+**v1.0.0** regardless of patch, minor, or major intent in the first eligible batch. A
+`release:none`-only or documentation-only batch creates no release. Subsequent runs derive the
+version from published stable releases automatically. No version file needs a
+manual bump. History scanning is bounded to 500 first-parent commits per batch.
+
+The workflow serializes release attempts without cancelling active runs. A
+create-only GitHub tag reserves the immutable release commit and a **draft** Release.
+The reusable Docker workflow tests that exact commit (including PostgreSQL
+migrations), builds both images with the same version, then pushes the existing
+`ghcr.io/skulldorom/usage-dashboard-backend` and
+`ghcr.io/skulldorom/usage-dashboard-frontend` image names. Both image version/revision
+labels are read back from GHCR before the draft Release becomes public. The build
+explicitly targets `linux/amd64`; verification pulls that runnable platform and
+uses `docker image inspect --format '{{json .Config.Labels}}'`, which works for
+single manifests and OCI indexes with BuildKit provenance attestations. Exact
+`vX.Y.Z`, `X.Y.Z`, `X.Y`, and SHA tags remain available. `main` and `latest` remain
+development channels; stable releases do not move them.
+
+Tests/build/push/verification failures leave only an unpublished reservation;
+GitHub's latest stable release and the dashboard never advertise it. A failed
+matrix push can leave one image/tag or a moving minor alias in GHCR: **only published
+GitHub Releases are installable release announcements**. Do not deploy an unpublished
+reservation. Retry the workflow to rebuild the same reserved commit and complete
+publication before including newer merges. Never move an existing stable tag.
+Multiple unpublished tags or unmanaged draft Releases require operator resolution;
+the workflow fails closed. GitHub cannot atomically publish two images, so moving
+image aliases are not a release transaction. Pin a published exact version in both
+artifacts. Publication is idempotent; an already published managed release is not
+announced twice. Protect release tags from manual creation/movement and limit
+workflow dispatch/write permissions to trusted maintainers. Tag creation with
+`GITHUB_TOKEN` does not trigger another workflow: tests/builds are explicitly called.
+
+### Preparing a major release
+
+Label the breaking PR `release:major` before merging, document migration and
+configuration changes in that PR, and merge any companion frontend/backend work
+before the weekly run (or dispatch once the batch is ready). Review every pending
+PR's label and ensure the breaking release is deployable as one commit snapshot.
+The highest pending intent makes the next version `v(N+1).0.0`; no separate frontend
+or backend bump is needed. Branch protection should require classification and the
+existing tests. The workflow does not infer breaking changes from titles.
+
+### Stable versus development metadata
+
+Stable release builds inject the reserved tag into backend `APP_VERSION` and
+frontend `VITE_APP_VERSION`, and include matching OCI version/source-revision labels.
+Default-branch images use `v0.0.0-dev.<full-commit-SHA>`. Native builds from a clean
+exact stable-tag checkout use that tag; other native builds use
+`v0.0.0-dev.<short-SHA>` with `.dirty` for tracked edits. Plain local builds with no
+metadata remain unknown. Development prereleases cannot trigger stable update
+claims, even when their numeric base is lower. The authenticated sidebar retains
+the installed version and shows separate artifact labels for a mismatch. Dismissal
+still applies only to the specific available release; this process never updates
+an installation automatically.
+
+Compose operators set `IMAGE_TAG` to a **published** `vX.Y.Z` and recreate both
+services. Standalone operators pin both image references to the same published tag.
+Native operators check out that tag, run `sh scripts/build-release.sh`, and follow
+the existing migration/systemd upgrade procedure. Neither container runtime nor
+native runtime needs `.git`; Git is needed only during native build preparation.
+
+### Required repository protection
+
+Audit of ruleset `main` (ID 19039282): active, but only deletion and non-fast-forward
+rules were configured. Classic branch protection returned “Branch not protected”.
+Operators must add the `release-classification` required status check (GitHub
+Actions) and require PRs before merging to `main`; retain required application
+tests as appropriate. No protection settings were changed by this PR. Classification
+runs without PR path filters and reruns on label additions/removals and base edits.
+Documentation-only PRs therefore receive the same required check. Release planning
+still fails closed for ambiguous runtime history, including unsupported rebase
+merges. Commit-to-PR and Release API results are paginated with a bounded limit;
+selection follows first-parent commit ancestry, not PR creation or merge timestamps.

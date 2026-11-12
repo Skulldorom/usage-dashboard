@@ -4,6 +4,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
+class UpdateCheckRead(BaseModel):
+    status: Literal["update_available", "up_to_date", "unknown", "check_failed"]
+    current_version: str | None
+    latest_version: str | None = None
+    release_url: str | None = None
+    release_name: str | None = None
+    published_at: datetime | None = None
+    checked_at: datetime | None = None
+    cache_status: Literal["fresh", "stale", "empty"] = "empty"
+    update_available: bool = False
+
+
 class AuthStatusRead(BaseModel):
     is_configured: bool
     setup_required: bool
