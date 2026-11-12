@@ -188,6 +188,44 @@ describe("dashboard release lifecycle", () => {
     expect(hasNotice()).toBe(false);
     expect(checkRelease).not.toHaveBeenCalled();
   });
+  it("keeps a synchronized verified release when a pending lock attempt finishes with null", async () => {
+    let finish;
+    checkRelease.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await mountHarness();
+    await advance(2500);
+    expect(checkRelease).toHaveBeenCalledOnce();
+    expect(hasNotice()).toBe(false);
+
+    // Another tab publishes while this tab's unavailable-lock result is still pending.
+    cachedRelease.mockReturnValue(release);
+    await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: CACHE_KEY })));
+    expect(hasNotice()).toBe(true);
+    await act(async () => finish(null));
+    expect(hasNotice()).toBe(true);
+    expect(checkRelease).toHaveBeenCalledOnce();
+
+    // Reusing the cache must not extend the original verification deadline.
+    await advance(CACHE_MS - 2500);
+    expect(hasNotice()).toBe(false);
+    expect(checkRelease).toHaveBeenCalledOnce();
+  });
+  it.each(["expired", "invalidated by failure"])("does not revive a synchronized release %s before a pending null result", async (reason) => {
+    let finish;
+    checkRelease.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await mountHarness();
+    await advance(2500);
+    cachedRelease.mockReturnValue(release);
+    await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: CACHE_KEY })));
+    expect(hasNotice()).toBe(true);
+
+    cachedRelease.mockReturnValue(null);
+    if (reason === "expired") await advance(CACHE_MS - 2500);
+    else await act(async () => window.dispatchEvent(new StorageEvent("storage", { key: RETRY_KEY })));
+    expect(hasNotice()).toBe(false);
+    await act(async () => finish(null));
+    expect(hasNotice()).toBe(false);
+    expect(container.textContent).toBe("v1.2.0");
+  });
   it("aborts on logout, ignores late responses, and clears the notice", async () => {
     let finish;
     checkRelease.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));

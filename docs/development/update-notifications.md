@@ -39,7 +39,11 @@ retry. A single expiry timeout clears a displayed record without a network call.
 localStorage was chosen over sessionStorage because verified results, failure
 backoff and dismissals should survive reloads and be shared across same-origin
 tabs. An in-memory fallback uses the same expiration rules if storage is blocked.
-Storage events update mounted views. This cache contains no credentials.
+Storage events update mounted views. If a pending check returns no result (for
+example, a Web Lock miss), the hook re-reads the validated cache before clearing
+its state so a late null cannot erase a synchronized result. This does not extend
+the original verification deadline or revive expired/failed cache entries.
+This cache contains no credentials.
 
 A shared in-flight promise coalesces calls within a page. Optional Web Locks with
 `ifAvailable` prevent concurrent cold-tab fetches; the other tab receives the

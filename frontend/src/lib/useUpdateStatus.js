@@ -24,7 +24,9 @@ export default function useUpdateStatus(isAuthenticated, backendVersion) {
       if (disposed || document.visibilityState === "hidden") return;
       accept(cachedRelease());
       const result = await checkRelease(controller.signal);
-      if (!disposed) accept(result);
+      // A lock miss may settle after another tab has published a verified result.
+      // Re-read shared state before clearing a notice synchronized by storage events.
+      if (!disposed) accept(result ?? cachedRelease());
     }
     function visible() {
       if (document.visibilityState === "visible") check();
