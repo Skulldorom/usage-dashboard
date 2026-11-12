@@ -2,38 +2,68 @@ name: Docker images
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
     paths:
       - backend/**
       - frontend/**
       - docker-compose.yml
       - .github/workflows/docker-images.yml
+      - .github/workflows/application-release.yml
+      - scripts/**
   push:
     branches:
       - main
-    tags:
-      - v*
     paths:
       - backend/**
       - frontend/**
       - docker-compose.yml
       - .github/workflows/docker-images.yml
+      - .github/workflows/application-release.yml
+      - scripts/**
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      release_tag:
+        required: true
+        type: string
+      release_sha:
+        required: true
+        type: string
 
 permissions:
   contents: read
   packages: write
 
 concurrency:
-  group: docker-images-${{ github.ref }}
-  cancel-in-progress: true
+  group: docker-images-${{ inputs.release_tag || github.ref }}
+  cancel-in-progress: false
 
 jobs:
+  release-classification:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+      - name: Require explicit release intent for runtime changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python scripts/application_release.py classify --pr "$PR_NUMBER"
+
   test-backend:
     name: Test backend (pytest + Ruff)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -44,6 +74,9 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
+
+      - name: Release policy tests
+        run: python -m unittest discover -s scripts/tests -v
 
       - name: Run tests
         working-directory: backend
@@ -79,6 +112,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -107,6 +142,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -150,6 +187,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.release_sha || github.sha }}
+
+      - name: Validate reserved release source
+        if: inputs.release_tag != ''
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          python scripts/application_release.py verify-source --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -162,20 +210,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Resolve checked-out short SHA
+        id: source
+        run: echo "short=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v6
         with:
           images: ghcr.io/skulldorom/${{ matrix.image }}
           flavor: latest=false
+          labels: |
+            org.opencontainers.image.revision=${{ inputs.release_sha || github.sha }}
+            org.opencontainers.image.version=${{ inputs.release_tag || format('v0.0.0-dev.{0}', github.sha) }}
           tags: |
-            type=ref,event=branch
+            type=ref,event=branch,enable=${{ !inputs.release_tag }}
             type=ref,event=pr
-            type=ref,event=tag
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=sha-
+            type=raw,value=${{ inputs.release_tag }},enable=${{ inputs.release_tag != '' }}
+            type=semver,pattern={{version}},value=${{ inputs.release_tag }},enable=${{ inputs.release_tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.release_tag }},enable=${{ inputs.release_tag != '' }}
+            type=raw,value=latest,enable=${{ !inputs.release_tag && github.ref == 'refs/heads/main' }}
+            type=raw,value=sha-${{ steps.source.outputs.short }}
+            type=raw,value=sha-${{ inputs.release_sha || github.sha }}
 
       - name: Build and optionally push
         uses: docker/build-push-action@v7
@@ -188,26 +244,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            APP_VERSION=${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'unknown' }}
+            APP_VERSION=${{ inputs.release_tag || format('v0.0.0-dev.{0}', github.sha) }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,scope=${{ matrix.component }},mode=max
-
-  publish-release:
-    name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Publish stable release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
-            echo "Not a stable semantic version; skipping GitHub Release."
-            exit 0
-          fi
-          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
-          fi

@@ -137,7 +137,7 @@ async def test_network_failures(monkeypatch, exception):
     assert (await updates.check_for_update(now=NOW)).status == "check_failed"
 
 
-@pytest.mark.parametrize("version", ["unknown", "main", "v1.4.0-dev"])
+@pytest.mark.parametrize("version", ["unknown", "main", "v1.4.0-dev", "v0.0.0-dev.abc123", "v0.0.0-dev.abc123.dirty"])
 @pytest.mark.asyncio
 async def test_unknown_and_development_never_advertise(monkeypatch, version):
     monkeypatch.setattr(settings, "app_version", version)

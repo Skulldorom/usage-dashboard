@@ -2,7 +2,10 @@
 # Build frontend and matching backend metadata from a clean release checkout.
 set -eu
 cd "$(dirname "$0")/.."
-version=unknown
+version="v0.0.0-dev.$(git rev-parse --short=12 HEAD 2>/dev/null || printf unknown)"
+if test -n "$(git status --porcelain --untracked-files=no)"; then
+  version="$version.dirty"
+fi
 if test -z "$(git status --porcelain --untracked-files=no)"; then
   tag=$(git describe --tags --exact-match HEAD 2>/dev/null || true)
   if printf '%s\n' "$tag" | grep -Eq '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then

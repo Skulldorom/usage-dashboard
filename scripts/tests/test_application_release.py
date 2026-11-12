@@ -1,0 +1,259 @@
+"""External GitHub/registry boundaries are substituted; policy and git metadata run for real."""
+
+import importlib.util
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import unittest
+from unittest.mock import patch
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def load(name):
+    spec = importlib.util.spec_from_file_location(name, ROOT / "scripts" / f"{name}.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+release = load("application_release")
+images = load("verify_release_images")
+
+
+class PolicyTests(unittest.TestCase):
+    def test_increments_and_initial(self):
+        for kind, expected in [("patch", "v1.2.10"), ("minor", "v1.3.0"), ("major", "v2.0.0"), ("none", None)]:
+            self.assertEqual(release.increment("v1.2.9", kind), expected)
+        for kind, expected in [("patch", "v0.0.1"), ("minor", "v0.1.0"), ("major", "v1.0.0")]:
+            self.assertEqual(release.increment("v0.0.0", kind), expected)
+
+    def test_invalid(self):
+        for tag in ["latest", "1.2.3", "v01.2.3", "v1.2", "v1.2.3-rc.1", "v1.2.3+build"]:
+            with self.assertRaises(ValueError):
+                release.increment(tag, "patch")
+        with self.assertRaises(ValueError):
+            release.increment("v1.2.3", "guess")
+
+    def test_classification(self):
+        for kind in release.LEVELS:
+            self.assertEqual(release.classify([f"release:{kind}"], ["frontend/src/App.jsx"]), kind)
+        self.assertEqual(release.classify(["release:major"], ["README.md", "backend/tests/test_auth.py"]), "none")
+        for labels in [[], ["release:patch", "release:minor"], ["release:maybe"]]:
+            with self.assertRaises(ValueError):
+                release.classify(labels, ["backend/app/main.py"])
+
+    def test_atomic_competing_reservations(self):
+        # GitHub's create-ref conflict is the only external boundary; verify the loser never moves it.
+        error = subprocess.CalledProcessError(1, "gh")
+        with patch.object(release, "api", side_effect=[error, {"object": {"type": "commit", "sha": "a"}}]) as api:
+            release.reserve("owner/repo", "v1.0.0", "a")
+            self.assertEqual(api.call_count, 2)
+        with patch.object(release, "api", side_effect=[error, {"object": {"type": "commit", "sha": "b"}}]):
+            with self.assertRaises(ValueError):
+                release.reserve("owner/repo", "v1.0.0", "a")
+
+    def test_registry_failure_never_succeeds(self):
+        labels = {"org.opencontainers.image.version": "v1.2.3", "org.opencontainers.image.revision": "sha"}
+        valid = json.dumps({"config": {"Labels": labels}})
+        for results in [
+            [valid, subprocess.CalledProcessError(1, "docker")],
+            [valid, json.dumps({"config": {"Labels": {}}})],
+        ]:
+            with patch.object(images.subprocess, "check_output", side_effect=results):
+                with self.assertRaises((ValueError, subprocess.CalledProcessError)):
+                    images.verify("v1.2.3", "sha")
+        with patch.object(images.subprocess, "check_output", return_value=valid) as inspect:
+            images.verify("v1.2.3", "sha")
+            self.assertEqual(inspect.call_count, 2)
+
+    def test_publish_failure_and_idempotency(self):
+        draft = {"id": 1, "tag_name": "v1.0.0", "draft": True, "body": release.MARKER}
+        ref = {"object": {"type": "commit", "sha": "a"}}
+        with (
+            patch.object(release, "pages", return_value=[draft]),
+            patch.object(release, "api", side_effect=[ref, subprocess.CalledProcessError(1, "gh")]) as api,
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.publish("o/r", "v1.0.0", "a")
+            self.assertFalse(any(call.args[1:2] == ("PATCH",) for call in api.call_args_list))
+        with (
+            patch.object(release, "pages", return_value=[{**draft, "draft": False}]),
+            patch.object(release, "api", return_value=ref) as api,
+        ):
+            release.publish("o/r", "v1.0.0", "a")
+            self.assertEqual(api.call_count, 1)
+        with (
+            patch.object(release, "pages", return_value=[draft]),
+            patch.object(release, "api", side_effect=[ref, {"body": "Notes"}, {}]) as api,
+        ):
+            release.publish("o/r", "v1.0.0", "a")
+            self.assertFalse(api.call_args.args[2]["draft"])
+
+    def test_workflow_gates_and_metadata(self):
+        workflow = (ROOT / ".github/workflows/application-release.yml").read_text()
+        build = (ROOT / ".github/workflows/docker-images.yml").read_text()
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("needs: [prepare, images]", workflow)
+        self.assertLess(
+            workflow.index("python scripts/verify_release_images.py"),
+            workflow.index("python scripts/application_release.py publish"),
+        )
+        self.assertIn("needs: [test-backend, test-backend-migrations, test-frontend]", build)
+        self.assertIn("ref: ${{ inputs.release_sha || github.sha }}", build)
+        self.assertIn("APP_VERSION=${{ inputs.release_tag || format('v0.0.0-dev.{0}', github.sha) }}", build)
+        self.assertNotIn("publish-release:", build)
+        self.assertIn("APP_VERSION=${APP_VERSION}", (ROOT / "backend/Dockerfile").read_text())
+        self.assertIn("VITE_APP_VERSION=$APP_VERSION", (ROOT / "frontend/Dockerfile").read_text())
+
+
+class GitTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.cwd = os.getcwd()
+        os.chdir(self.tmp.name)
+        self.addCleanup(os.chdir, self.cwd)
+        self.run_git("init", "-b", "main")
+        self.run_git("config", "user.name", "Test")
+        self.run_git("config", "user.email", "test@example.com")
+        self.run_git("commit", "--allow-empty", "-m", "baseline")
+        self.base = self.run_git("rev-parse", "HEAD")
+        Path("backend/app").mkdir(parents=True)
+        Path("backend/app/main.py").write_text("pass\n")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "feature")
+        self.head = self.run_git("rev-parse", "HEAD")
+        self.run_git("remote", "add", "origin", self.tmp.name)
+        self.run_git("fetch", "origin")
+
+    def run_git(self, *args):
+        return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
+
+    def test_initial_release_and_resume(self):
+        prs = [
+            {
+                "merged_at": "now",
+                "base": {"ref": "main"},
+                "merge_commit_sha": self.head,
+                "labels": [{"name": "release:minor"}],
+            }
+        ]
+        with (
+            patch.object(release, "pages", return_value=[]),
+            patch.object(release, "api", return_value=prs),
+            patch.object(release, "reserve") as reserve,
+            patch.object(release, "ensure_draft"),
+        ):
+            self.assertEqual(release.prepare("o/r", self.base), {"tag": "v0.1.0", "sha": self.head})
+            reserve.assert_called_once_with("o/r", "v0.1.0", self.head)
+            with self.assertRaises(ValueError):
+                release.prepare("o/r", "")
+        # All tags below exist only in a disposable repository and are never pushed.
+        self.run_git("tag", "v0.1.0")
+        with (
+            patch.object(release, "pages", return_value=[]),
+            patch.object(release, "ensure_draft"),
+            patch.object(release, "reserve") as reserve,
+        ):
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v0.1.0", "sha": self.head})
+            reserve.assert_not_called()
+
+    def test_existing_release_increments_and_no_release(self):
+        self.run_git("tag", "v1.2.9", self.base)
+        published = [{"tag_name": "v1.2.9", "draft": False, "prerelease": False}]
+        for level, expected in [("patch", "v1.2.10"), ("minor", "v1.3.0"), ("major", "v2.0.0"), ("none", None)]:
+            prs = [
+                {
+                    "merged_at": "now",
+                    "base": {"ref": "main"},
+                    "merge_commit_sha": self.head,
+                    "labels": [{"name": f"release:{level}"}],
+                }
+            ]
+            with (
+                patch.object(release, "pages", return_value=published),
+                patch.object(release, "api", return_value=prs),
+                patch.object(release, "reserve") as reserve,
+                patch.object(release, "ensure_draft"),
+            ):
+                result = release.prepare("o/r", "")
+                self.assertEqual(result, {"tag": expected, "sha": self.head} if expected else None)
+                self.assertEqual(reserve.call_count, 1 if expected else 0)
+        with (
+            patch.object(release, "pages", return_value=published),
+            patch.object(release, "api", return_value=[]),
+            patch.object(release, "reserve") as reserve,
+        ):
+            with self.assertRaises(ValueError):
+                release.prepare("o/r", "")
+            reserve.assert_not_called()
+
+    def test_batch_uses_highest_intent_once(self):
+        self.run_git("tag", "v1.2.3", self.base)
+        first = self.head
+        Path("backend/app/main.py").write_text("feature\n")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "next")
+        second = self.run_git("rev-parse", "HEAD")
+
+        def prs(path, *args, **kwargs):
+            commit = second if second in path else first
+            return [
+                {
+                    "merged_at": "now",
+                    "base": {"ref": "main"},
+                    "merge_commit_sha": commit,
+                    "labels": [{"name": "release:minor" if commit == first else "release:patch"}],
+                }
+            ]
+
+        with (
+            patch.object(release, "pages", return_value=[{"tag_name": "v1.2.3", "draft": False, "prerelease": False}]),
+            patch.object(release, "api", side_effect=prs),
+            patch.object(release, "reserve") as reserve,
+            patch.object(release, "ensure_draft"),
+        ):
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.3.0", "sha": second})
+            reserve.assert_called_once_with("o/r", "v1.3.0", second)
+
+    def test_docs_only_and_source_verification(self):
+        self.run_git("tag", "v1.0.0")
+        release.verify_source("v1.0.0", self.head)
+        with self.assertRaises(ValueError):
+            release.verify_source("v1.0.0", self.base)
+        Path("README.md").write_text("docs")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "docs")
+        with (
+            patch.object(release, "pages", return_value=[{"tag_name": "v1.0.0", "draft": False, "prerelease": False}]),
+            patch.object(release, "reserve") as reserve,
+        ):
+            self.assertIsNone(release.prepare("o/r", ""))
+            reserve.assert_not_called()
+
+    def test_native_build_metadata(self):
+        Path("scripts").mkdir()
+        Path("frontend").mkdir()
+        Path("deploy").mkdir()
+        Path("bin").mkdir()
+        Path("scripts/build-release.sh").write_text((ROOT / "scripts/build-release.sh").read_text())
+        Path("bin/npm").write_text('#!/bin/sh\nprintf "%s" "$VITE_APP_VERSION" > ../frontend-version\n')
+        Path("bin/npm").chmod(0o755)
+        env = {**os.environ, "PATH": str(Path("bin").resolve()) + os.pathsep + os.environ["PATH"]}
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "build")
+        self.run_git("tag", "v1.2.3")
+        subprocess.run(["sh", "scripts/build-release.sh"], env=env, check=True, capture_output=True)
+        self.assertEqual(Path("frontend-version").read_text(), "v1.2.3")
+        self.assertEqual(Path("deploy/version.env").read_text(), "APP_VERSION=v1.2.3\n")
+        Path("backend/app/main.py").write_text("changed\n")
+        subprocess.run(["sh", "scripts/build-release.sh"], env=env, check=True, capture_output=True)
+        self.assertIn("-dev.", Path("frontend-version").read_text())
+        self.assertTrue(Path("frontend-version").read_text().endswith(".dirty"))
+
+
+if __name__ == "__main__":
+    unittest.main()

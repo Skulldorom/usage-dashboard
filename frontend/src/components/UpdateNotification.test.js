@@ -35,6 +35,14 @@ afterEach(async () => {
   vi.useRealTimers()
 })
 describe('UpdateNotification', () => {
+  it('keeps matching SHA development versions visible without a stable update claim', async () => {
+    const development = 'v0.0.0-dev.abc123'
+    vi.stubEnv('VITE_APP_VERSION', development)
+    await render({ update: { ...update, current_version: development, status: 'unknown' } })
+    expect(container.textContent).toContain(development)
+    expect(container.textContent).not.toContain('Update available')
+    expect(container.querySelector('a')).toBeNull()
+  })
   it('shows versions and a safe keyboard-accessible external action', async () => {
     await render()
     expect(container.textContent).toContain('Update available')
