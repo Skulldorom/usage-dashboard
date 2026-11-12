@@ -8,12 +8,15 @@ Use the upgrade procedure for the way Usage Dashboard was installed:
 
 Updates are shipped as release tags and matching images on GitHub Container Registry.
 
-## Update to the latest release
+## Refresh the selected channel
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
+
+These commands refresh the configured image channel; they do not switch from development to stable.
+The default `latest` tag follows `main`, not the latest stable release.
 
 Compose recreates any containers whose image changed. Database migrations run
 automatically when the backend starts.
@@ -47,19 +50,90 @@ before the new backend serves traffic.
 
 ## Update notifications
 
-After an admin session is established, the sidebar shows the installed backend version and checks GitHub's published stable release about every six hours. It only offers an update when a newer valid semantic-version GitHub Release exists. Drafts, prereleases, malformed tags, and tags without a matching release page are ignored.
+After an admin session is established, the sidebar checks GitHub's published stable
+release about every six hours. The footer shows a short stable version, or
+**Development** with a seven-character commit identifier. It never treats the
+`v0.0.0` placeholder as a stable installation. Hover or keyboard-focus **Version
+details** to inspect full backend/frontend metadata, or use **Copy full version
+metadata**. Copy requires clipboard permission and a secure browser context; a
+failure is announced without disrupting the dashboard.
 
-The check is informational: it never pulls images, restarts containers, or runs migrations. Select **View release notes** to open the verified GitHub release page. Dismissing a notice stores that release tag only in the browser; the next release is shown again.
+| State | Meaning |
+| --- | --- |
+| **Up to date** | Matching stable artifacts equal the freshly checked stable release. |
+| **Update available** | A verified stable release has a higher semantic version than the matching installed stable artifacts. |
+| **Ahead of published release** | Installed stable metadata is higher; no downgrade is advertised. |
+| **Stable release available** | A published stable alternative exists for matching development/prerelease artifacts. This does **not** claim the release is newer than a development commit. |
+| **No stable release published** | GitHub's latest stable endpoint returned no release for a development installation with no cached release. |
+| **Version unknown** / **Version mismatch** | Installation compatibility cannot be established; update claims are suppressed. |
+| **Release metadata stale** | Last trusted metadata cannot support a fresh availability claim. |
+| **Update check unavailable** / **Release unverified** | The check failed, or release metadata failed validation; neither means up to date. |
 
-Released container images receive `APP_VERSION` from their `v*` release tag. Native Linux installs run `sh scripts/build-release.sh` from a clean release checkout. This builds the frontend with the exact tag and writes `deploy/version.env`, loaded by the supplied backend systemd unit. Run this script after each upgrade; no manual version constant is required. Without Git at runtime, the built frontend and generated environment file retain the version. Default-branch builds use a SHA-bearing development prerelease; local builds without metadata use `unknown`. The UI compares the frontend build metadata with the backend version; mismatched or unknown artifact versions suppress update claims and show separate artifact labels. Use the same pinned tag for both standalone images and diagnose a mismatch with the image tag and backend `APP_VERSION`.
+Drafts, prereleases, malformed/placeholder versions, future publication times, and
+untrusted release URLs never produce availability claims. **View release notes**
+opens only the verified GitHub release page. Notifications are informational:
+they never pull images, restart containers, or run migrations. Stable update
+notices use cyan; development-channel notices use a muted amber accent and
+explicitly avoid a newer-version comparison. Both fit the mobile layout.
 
-The backend caches successful GitHub metadata in memory for six hours and uses conditional ETag revalidation. GitHub is optional: outages, rate limits, or invalid responses do not affect dashboard operation; the last trusted result may be reported as stale and no fresh update claim is made. The backend requires outbound HTTPS access to `api.github.com` only for a fresh check.
+Dismissals are stored locally per release and notification type, synchronized
+between the desktop and mobile views. Remounting does not show the same dismissed
+notice; a different release is shown again. Stable-update dismissals from older
+installations remain respected. Restricted storage still permits dismissal for
+the current session, but cannot preserve it across reloads.
 
-Requests use a five-second timeout, no redirects or retries, and a 256 KiB response limit. Failed checks back off for 15 minutes. `GET /api/v1/updates` reports `status: check_failed` and `cache_status: stale` after a failed refresh, preserving the original `checked_at` timestamp and trusted release data but never advertising it as freshly verified. Each backend worker has its own bounded cache; restarts clear it. Only admin sessions can access the endpoint, not scoped API tokens. No session or provider credentials are sent to GitHub.
+### Stable and development image channels
 
-The browser stops/ignores requests after logout and avoids checks while hidden. It checks on returning to a visible tab when due. Frontend and backend artifact metadata must match before an update banner or latest-version tooltip can appear. An installed version label alone does not assert freshness. Development/prerelease builds suppress update claims.
+`latest` and `main` retain their existing development-channel meaning. They embed
+`v0.0.0-dev.<full-commit-SHA>` because a branch build is not a published stable
+release, even if its source commit also has a release tag. The footer shortens
+only the presentation; full build metadata remains intact. Stable release builds
+inject the actual release tag into backend `APP_VERSION`, frontend
+`VITE_APP_VERSION`, and OCI version labels. Matching images share the same source
+revision. No runtime version constant or Git checkout is required.
 
-The release workflow publishes a stable GitHub Release only after both tagged images are pushed. `latest` follows the default branch and reports a SHA-bearing development version; pin matching explicit release tags for stable installations. Old images without embedded metadata remain unknown. Production runtime does not require `.git`. For native installations, reinstall the updated systemd units when adopting the generated `deploy/version.env` mechanism. If versions are unknown, rebuild from a clean release checkout or deploy newly published tagged images; inspect backend `APP_VERSION` and frontend build metadata when labels disagree.
+To select stable rather than development, set `IMAGE_TAG` to an exact **published**
+release tag (for example `v1.0.0`) in Compose's `.env`, then run the pull/recreate
+commands above. Standalone deployments must pin both full image references to the
+same published exact tag. Follow the installation-specific migration ordering.
+Moving minor aliases are not an atomic publication guarantee.
+
+Native Linux installs run `sh scripts/build-release.sh` from a clean release
+checkout. It builds matching frontend metadata and writes `deploy/version.env`,
+loaded by the supplied backend systemd unit. Rerun after every upgrade. Other
+native builds embed development metadata, with `.dirty` for tracked edits.
+Local builds without embedded metadata remain unknown.
+
+### Diagnose artifact mismatches
+
+Focus **Version details** or copy metadata to compare the complete frontend and
+backend versions, including development SHA and build suffixes. A known mismatch
+has a compact diagnostic, not an upgrade banner. Unknown artifacts are never
+reported as up to date. Check both container image references, backend
+`APP_VERSION`, and OCI version/revision labels; deploy matching artifacts from the
+same published exact tag or development build. Recreate both services, then
+reload the browser to remove an older cached frontend. For native installs,
+rebuild the frontend and generated `deploy/version.env` together and restart the
+backend using the updated systemd units. Do not manually alter a version value
+to hide a mismatch.
+
+### Check freshness and failures
+
+The backend caches trusted metadata in memory for six hours, revalidates with
+ETags, and backs failures off for 15 minutes. Failed refreshes preserve the last
+trusted release and its original `checked_at`, mark it stale, and suppress
+availability. Invalid release metadata is distinguished from network/API failures.
+The browser also suppresses availability when its snapshot ages past six hours,
+even before another API response arrives. Stale metadata is not an up-to-date
+claim. Each worker has its own cache; restarts clear it.
+
+Requests use a five-second timeout, no redirects or retries, and a 256 KiB response
+limit. Only admin sessions can access `GET /api/v1/updates`; scoped API tokens
+remain rejected. No session/provider credentials go to GitHub. Outbound HTTPS to
+`api.github.com` is needed only for fresh checks. The browser stops/ignores
+requests on logout, avoids hidden-tab checks, and checks when visible and due.
+GitHub failures never block dashboard operation. Availability verifies published
+release metadata, not the running artifacts' contents or deployment compatibility.
 
 ## Application versioning policy
 
@@ -130,7 +204,7 @@ migrations), builds both images with the same version, then pushes the existing
 `ghcr.io/skulldorom/usage-dashboard-frontend` image names. Both image version/revision
 labels are read back from GHCR before the draft Release becomes public. The build
 explicitly targets `linux/amd64`; verification pulls that runnable platform and
-uses `docker image inspect --format '{{json .Config.Labels}}'`, which works for
+uses `docker image inspect` to read image configuration labels, which works for
 single manifests and OCI indexes with BuildKit provenance attestations. Exact
 `vX.Y.Z`, `X.Y.Z`, `X.Y`, and SHA tags remain available. `main` and `latest` remain
 development channels; stable releases do not move them.
@@ -166,11 +240,11 @@ frontend `VITE_APP_VERSION`, and include matching OCI version/source-revision la
 Default-branch images use `v0.0.0-dev.<full-commit-SHA>`. Native builds from a clean
 exact stable-tag checkout use that tag; other native builds use
 `v0.0.0-dev.<short-SHA>` with `.dirty` for tracked edits. Plain local builds with no
-metadata remain unknown. Development prereleases cannot trigger stable update
-claims, even when their numeric base is lower. The authenticated sidebar retains
-the installed version and shows separate artifact labels for a mismatch. Dismissal
-still applies only to the specific available release; this process never updates
-an installation automatically.
+metadata remain unknown. Development prereleases never trigger a newer-version upgrade claim, even when
+their numeric base is lower. They can show a separate **Stable release available**
+notice. The authenticated sidebar retains a compact installed-version label and
+exposes both artifact versions in details for a mismatch. Dismissal applies to the
+specific release and notification type; nothing updates the installation automatically.
 
 Compose operators set `IMAGE_TAG` to a **published** `vX.Y.Z` and recreate both
 services. Standalone operators pin both image references to the same published tag.

@@ -25,7 +25,7 @@ export default function useUpdateStatus(isAuthenticated) {
         const result = await api.systemUpdate({ signal: controller.signal });
         if (!disposed) setUpdate(result);
       } catch {
-        if (!disposed) setUpdate((previous) => previous ? { ...previous, status: "check_failed" } : null);
+        if (!disposed) setUpdate((previous) => previous ? { ...previous, status: "check_failed", cache_status: "stale" } : { current_version: null, status: "check_failed", cache_status: "empty" });
       } finally {
         inFlight = false;
       }

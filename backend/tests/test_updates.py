@@ -26,9 +26,12 @@ def reset(monkeypatch):
 
 def transport(monkeypatch, handler):
     original = httpx.AsyncClient
-    monkeypatch.setattr(
-        updates.httpx, "AsyncClient", lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs)
-    )
+
+    def client(**kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return original(**kwargs)
+
+    monkeypatch.setattr(updates.httpx, "AsyncClient", client)
 
 
 @pytest.mark.parametrize(
@@ -38,6 +41,7 @@ def transport(monkeypatch, handler):
         ("v1.2.0", "v1.3.0", True),
         ("1.2.0", "2.0.0", True),
         ("1.3.0", "1.3.0", False),
+        ("1.3.0+build.1", "1.3.0", False),
         ("1.4.0", "1.3.0", False),
         ("1.10.0", "1.9.0", False),
         ("invalid", "1.3.0", False),
@@ -94,6 +98,7 @@ async def test_cache_concurrent_etag_and_failure_backoff(monkeypatch):
         {"tag_name": "main"},
         {"published_at": None},
         {"tag_name": "v1.3.0-rc.1"},
+        {"tag_name": "v0.0.0"},
         {"published_at": "2027-01-01T00:00:00Z"},
     ],
 )
@@ -101,7 +106,7 @@ async def test_cache_concurrent_etag_and_failure_backoff(monkeypatch):
 async def test_invalid_releases(monkeypatch, patch):
     transport(monkeypatch, lambda _: httpx.Response(200, json={**RELEASE, **patch}))
     result = await updates.check_for_update(now=NOW)
-    assert result.status == "check_failed" and result.latest_version is None
+    assert result.status == "unverified_release" and result.latest_version is None
 
 
 @pytest.mark.parametrize("code", [403, 404, 429, 500])
@@ -124,7 +129,7 @@ async def test_http_failures_do_not_storm(monkeypatch, code):
 @pytest.mark.asyncio
 async def test_invalid_json_and_empty_history(monkeypatch, body):
     transport(monkeypatch, lambda _: httpx.Response(200, content=body))
-    assert (await updates.check_for_update(now=NOW)).status == "check_failed"
+    assert (await updates.check_for_update(now=NOW)).status == "unverified_release"
 
 
 @pytest.mark.parametrize("exception", [httpx.ReadTimeout, httpx.ConnectError])
@@ -137,10 +142,57 @@ async def test_network_failures(monkeypatch, exception):
     assert (await updates.check_for_update(now=NOW)).status == "check_failed"
 
 
-@pytest.mark.parametrize("version", ["unknown", "main", "v1.4.0-dev", "v0.0.0-dev.abc123", "v0.0.0-dev.abc123.dirty"])
+@pytest.mark.parametrize(
+    "version", ["unknown", "main", "v1.4.0-dev", "v0.0.0", "v0.0.0-dev.abc123", "v0.0.0-dev.abc123.dirty"]
+)
 @pytest.mark.asyncio
 async def test_unknown_and_development_never_advertise(monkeypatch, version):
     monkeypatch.setattr(settings, "app_version", version)
     transport(monkeypatch, lambda _: httpx.Response(200, json=RELEASE))
     result = await updates.check_for_update(now=NOW)
-    assert result.status == "unknown" and not result.update_available
+    expected = "stable_release_available" if "-" in version else "unknown"
+    assert result.status == expected and not result.update_available
+
+
+@pytest.mark.asyncio
+async def test_stable_version_statuses(monkeypatch):
+    transport(monkeypatch, lambda _: httpx.Response(200, json=RELEASE))
+    monkeypatch.setattr(settings, "app_version", "v1.3.0")
+    equal = await updates.check_for_update(now=NOW)
+    assert equal.status == "up_to_date" and not equal.update_available
+
+
+@pytest.mark.asyncio
+async def test_installed_newer_version_is_not_downgraded(monkeypatch):
+    monkeypatch.setattr(settings, "app_version", "v1.4.0")
+    transport(monkeypatch, lambda _: httpx.Response(200, json=RELEASE))
+    ahead = await updates.check_for_update(now=NOW)
+    assert ahead.status == "ahead_of_release" and not ahead.update_available
+
+
+@pytest.mark.parametrize("version", ["v0.0.0-dev.abc123", "v1.4.0-dev"])
+@pytest.mark.asyncio
+async def test_development_status_with_verified_stable_cache(monkeypatch, version):
+    monkeypatch.setattr(settings, "app_version", version)
+    transport(monkeypatch, lambda _: httpx.Response(200, json=RELEASE))
+    result = await updates.check_for_update(now=NOW)
+    assert result.status == "stable_release_available" and not result.update_available
+
+
+@pytest.mark.asyncio
+async def test_development_without_release_404(monkeypatch):
+    monkeypatch.setattr(settings, "app_version", "v0.0.0-dev.abc123")
+    transport(monkeypatch, lambda _: httpx.Response(404))
+    result = await updates.check_for_update(now=NOW)
+    assert result.status == "no_stable_release" and not result.update_available
+
+
+@pytest.mark.asyncio
+async def test_invalid_metadata_is_unverified_and_retains_cache(monkeypatch):
+    payloads = [RELEASE, {**RELEASE, "draft": True}]
+    transport(monkeypatch, lambda _: httpx.Response(200, json=payloads.pop(0)))
+    first = await updates.check_for_update(now=NOW)
+    assert first.status == "update_available"
+    second = await updates.check_for_update(now=NOW + timedelta(hours=7))
+    assert second.status == "unverified_release" and not second.update_available
+    assert second.latest_version == "v1.3.0" and second.cache_status == "stale"
