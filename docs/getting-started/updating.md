@@ -81,14 +81,23 @@ classification check rejects missing, conflicting, or unrecognized classificatio
 on every PR targeting `main`, including documentation-only PRs. Label validation is
 independent of changed-file eligibility; choose `release:none` for skipped changes.
 Make it a required branch-protection check. Labels, not commit
-subjects, are authoritative; a `feat:` title alone is not sufficient. Do not remove
-or change release labels on merged PRs until they have shipped.
+subjects, are authoritative; a `feat:` title alone is not sufficient. The planner reconstructs label events from the PR timeline up to its matching
+merge event, verifying merge commit and timestamp. Later relabeling cannot change
+the release intent. Missing/conflicting merge-time labels or incomplete history
+block planning; relabeling after merge cannot repair them. Include legacy history
+only through an explicitly reviewed initial baseline. Do not delete or rename
+release labels: GitHub timeline data is the audit source, not an immutable ledger.
 
 Application paths include backend application/migrations/dependencies, frontend
 source/public assets/dependencies, Dockerfiles, nginx/entrypoint assets, Compose,
 `deploy/`, and the native build script. Documentation, tests, and release tooling
 alone do not trigger a release, even with a release label. Use `release:none` only
-when a runtime-path change truly needs no installation update. Merge or squash
+when a runtime-path change truly needs no installation update. This is a deliberate
+maintainer decision, recorded at merge time and printed with PR number and commit
+in planner logs. It skips the increment, not deployment tests or publication gates.
+A none-only batch creates no release; skipped commits are still included in the
+source of a later eligible batch. Labels cannot prove a change is non-breaking:
+require maintainer review and required checks before merging. Merge or squash
 runtime PRs into `main`; rebase merges and direct runtime commits lack reliable PR
 classification and block release planning rather than guessing intent.
 
@@ -99,8 +108,9 @@ from `main`. It batches all changes since the last published stable release and
 applies the highest increment once. **Merging a PR does not immediately publish a
 new stable version.** There is no release per commit or per merge.
 A documentation-only/non-releasable batch does nothing. Ambiguous runtime changes
-fail planning before any tag is created; add the missing classification to their
-merged PRs and retry.
+fail planning before any tag is created. Fix missing labels before merging;
+after merge, editing labels does not rewrite intent. Legacy unlabeled history
+requires a reviewed bootstrap baseline rather than retroactive classification.
 
 For the **first release**, dispatch with `initial_base` set to a reviewed full
 40-character baseline commit SHA, exclusive. This explicitly selects the history

@@ -92,6 +92,34 @@ def pages(path):
     raise ValueError("API pagination limit reached")
 
 
+def changed_paths(commit):
+    parents = git("rev-list", "--parents", "-n", "1", commit).split()[1:]
+    if len(parents) not in (1, 2):
+        raise ValueError("Release history requires ordinary or two-parent merge commits")
+    # Explicit first-parent comparison includes merge resolutions and deletions.
+    return git("diff", "--name-only", "--no-renames", "-z", parents[0], commit).split("\0")[:-1]
+
+
+def merged_intent(repo, pr, commit):
+    labels = set()
+    events = pages(f"repos/{repo}/issues/{pr['number']}/timeline")
+    for event in events:
+        kind = event.get("event")
+        if kind in ("labeled", "unlabeled"):
+            name = event["label"]["name"]
+            if kind == "labeled":
+                labels.add(name)
+            else:
+                if name.startswith("release:") and name not in labels:
+                    raise ValueError("Incomplete release label history")
+                labels.discard(name)
+        elif kind == "merged":
+            if event.get("commit_id") != commit or event.get("created_at") != pr["merged_at"]:
+                raise ValueError("PR timeline merge does not match release commit")
+            return release_intent(labels)
+    raise ValueError("PR timeline has no matching merge event")
+
+
 def reserve(repo, tag, sha):
     """GitHub refs are create-only: a competing reservation must identify the same commit."""
     try:
@@ -163,7 +191,7 @@ def prepare(repo, initial_base):
             raise ValueError("Release batch exceeds 500 commits; select a reviewed initial baseline")
         levels = ["none"]
         for commit in commits:
-            paths = git("diff-tree", "--no-commit-id", "--name-only", "-r", f"{commit}^", commit).splitlines()
+            paths = changed_paths(commit)
             if not releasable(paths):
                 continue
             prs = pages(f"repos/{repo}/commits/{commit}/pulls")
@@ -174,7 +202,10 @@ def prepare(repo, initial_base):
             ]
             if len(prs) != 1:
                 raise ValueError(f"Commit {commit} requires a classified merged PR (use squash or merge commits)")
-            levels.append(classify([label["name"] for label in prs[0]["labels"]], paths))
+            pr = prs[0]
+            intent = merged_intent(repo, pr, commit)
+            print(f"Runtime PR #{pr['number']} at {commit}: merge-time release:{intent}")
+            levels.append(intent)
         level = max(levels, key=LEVELS.get)
         if level == "none":
             return None

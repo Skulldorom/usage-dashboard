@@ -127,6 +127,37 @@ class PolicyTests(unittest.TestCase):
         self.assertIn("labeled, unlabeled", pr_trigger)
         self.assertIn("edited", pr_trigger)
 
+    def test_merge_intent_ignores_post_merge_labels(self):
+        pr = {"number": 42, "merged_at": "2026-11-12T12:00:00Z", "labels": [{"name": "release:major"}]}
+        for intent in ("patch", "minor", "major", "none"):
+            events = [
+                {"event": "labeled", "label": {"name": "release:minor"}},
+                {"event": "unlabeled", "label": {"name": "release:minor"}},
+                {"event": "labeled", "label": {"name": f"release:{intent}"}},
+                {"event": "merged", "commit_id": "sha", "created_at": pr["merged_at"]},
+                {"event": "unlabeled", "label": {"name": f"release:{intent}"}},
+                {"event": "labeled", "label": {"name": "release:major"}},
+            ]
+            with patch.object(release, "pages", return_value=events):
+                self.assertEqual(release.merged_intent("o/r", pr, "sha"), intent)
+
+    def test_merge_intent_fails_closed(self):
+        pr = {"number": 42, "merged_at": "now", "labels": [{"name": "release:patch"}]}
+        merged = {"event": "merged", "commit_id": "sha", "created_at": "now"}
+        labeled = {"event": "labeled", "label": {"name": "release:patch"}}
+        for events in [
+            [],
+            [merged, labeled],
+            [labeled],
+            [labeled, {**merged, "commit_id": "other"}],
+            [labeled, {**merged, "created_at": "later"}],
+            [labeled, {"event": "labeled", "label": {"name": "release:none"}}, merged],
+            [{"event": "unlabeled", "label": {"name": "release:minor"}}, labeled, merged],
+        ]:
+            with patch.object(release, "pages", return_value=events):
+                with self.assertRaises(ValueError):
+                    release.merged_intent("o/r", pr, "sha")
+
     def test_workflow_gates_and_metadata(self):
         workflow = (ROOT / ".github/workflows/application-release.yml").read_text()
         build = (ROOT / ".github/workflows/docker-images.yml").read_text()
@@ -163,6 +194,16 @@ class GitTests(unittest.TestCase):
         self.head = self.run_git("rev-parse", "HEAD")
         self.run_git("remote", "add", "origin", self.tmp.name)
         self.run_git("fetch", "origin")
+        self.real_merged_intent = release.merged_intent
+        self.timeline_patch = patch.object(release, "merged_intent", side_effect=self.fixture_intent)
+        self.timeline_patch.start()
+        self.addCleanup(self.timeline_patch.stop)
+
+    def fixture_intent(self, repo, pr, commit):
+        events = [{"event": "labeled", "label": label} for label in pr["labels"]]
+        events.append({"event": "merged", "commit_id": commit, "created_at": pr["merged_at"]})
+        with patch.object(release, "pages", return_value=events):
+            return self.real_merged_intent(repo, pr, commit)
 
     def run_git(self, *args):
         return subprocess.check_output(["git", *args], text=True, stderr=subprocess.DEVNULL).strip()
@@ -170,6 +211,7 @@ class GitTests(unittest.TestCase):
     def test_initial_release_and_resume(self):
         prs = [
             {
+                "number": 1,
                 "merged_at": "now",
                 "base": {"ref": "main"},
                 "merge_commit_sha": self.head,
@@ -201,6 +243,7 @@ class GitTests(unittest.TestCase):
         for level, expected in [("patch", "v1.2.10"), ("minor", "v1.3.0"), ("major", "v2.0.0"), ("none", None)]:
             prs = [
                 {
+                    "number": 1,
                     "merged_at": "now",
                     "base": {"ref": "main"},
                     "merge_commit_sha": self.head,
@@ -235,10 +278,45 @@ class GitTests(unittest.TestCase):
             commit = second if second in path else first
             return [
                 {
+                    "number": 1,
                     "merged_at": "now",
                     "base": {"ref": "main"},
                     "merge_commit_sha": commit,
                     "labels": [{"name": "release:minor" if commit == first else "release:patch"}],
+                }
+            ]
+
+        with (
+            patch.object(
+                release,
+                "pages",
+                side_effect=lambda path: (
+                    prs(path) if "/commits/" in path else [{"tag_name": "v1.2.3", "draft": False, "prerelease": False}]
+                ),
+            ),
+            patch.object(release, "reserve") as reserve,
+            patch.object(release, "ensure_draft"),
+        ):
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.3.0", "sha": second})
+            reserve.assert_called_once_with("o/r", "v1.3.0", second)
+
+    def test_runtime_none_is_included_in_later_eligible_batch(self):
+        self.run_git("tag", "v1.2.3", self.base)
+        first = self.head
+        Path("backend/app/main.py").write_text("feature\n")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "next")
+        second = self.run_git("rev-parse", "HEAD")
+
+        def prs(path, *args, **kwargs):
+            commit = second if second in path else first
+            return [
+                {
+                    "number": 1,
+                    "merged_at": "now",
+                    "base": {"ref": "main"},
+                    "merge_commit_sha": commit,
+                    "labels": [{"name": "release:minor" if commit == first else "release:none"}],
                 }
             ]
 
@@ -276,6 +354,7 @@ class GitTests(unittest.TestCase):
             with self.subTest(kind=kind):
                 prs = [
                     {
+                        "number": 1,
                         "merged_at": "now",
                         "base": {"ref": "main"},
                         "merge_commit_sha": self.head,
@@ -309,6 +388,7 @@ class GitTests(unittest.TestCase):
         self.run_git("merge", "--no-ff", "feature", "-m", "Merge PR")
         merged = self.run_git("rev-parse", "HEAD")
         unrelated = {
+            "number": 1,
             "merged_at": "now",
             "base": {"ref": "main"},
             "merge_commit_sha": self.base,
@@ -343,6 +423,32 @@ class GitTests(unittest.TestCase):
         ):
             self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.0.0", "sha": reserved})
             reserve.assert_not_called()
+
+    def test_real_merge_and_squash_changed_paths(self):
+        for mode in ("merge", "squash"):
+            with self.subTest(mode=mode):
+                self.run_git("checkout", "-B", f"target-{mode}", self.head)
+                self.run_git("checkout", "-b", f"feature-{mode}")
+                Path("frontend/src").mkdir(parents=True, exist_ok=True)
+                Path("frontend/src/New.jsx").write_text("feature")
+                self.run_git("rm", "backend/app/main.py")
+                self.run_git("add", ".")
+                self.run_git("commit", "-m", "runtime feature")
+                self.run_git("checkout", f"target-{mode}")
+                Path("README.md").write_text("independent main change")
+                self.run_git("add", ".")
+                self.run_git("commit", "-m", "main docs")
+                if mode == "merge":
+                    self.run_git("merge", "--no-ff", f"feature-{mode}", "-m", "merge feature")
+                else:
+                    self.run_git("merge", "--squash", f"feature-{mode}")
+                    self.run_git("commit", "-m", "squash feature")
+                commit = self.run_git("rev-parse", "HEAD")
+                paths = release.changed_paths(commit)
+                self.assertEqual(set(paths), {"backend/app/main.py", "frontend/src/New.jsx"})
+                self.assertTrue(release.releasable(paths))
+                parent_count = len(self.run_git("rev-list", "--parents", "-n", "1", commit).split()) - 1
+                self.assertEqual(parent_count, 2 if mode == "merge" else 1)
 
     def test_native_build_metadata(self):
         Path("scripts").mkdir()
