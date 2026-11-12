@@ -45,14 +45,16 @@ describe('UpdateNotification', () => {
     expect(container.textContent).not.toContain(development)
     expect(container.textContent).toContain('Stable release available')
     expect(container.textContent).not.toContain('Update available')
-    expect(container.textContent).toContain('not a newer-version comparison')
+    expect(container.textContent).toContain('alternative to this development build')
+    expect(container.textContent).not.toContain('→')
   })
-  it('shows versions and a safe keyboard-accessible external action', async () => {
+  it('shows installed-to-latest versions and a safe keyboard-accessible external action', async () => {
     await render()
     expect(container.textContent).toContain('Update available')
-    expect(container.textContent).toContain('v1.2.0')
-    expect(container.textContent).toContain('v1.3.0')
+    expect(container.textContent).toContain('v1.2.0 → v1.3.0')
     const link = container.querySelector('a')
+    expect(link.textContent).toContain('View release')
+    expect(link.querySelector('svg').getAttribute('aria-hidden')).toBe('true')
     expect(link.getAttribute('href')).toBe(update.release_url)
     expect(link.target).toBe('_blank')
     expect(link.rel).toBe('noopener noreferrer')
@@ -60,6 +62,38 @@ describe('UpdateNotification', () => {
     expect(close.getAttribute('aria-label')).toBe('Dismiss update v1.3.0')
     close.focus()
     expect(document.activeElement).toBe(close)
+  })
+  it('shows stable alternatives for development without a version comparison', async () => {
+    const development = 'v0.0.0-dev.abcdef1234567'
+    vi.stubEnv('VITE_APP_VERSION', development)
+    await render({ update: { ...update, current_version: development, status: 'stable_release_available' } })
+    expect(container.textContent).toContain('Stable release available')
+    expect(container.textContent).toContain('A stable release is available as an alternative')
+    expect(container.textContent).toContain('v1.3.0')
+    expect(container.textContent).not.toContain('→')
+  })
+  it('shows version metadata independent from the update notification', async () => {
+    await render({ update: { ...update, status: 'up_to_date' } })
+    expect(container.textContent).toContain('v1.2.0')
+    expect(container.querySelector('button[aria-label="Version details"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Copy full version metadata"]')).not.toBeNull()
+  })
+  it.each([
+    { current_version: null, latest_version: 'v1.3.0', status: 'update_available' },
+    { current_version: 'v1.2.0', latest_version: null, status: 'update_available' },
+    { current_version: 'v1.2.0', latest_version: 'v1.3.0', status: 'unverified_release' },
+    { current_version: 'v1.2.0', latest_version: 'v1.3.0', status: 'update_available', cache_status: 'stale' },
+  ])('suppresses comparisons for unknown, stale, or unverified metadata %j', async (patch) => {
+    await render({ update: { ...update, ...patch } })
+    expect(container.querySelector('.update-version-change')).toBeNull()
+    expect(container.querySelector('a')).toBeNull()
+  })
+  it('keeps release verification and version diagnostics independent from the card', async () => {
+    await render({ update: { ...update, latest_version: 'v1.2.0', release_url: 'https://github.com/Skulldorom/usage-dashboard/releases/tag/v1.2.0', status: 'up_to_date' } })
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('Up to date')
+    expect(container.querySelector('button[aria-label="Version details"]')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="Copy full version metadata"]')).not.toBeNull()
   })
   it('dismisses per release, survives remount, and keeps the current version visible', async () => {
     await render()
