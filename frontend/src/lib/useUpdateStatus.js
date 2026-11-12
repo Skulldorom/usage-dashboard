@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api.js";
 
-const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 export default function useUpdateStatus(isAuthenticated) {
   const [update, setUpdate] = useState(null);

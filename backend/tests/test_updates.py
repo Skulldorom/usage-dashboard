@@ -7,6 +7,11 @@ import pytest
 from app import updates
 from app.core.config import settings
 
+
+def test_default_update_cache_is_five_minutes():
+    assert settings.update_cache_seconds == 300
+
+
 NOW = datetime(2026, 11, 12, tzinfo=UTC)
 RELEASE = {
     "tag_name": "v1.3.0",
@@ -75,14 +80,14 @@ async def test_cache_concurrent_etag_and_failure_backoff(monkeypatch):
     assert len(requests) == 1
     assert all(result.update_available for result in results)
     assert results[0].checked_at == NOW
-    refreshed = await updates.check_for_update(now=NOW + timedelta(hours=7))
-    assert refreshed.checked_at == NOW + timedelta(hours=7)
-    stale = await updates.check_for_update(now=NOW + timedelta(hours=14))
+    refreshed = await updates.check_for_update(now=NOW + timedelta(minutes=5))
+    assert refreshed.checked_at == NOW + timedelta(minutes=5)
+    stale = await updates.check_for_update(now=NOW + timedelta(minutes=11))
     assert stale.status == "check_failed" and stale.cache_status == "stale"
     assert stale.latest_version == "v1.3.0" and not stale.update_available
     assert stale.checked_at == refreshed.checked_at
-    await updates.check_for_update(now=NOW + timedelta(hours=14, minutes=1))
-    assert len(requests) == 3
+    await updates.check_for_update(now=NOW + timedelta(minutes=26))
+    assert len(requests) == 4
 
 
 @pytest.mark.parametrize(
@@ -224,17 +229,17 @@ async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version, re
 
     transport(monkeypatch, handler)
     first = await updates.check_for_update(now=NOW)
-    stale = await updates.check_for_update(now=NOW + timedelta(hours=7))
+    stale = await updates.check_for_update(now=NOW + timedelta(minutes=5))
     assert stale.status == "check_failed" and not stale.update_available
     assert stale.cache_status == "stale" and stale.checked_at == first.checked_at
     assert stale.latest_version == first.latest_version and stale.release_url == first.release_url
-    assert await updates.check_for_update(now=NOW + timedelta(hours=7, minutes=14)) == stale
+    assert await updates.check_for_update(now=NOW + timedelta(minutes=19)) == stale
     assert len(requests) == 2
-    recovered = await updates.check_for_update(now=NOW + timedelta(hours=7, minutes=15))
+    recovered = await updates.check_for_update(now=NOW + timedelta(minutes=20))
     expected = "stable_release_available" if "-dev." in version else "update_available"
     assert recovered.status == expected and recovered.cache_status == "fresh"
     assert recovered.update_available is (version == "v1.2.0")
-    assert recovered.checked_at == NOW + timedelta(hours=7, minutes=15)
+    assert recovered.checked_at == NOW + timedelta(minutes=20)
     assert recovered.latest_version == first.latest_version
     assert len(requests) == 3
 
@@ -245,6 +250,18 @@ async def test_invalid_metadata_is_unverified_and_retains_cache(monkeypatch):
     transport(monkeypatch, lambda _: httpx.Response(200, json=payloads.pop(0)))
     first = await updates.check_for_update(now=NOW)
     assert first.status == "update_available"
-    second = await updates.check_for_update(now=NOW + timedelta(hours=7))
+    second = await updates.check_for_update(now=NOW + timedelta(minutes=5))
     assert second.status == "unverified_release" and not second.update_available
     assert second.latest_version == "v1.3.0" and second.cache_status == "stale"
+
+
+@pytest.mark.asyncio
+async def test_new_release_becomes_visible_after_cache_expiry(monkeypatch):
+    payloads = [RELEASE, {**RELEASE, "tag_name": "v1.4.0", "html_url": updates.RELEASE_BASE + "v1.4.0"}]
+    transport(monkeypatch, lambda _: httpx.Response(200, json=payloads.pop(0)))
+    first = await updates.check_for_update(now=NOW)
+    assert first.latest_version == "v1.3.0"
+    still_cached = await updates.check_for_update(now=NOW + timedelta(minutes=4, seconds=59))
+    assert still_cached.latest_version == "v1.3.0"
+    latest = await updates.check_for_update(now=NOW + timedelta(minutes=5))
+    assert latest.latest_version == "v1.4.0" and latest.update_available

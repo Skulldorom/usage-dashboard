@@ -10,7 +10,7 @@ import { appVersion, newerStable } from "../lib/appVersion.js";
 const DISMISSED_KEY = "usage-dashboard:dismissed-update:";
 const DISMISS_EVENT = "usage-dashboard:update-dismissed";
 const RELEASE_BASE = "https://github.com/Skulldorom/usage-dashboard/releases/tag/";
-const FRESH_MS = 6 * 60 * 60 * 1000;
+const FRESH_MS = 5 * 60 * 1000;
 
 function readDismissals() {
   try {
@@ -69,7 +69,7 @@ export default function UpdateNotification({ update, compact = false }) {
   else if (update.status === "unverified_release") diagnostic = `Release unverified${update.cache_status === "stale" ? " · Release metadata stale" : ""}`;
   else if (update.status === "check_failed") diagnostic = `Update check unavailable${update.cache_status === "stale" ? " · Release metadata stale" : ""}`;
   else if (update.cache_status === "stale" || (update.cache_status === "fresh" && !fresh)) diagnostic = "Release metadata stale";
-  else if (update.status === "up_to_date" && trustedRelease && backend.kind === "stable" && backend.label === latest.label) diagnostic = "Up to date";
+  else if (update.status === "up_to_date" && trustedRelease && backend.kind === "stable" && backend.label === latest.label) diagnostic = "";
   else if (update.status === "ahead_of_release" && trustedRelease && newerStable(latest, backend)) diagnostic = "Ahead of published release";
   else if (!showNotice && !dismissed.includes(dismissal)) diagnostic = "Release status unknown";
 

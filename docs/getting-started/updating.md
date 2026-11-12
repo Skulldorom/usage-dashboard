@@ -90,8 +90,10 @@ before the new backend serves traffic.
 
 ## Update notifications
 
-After an admin session is established, the sidebar checks GitHub's published stable
-release about every six hours. The footer shows a short stable version, or
+After an authenticated dashboard session loads, the sidebar checks GitHub's published stable
+release immediately and polls every 15 minutes. It checks again when a hidden tab
+becomes visible if a check is due. The simplified footer shows only the installed
+version without redundant “Up to date” text: a short stable version, or
 **Development** with a seven-character commit identifier. It never treats the
 `v0.0.0` placeholder as a stable installation. Hover or keyboard-focus **Version
 details** to inspect full backend/frontend metadata, or use **Copy full version
@@ -100,7 +102,7 @@ failure is announced without disrupting the dashboard.
 
 | State | Meaning |
 | --- | --- |
-| **Up to date** | Matching stable artifacts equal the freshly checked stable release. |
+| Installed version | Always shown in the footer; matching a verified stable release has no extra success label. |
 | **Update available** | A verified stable release has a higher semantic version than the matching installed stable artifacts. |
 | **Ahead of published release** | Installed stable metadata is higher; no downgrade is advertised. |
 | **Stable release available** | A published stable alternative exists for matching development/prerelease artifacts. This does **not** claim the release is newer than a development commit. |
@@ -163,12 +165,14 @@ to hide a mismatch.
 
 ### Check freshness and failures
 
-The backend caches trusted metadata in memory for six hours, revalidates with
+The backend caches trusted metadata in memory for five minutes, revalidates with
 ETags, and backs failures off for 15 minutes. Failed refreshes preserve the last
 trusted release and its original `checked_at`, mark it stale, and suppress
 availability. Invalid release metadata is distinguished from network/API failures.
-The browser also suppresses availability when its snapshot ages past six hours,
-even before another API response arrives. Stale metadata is not an up-to-date
+The browser also suppresses availability when its snapshot ages past five minutes,
+even before another API response arrives. The 15-minute frontend polling interval
+and five-minute backend cache are separate: repeated browser checks reuse backend
+metadata until its cache expires. Stale metadata is not an up-to-date
 claim. Each worker has its own cache; restarts clear it.
 
 Requests use a five-second timeout, no redirects or retries, and a 256 KiB response

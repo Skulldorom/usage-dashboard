@@ -104,6 +104,7 @@ describe('UpdateNotification', () => {
     expect(container.textContent).toContain('v1.2.0')
     expect(container.querySelector('button[aria-label="Version details"]')).not.toBeNull()
     expect(container.querySelector('button[aria-label="Copy full version metadata"]')).not.toBeNull()
+    expect(container.textContent).not.toContain('Up to date')
   })
   it.each([
     { current_version: null, latest_version: 'v1.3.0', status: 'update_available' },
@@ -118,7 +119,8 @@ describe('UpdateNotification', () => {
   it('keeps release verification and version diagnostics independent from the card', async () => {
     await render({ update: { ...update, latest_version: 'v1.2.0', release_url: 'https://github.com/Skulldorom/usage-dashboard/releases/tag/v1.2.0', status: 'up_to_date' } })
     expect(container.querySelector('a')).toBeNull()
-    expect(container.textContent).toContain('Up to date')
+    expect(container.textContent).not.toContain('Up to date')
+    expect(container.querySelector('.version-diagnostic')).toBeNull()
     expect(container.querySelector('button[aria-label="Version details"]')).not.toBeNull()
     expect(container.querySelector('button[aria-label="Copy full version metadata"]')).not.toBeNull()
   })
@@ -148,7 +150,6 @@ describe('UpdateNotification', () => {
     expect(container.textContent).toContain('Version mismatch')
   })
   it.each([
-    { current_version: 'v1.3.0', status: 'up_to_date', expected: 'Up to date' },
     { current_version: 'v1.4.0', status: 'ahead_of_release', expected: 'Ahead of published release' },
     { current_version: 'v0.0.0', status: 'unknown', expected: 'Version unknown' },
     { current_version: 'v1.2.0', status: 'check_failed', expected: 'Update check unavailable' },
@@ -161,9 +162,9 @@ describe('UpdateNotification', () => {
   })
   it.each([
     { cache_status: 'stale' },
-    { checked_at: new Date(Date.now() - 7 * 3600000).toISOString() },
+    { checked_at: new Date(Date.now() - 6 * 60000).toISOString() },
     { checked_at: null },
-    { checked_at: new Date(Date.now() + 3600000).toISOString() },
+    { checked_at: new Date(Date.now() + 60000).toISOString() },
     { release_url: 'https://evil.example/release' },
     { latest_version: 'v1.3.0-rc.1' },
     { latest_version: 'v0.0.0' },
@@ -187,7 +188,7 @@ describe('UpdateNotification', () => {
   })
   it('expires a visible notice without another API response', async () => {
     vi.useFakeTimers()
-    await render({ update: { ...update, checked_at: new Date(Date.now() - 6 * 3600000 + 30000).toISOString() } })
+    await render({ update: { ...update, checked_at: new Date(Date.now() - 4 * 60000 - 30000).toISOString() } })
     expect(container.querySelector('a')).not.toBeNull()
     await act(async () => vi.advanceTimersByTime(60000))
     expect(container.querySelector('a')).toBeNull()
@@ -244,10 +245,26 @@ describe('authenticated update lifecycle', () => {
     await act(async () => root.render(createElement(Harness, { authenticated: true })))
     expect(fetch).toHaveBeenCalledTimes(1)
     await act(async () => root.render(createElement(Harness, { authenticated: false })))
-    await act(async () => vi.advanceTimersByTime(7 * 60 * 60 * 1000))
+    await act(async () => vi.advanceTimersByTime(16 * 60 * 1000))
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(container.textContent).toBe('')
     expect(vi.getTimerCount()).toBe(0)
+  })
+  it('polls every 15 minutes and rechecks when visible after being hidden', async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...update, checked_at: new Date().toISOString() }), { headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetch)
+    await act(async () => root.render(createElement(Harness, { authenticated: true })))
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTime(15 * 60 * 1000 - 1))
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await act(async () => vi.advanceTimersByTime(1))
+    expect(fetch).toHaveBeenCalledTimes(2)
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    await act(async () => vi.advanceTimersByTime(15 * 60 * 1000))
+    expect(fetch).toHaveBeenCalledTimes(2)
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(fetch).toHaveBeenCalledTimes(3)
   })
   it('ignores late requests on logout and diagnoses API failures', async () => {
     let resolve
