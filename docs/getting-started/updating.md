@@ -90,43 +90,31 @@ before the new backend serves traffic.
 
 ## Update notifications
 
-After an authenticated dashboard session loads, the sidebar checks GitHub's published stable
-release immediately and polls every 15 minutes. It checks again when a hidden tab
-becomes visible if a check is due. The simplified footer shows only the installed
-version without redundant “Up to date” text: a short stable version, or
-**Development** with a seven-character commit identifier. It never treats the
-`v0.0.0` placeholder as a stable installation. Hover or keyboard-focus **Version
-details** to inspect full backend/frontend metadata, or use **Copy full version
-metadata**. Copy requires clipboard permission and a secure browser context; a
-failure is announced without disrupting the dashboard.
+The authenticated dashboard checks GitHub directly from the browser after a 2.5-second
+delay. The footer displays the actual installed backend version, or **Version unknown**
+when metadata is unavailable. Development builds display **Development** and a short
+commit identifier. Full frontend/backend versions remain available through keyboard
+focus or hover on **Version details**, and **Copy full version metadata**. Clipboard
+copy requires browser permission and a secure context.
 
-| State | Meaning |
+Only a verified, unexpired stable release can produce a notification:
+
+| Installation | Notification |
 | --- | --- |
-| Installed version | Always shown in the footer; matching a verified stable release has no extra success label. |
-| **Update available** | A verified stable release has a higher semantic version than the matching installed stable artifacts. |
-| **Ahead of published release** | Installed stable metadata is higher; no downgrade is advertised. |
-| **Stable release available** | A published stable alternative exists for matching development/prerelease artifacts. This does **not** claim the release is newer than a development commit. |
-| **Version unknown** / **Version mismatch** | Installation compatibility cannot be established; update claims are suppressed. |
-| **Release metadata stale** | Last trusted metadata cannot support a fresh availability claim. |
-| **Update check unavailable** / **Release unverified** | The check failed, or release metadata failed validation; neither means up to date. |
+| Matching stable artifacts below the latest stable release | **Update available**, latest version and **View release** link. |
+| Matching development artifacts | **Stable release available** as an alternative; no newer-version comparison. |
+| Current or newer stable artifacts | Installed version only; no success message or downgrade notice. |
+| Unknown or mismatched artifacts, expired metadata, or failed checks | Installed version only; no availability claim. |
 
-An HTTP 404 from GitHub is **Update check unavailable**, not proof that no stable
-release exists: absent releases, repository access problems and unexpected API
-responses cannot be reliably distinguished. Last verified metadata is retained
-as stale, and checks retry after the existing 15-minute failure backoff.
+Drafts, prereleases, placeholder/malformed versions, future publication timestamps,
+and unexpected repository/release URLs are rejected. The link opens only the verified
+GitHub release page. Checks never pull images, restart services, or run migrations.
+The desktop and mobile views retain keyboard-accessible links and dismissal controls.
 
-Drafts, prereleases, malformed/placeholder versions, future publication times, and
-untrusted release URLs never produce availability claims. **View release**
-opens only the verified GitHub release page. Notifications are informational:
-they never pull images, restart containers, or run migrations. Stable update
-notices use cyan; development-channel notices use a muted amber accent and
-explicitly avoid a newer-version comparison. Both fit the mobile layout.
-
-Dismissals are stored locally per release and notification type, synchronized
-between the desktop and mobile views. Remounting does not show the same dismissed
-notice; a different release is shown again. Stable-update dismissals from older
-installations remain respected. Restricted storage still permits dismissal for
-the current session, but cannot preserve it across reloads.
+Dismissal is stored per release and notification type in localStorage and synchronized
+between views and tabs. A different release can appear again. Older stable-update
+dismissals remain respected. With restricted storage, dismissal works for the active
+views but does not survive a reload.
 
 ### Stable and development image channels
 
@@ -154,7 +142,7 @@ Local builds without embedded metadata remain unknown.
 
 Focus **Version details** or copy metadata to compare the complete frontend and
 backend versions, including development SHA and build suffixes. A known mismatch
-has a compact diagnostic, not an upgrade banner. Unknown artifacts are never
+suppresses the update banner and remains visible in these details. Unknown artifacts are never
 reported as up to date. Check both container image references, backend
 `APP_VERSION`, and OCI version/revision labels; deploy matching artifacts from the
 same published exact tag or development build. Recreate both services, then
@@ -163,35 +151,42 @@ rebuild the frontend and generated `deploy/version.env` together and restart the
 backend using the updated systemd units. Do not manually alter a version value
 to hide a mismatch.
 
-### Check freshness and failures
+### Cache, browser access and failures
 
-The backend caches trusted metadata in memory for five minutes, revalidates with
-ETags, and backs failures off for 15 minutes. Failed refreshes preserve the last
-trusted release and its original `checked_at`, mark it stale, and suppress
-availability. Invalid release metadata is distinguished from network/API failures.
-The browser polls every 15 minutes while visible and checks when a hidden tab
-becomes visible if a check is due. A visibility-triggered check starts a new
-15-minute polling cadence, avoiding a delayed next check on the old schedule.
-For display only, verified metadata remains usable for 21 minutes from its
-backend `checked_at`: up to five minutes of cached age at receipt, 15 minutes
-until the next poll, and one minute for request completion. A successful refresh
-renews this timestamp; without one, the banner expires and a stale diagnostic
-replaces it. Explicit stale, failed, unverified or incompatible responses suppress
-availability immediately, regardless of the display window.
+Successful validated checks are cached for **15 minutes** in localStorage, shared
+across tabs on the same origin. Cached fields are revalidated before use. There is
+no continuous polling: checks happen on dashboard load/reopen and when a tab becomes
+visible, subject to the cache and a **one-minute failure backoff**. A visible notice
+expires after 15 minutes even if the tab stays open; expiry itself makes no request.
 
-These are separate mechanisms: the backend revalidates GitHub after five minutes,
-the browser requests status every 15 minutes, and the display window keeps a
-verified notice visible between normal checks without treating it as indefinitely
-current. Stale metadata is not an up-to-date claim. Each worker has its own cache;
-restarts clear it.
+A five-second AbortController timeout bounds the request and body read. HTTP 404,
+403, 429, network errors, timeouts and invalid metadata quietly suppress notices;
+none proves the installation is current. The browser console records bounded,
+non-sensitive diagnostics. Only validated fields are persisted, never raw release
+bodies or assets. Failures store only a retry deadline, not a successful result.
 
-Requests use a five-second timeout, no redirects or retries, and a 256 KiB response
-limit. Only admin sessions can access `GET /api/v1/updates`; scoped API tokens
-remain rejected. No session/provider credentials go to GitHub. Outbound HTTPS to
-`api.github.com` is needed only for fresh checks. The browser stops/ignores
-requests on logout, avoids hidden-tab checks, and checks when visible and due.
-GitHub failures never block dashboard operation. Availability verifies published
-release metadata, not the running artifacts' contents or deployment compatibility.
+The browser needs HTTPS access to `api.github.com`, Fetch, AbortController and
+streamed responses. GitHub's REST API supports
+[CORS from any origin](https://docs.github.com/en/rest/using-the-rest-api/using-cors-and-jsonp-to-make-cross-origin-requests).
+Requests explicitly omit cookies/credentials and referrers, use no GitHub token,
+and never use the application's authenticated API client. If you configure a
+Content Security Policy, allow `https://api.github.com` in `connect-src`. Privacy
+extensions, firewalls or rate limits can prevent checks without blocking dashboard
+operation. API rate limits apply to the browser's public IP, potentially shared by
+other clients.
+
+Web Locks avoid simultaneous cross-tab lookups where supported (normally secure
+contexts). Other browsers still share cached results and backoff, but simultaneous
+cold tabs may each send one request. Restricted localStorage falls back to page
+memory; cross-tab/reload reuse is then unavailable. No worker or backend GitHub
+access is required. The removed `/api/v1/updates` endpoint and backend cache/timeout
+settings are no longer used. The existing auth-status response supplies the running
+backend's `APP_VERSION`; frontend metadata still comes from `VITE_APP_VERSION`.
+An older backend without that metadata quietly suppresses notifications.
+
+Verification establishes published release metadata, not artifact contents or
+migration compatibility. See [notification architecture](/development/update-notifications)
+for implementation and regression coverage.
 
 ## Application versioning policy
 

@@ -3,6 +3,15 @@
 All paths below are relative to `/api/v1`. Admin sessions are allowed; API token
 requests need the scope noted by each group.
 
+## Application metadata
+
+`GET /auth/status` returns the existing setup/configuration flags plus `app_version`,
+the actual running backend `APP_VERSION` (default `unknown`). It performs no external
+release lookup. It remains public and does not change authentication behavior.
+The browser uses this metadata to verify compatibility with its embedded build.
+The former `GET /updates` route has been removed; release checks go directly to
+GitHub from the browser. See [update notifications](/getting-started/updating#update-notifications).
+
 ## Current usage and providers
 
 | Endpoint | Purpose | Scope |

@@ -83,7 +83,6 @@ export const api = {
   requestPasswordReset: () => request('/auth/reset/request', { method: 'POST' }),
   completePasswordReset: (payload) => authRequest('/auth/reset/complete', payload),
   logout: () => request('/auth/logout', { method: 'POST' }),
-  systemUpdate: (options = {}) => request('/updates', options),
   apiTokens: () => request('/api-tokens'),
   createApiToken: (payload) => request('/api-tokens', { method: 'POST', body: JSON.stringify(payload) }),
   revokeApiToken: (id) => request(`/api-tokens/${id}/revoke`, { method: 'POST' }),

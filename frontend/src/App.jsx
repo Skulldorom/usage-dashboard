@@ -660,7 +660,7 @@ function Shell() {
       window.removeEventListener(UNAUTHORIZED_EVENT, handleUnauthorized);
   }, []);
 
-  const update = useUpdateStatus(isAuthenticated && !authLoading);
+  const update = useUpdateStatus(isAuthenticated && !authLoading, authStatus?.app_version);
 
   async function logout() {
     try {

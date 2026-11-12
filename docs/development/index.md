@@ -8,6 +8,8 @@ Docker Compose in production.
 - [Docker images](/development/docker-images) - build local images.
 - [Testing](/development/testing) - run the test suites and lint.
 
+- [Update notifications](/development/update-notifications) - browser release validation and lifecycle.
+
 ## Repository layout
 
 ```text

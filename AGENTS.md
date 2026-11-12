@@ -86,6 +86,14 @@ That job uses a PostgreSQL 18 service, `DATABASE_URL`, `ENCRYPTION_KEY`, and `PO
 - Preserve React/MUI theme, accessibility, responsive layout, and existing component patterns. Add Vitest regression tests beside affected utilities/components.
 - Treat API response shapes, error statuses, and `VITE_API_BASE_URL`/nginx routing as contracts. Avoid duplicating request or authentication logic.
 
+## Application update notifications
+
+- Release checks are frontend-only in `frontend/src/lib/releaseCheck.js` and `useUpdateStatus.js`. GitHub requests deliberately bypass the authenticated API client: omit credentials and referrers, use the fixed public endpoint, reject redirects, bound timeout/body size, and log only bounded diagnostic codes.
+- Preserve release validation and exact frontend/backend build compatibility. `/auth/status` exposes running backend `APP_VERSION`; frontend `VITE_APP_VERSION` is embedded at build time. Package-tooling versions are not installed application versions.
+- Cache only normalized verified metadata for 15 minutes and failures as separate one-minute retry deadlines. No polling loop. Recheck on dashboard load/visibility; hide expired/invalid/failed claims quietly. Web Locks are optional cross-tab deduplication, with localStorage sharing results/backoff and memory fallback.
+- Preserve semantic stable ordering, unknown/placeholder suppression, development alternatives without newer-version claims, trusted release links, and per-release/type dismissals. Do not restore the removed backend release endpoint/cache or expose release diagnostics in the footer.
+- See [notification architecture](docs/development/update-notifications.md) and the colocated service/component regression tests. Release/image workflow integrity checks remain independent and unchanged.
+
 ## Deployment and documentation
 
 - Docker Compose runs PostgreSQL, the backend, and the nginx frontend/proxy with health-aware startup. `backend/Dockerfile` runs Alembic then Uvicorn; `frontend/Dockerfile` builds the Vite app and serves it through nginx.
