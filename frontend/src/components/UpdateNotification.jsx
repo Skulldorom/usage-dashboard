@@ -111,7 +111,7 @@ export default function UpdateNotification({ update, compact = false }) {
               <>
                 <span className="update-version-installed">{backend.label}</span>
                 <span aria-hidden="true">→</span>
-                <span className="version-copy-status">to</span>
+                <span className="update-version-comparison-label">to</span>
               </>
             )}
             <span className="update-version-latest">{latest.label}</span>

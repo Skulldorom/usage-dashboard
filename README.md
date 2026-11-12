@@ -4,7 +4,7 @@
 
 [![GitHub Release](https://img.shields.io/github/v/release/Skulldorom/usage-dashboard)](https://github.com/Skulldorom/usage-dashboard/releases)
 [![CI Status](https://github.com/Skulldorom/usage-dashboard/actions/workflows/docker-images.yml/badge.svg?branch=main)](https://github.com/Skulldorom/usage-dashboard/actions/workflows/docker-images.yml?query=branch%3Amain)
-[![Docker / GHCR](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/Skulldorom/usage-dashboard/pkgs/container/usage-dashboard-backend)
+[![Docker / GHCR](https://img.shields.io/badge/Docker-GHCR-2496ED?logo=docker&logoColor=white)](https://github.com/Skulldorom?tab=packages&repo_name=usage-dashboard)
 [![License: MPL-2.0](https://img.shields.io/badge/License-MPL--2.0-blue.svg)](LICENSE)
 
 Self-hosted provider usage dashboard for Firecrawl, DeepSeek, OpenAI, Anthropic/Claude, OpenRouter, OpenAI Codex, OpenCode Go, MiniMax Token Plan, and custom HTTP endpoints. It tracks current quota and health, retains history, analyzes cost and value, attributes Hermes-observed workload by provider/model/profile, stores provider credentials encrypted at rest, and exposes integrations for Homepage Dashboard and the browser extension.
