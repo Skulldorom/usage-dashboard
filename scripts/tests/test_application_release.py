@@ -61,7 +61,7 @@ class PolicyTests(unittest.TestCase):
     def test_classification_workflow_uses_trusted_base_script_and_least_privilege(self):
         workflow = (ROOT / ".github/workflows/release-classification-labels.yml").read_text()
         self.assertIn("pull_request_target:", workflow)
-        self.assertIn("issues: write", workflow)
+        self.assertIn("pull-requests: write", workflow)
         self.assertIn("cancel-in-progress: false", workflow)
         self.assertIn("branches: [main]", workflow)
         self.assertIn("ref=$BASE_SHA", workflow)
