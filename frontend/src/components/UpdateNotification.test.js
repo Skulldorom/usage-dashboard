@@ -90,7 +90,6 @@ describe('UpdateNotification', () => {
     { current_version: 'v1.3.0', status: 'up_to_date', expected: 'Up to date' },
     { current_version: 'v1.4.0', status: 'ahead_of_release', expected: 'Ahead of published release' },
     { current_version: 'v0.0.0', status: 'unknown', expected: 'Version unknown' },
-    { current_version: 'v1.2.0', status: 'no_stable_release', expected: 'No stable release published' },
     { current_version: 'v1.2.0', status: 'check_failed', expected: 'Update check unavailable' },
     { current_version: 'v1.2.0', status: 'unverified_release', expected: 'Release unverified' },
   ])('renders diagnostic $expected without a release claim', async ({ expected, ...patch }) => {

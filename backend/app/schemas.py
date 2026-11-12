@@ -10,7 +10,6 @@ class UpdateCheckRead(BaseModel):
         "stable_release_available",
         "up_to_date",
         "ahead_of_release",
-        "no_stable_release",
         "unknown",
         "check_failed",
         "unverified_release",

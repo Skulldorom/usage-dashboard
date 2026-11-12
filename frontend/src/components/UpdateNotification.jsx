@@ -69,7 +69,6 @@ export default function UpdateNotification({ update, compact = false }) {
   else if (update.status === "unverified_release") diagnostic = `Release unverified${update.cache_status === "stale" ? " · Release metadata stale" : ""}`;
   else if (update.status === "check_failed") diagnostic = `Update check unavailable${update.cache_status === "stale" ? " · Release metadata stale" : ""}`;
   else if (update.cache_status === "stale" || (update.cache_status === "fresh" && !fresh)) diagnostic = "Release metadata stale";
-  else if (update.status === "no_stable_release") diagnostic = "No stable release published";
   else if (update.status === "up_to_date" && trustedRelease && backend.kind === "stable" && backend.label === latest.label) diagnostic = "Up to date";
   else if (update.status === "ahead_of_release" && trustedRelease && newerStable(latest, backend)) diagnostic = "Ahead of published release";
   else if (!showNotice && !dismissed.includes(dismissal)) diagnostic = "Release status unknown";

@@ -207,8 +207,9 @@ async def test_ambiguous_404_is_unavailable_and_recovers(monkeypatch, version, b
 
 
 @pytest.mark.parametrize("version", ["v0.0.0-dev.abc123", "v1.2.0"])
+@pytest.mark.parametrize("recovery_code", [200, 304])
 @pytest.mark.asyncio
-async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version):
+async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version, recovery_code):
     monkeypatch.setattr(settings, "app_version", version)
     requests = []
 
@@ -217,7 +218,9 @@ async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version):
         if len(requests) == 1:
             return httpx.Response(200, json=RELEASE, headers={"etag": '"release"'})
         assert request.headers["If-None-Match"] == '"release"'
-        return httpx.Response(404, json={"message": "Not Found"})
+        if len(requests) == 2:
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(recovery_code, json=RELEASE)
 
     transport(monkeypatch, handler)
     first = await updates.check_for_update(now=NOW)
@@ -227,6 +230,13 @@ async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version):
     assert stale.latest_version == first.latest_version and stale.release_url == first.release_url
     assert await updates.check_for_update(now=NOW + timedelta(hours=7, minutes=14)) == stale
     assert len(requests) == 2
+    recovered = await updates.check_for_update(now=NOW + timedelta(hours=7, minutes=15))
+    expected = "stable_release_available" if "-dev." in version else "update_available"
+    assert recovered.status == expected and recovered.cache_status == "fresh"
+    assert recovered.update_available is (version == "v1.2.0")
+    assert recovered.checked_at == NOW + timedelta(hours=7, minutes=15)
+    assert recovered.latest_version == first.latest_version
+    assert len(requests) == 3
 
 
 @pytest.mark.asyncio
