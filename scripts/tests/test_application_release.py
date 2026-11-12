@@ -5,11 +5,13 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
 
 
 def load(name):
@@ -110,12 +112,14 @@ class PolicyTests(unittest.TestCase):
             [valid, json.dumps({**labels, "org.opencontainers.image.revision": "other"})],
         ]:
             with (
+                patch.object(images, "manifest", return_value="sha256:" + "a" * 64),
                 patch.object(images.subprocess, "run"),
                 patch.object(images.subprocess, "check_output", side_effect=results),
             ):
                 with self.assertRaises((ValueError, subprocess.CalledProcessError)):
                     images.verify("v1.2.3", "sha")
         with (
+            patch.object(images, "manifest", return_value="sha256:" + "a" * 64),
             patch.object(images.subprocess, "run") as pull,
             patch.object(images.subprocess, "check_output", return_value=valid) as inspect,
         ):
@@ -157,6 +161,7 @@ class PolicyTests(unittest.TestCase):
 
     def test_registry_pull_failure_stops_verification(self):
         with (
+            patch.object(images, "manifest", return_value="sha256:" + "a" * 64),
             patch.object(images.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "docker")),
             patch.object(images.subprocess, "check_output") as inspect,
         ):
@@ -210,7 +215,7 @@ class PolicyTests(unittest.TestCase):
         self.assertIn("branches: [main]", workflow)
         self.assertIn("needs: [prepare, images]", workflow)
         self.assertLess(
-            workflow.index("python scripts/verify_release_images.py"),
+            workflow.index("python scripts/promote_release_images.py"),
             workflow.index("python scripts/application_release.py publish"),
         )
         self.assertIn("needs: [test-backend, test-backend-migrations, test-frontend]", build)

@@ -62,11 +62,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      packages: read
+      packages: write
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.prepare.outputs.sha }}
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
@@ -76,13 +76,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Verify both registry artifacts then publish
+      - name: Verify both registry artifacts, promote stable channels, then publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
           SHA: ${{ needs.prepare.outputs.sha }}
         run: |
-          python scripts/verify_release_images.py "$TAG" "$SHA"
+          python scripts/promote_release_images.py --tag "$TAG" --sha "$SHA" --execute
           python scripts/application_release.py publish --tag "$TAG" --sha "$SHA"
 
   evaluate-remaining:
