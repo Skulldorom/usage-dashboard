@@ -157,6 +157,7 @@ describe('UpdateNotification', () => {
     expect(document.activeElement).toBe(details)
     await act(async () => new Promise((resolve) => setTimeout(resolve, 150)))
     expect(document.querySelector('[role="tooltip"]').textContent).toContain(development)
+    expect(document.querySelector('[role="tooltip"]').textContent).toContain("Development channel: stable releases are alternatives, not newer-version comparisons.")
     await act(async () => container.querySelector('button[aria-label="Copy full version metadata"]').click())
     expect(writeText).toHaveBeenCalledWith(development)
     expect(container.querySelector('[role="status"]').textContent).toBe('Version copied')

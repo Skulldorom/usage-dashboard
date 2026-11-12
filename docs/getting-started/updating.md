@@ -64,10 +64,14 @@ failure is announced without disrupting the dashboard.
 | **Update available** | A verified stable release has a higher semantic version than the matching installed stable artifacts. |
 | **Ahead of published release** | Installed stable metadata is higher; no downgrade is advertised. |
 | **Stable release available** | A published stable alternative exists for matching development/prerelease artifacts. This does **not** claim the release is newer than a development commit. |
-| **No stable release published** | GitHub's latest stable endpoint returned no release for a development installation with no cached release. |
 | **Version unknown** / **Version mismatch** | Installation compatibility cannot be established; update claims are suppressed. |
 | **Release metadata stale** | Last trusted metadata cannot support a fresh availability claim. |
 | **Update check unavailable** / **Release unverified** | The check failed, or release metadata failed validation; neither means up to date. |
+
+An HTTP 404 from GitHub is **Update check unavailable**, not proof that no stable
+release exists: absent releases, repository access problems and unexpected API
+responses cannot be reliably distinguished. Last verified metadata is retained
+as stale, and checks retry after the existing 15-minute failure backoff.
 
 Drafts, prereleases, malformed/placeholder versions, future publication times, and
 untrusted release URLs never produce availability claims. **View release notes**

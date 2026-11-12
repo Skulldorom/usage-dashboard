@@ -179,12 +179,54 @@ async def test_development_status_with_verified_stable_cache(monkeypatch, versio
     assert result.status == "stable_release_available" and not result.update_available
 
 
+@pytest.mark.parametrize("version", ["v0.0.0-dev.abc123", "v1.2.0", "unknown"])
+@pytest.mark.parametrize("body", [b'{"message":"Not Found"}', b"", b"upstream error"])
 @pytest.mark.asyncio
-async def test_development_without_release_404(monkeypatch):
-    monkeypatch.setattr(settings, "app_version", "v0.0.0-dev.abc123")
-    transport(monkeypatch, lambda _: httpx.Response(404))
+async def test_ambiguous_404_is_unavailable_and_recovers(monkeypatch, version, body):
+    monkeypatch.setattr(settings, "app_version", version)
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(404, content=body) if len(requests) == 1 else httpx.Response(200, json=RELEASE)
+
+    transport(monkeypatch, handler)
     result = await updates.check_for_update(now=NOW)
-    assert result.status == "no_stable_release" and not result.update_available
+    assert result.status == "check_failed" and not result.update_available
+    assert result.cache_status == "empty" and result.checked_at is None
+    assert result.latest_version is None and result.release_url is None
+    assert await updates.check_for_update(now=NOW + timedelta(minutes=14)) == result
+    assert len(requests) == 1
+    recovered = await updates.check_for_update(now=NOW + timedelta(minutes=15))
+    expected = (
+        "stable_release_available" if "-dev." in version else "unknown" if version == "unknown" else "update_available"
+    )
+    assert recovered.status == expected and recovered.cache_status == "fresh"
+    assert recovered.update_available is (version == "v1.2.0")
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("version", ["v0.0.0-dev.abc123", "v1.2.0"])
+@pytest.mark.asyncio
+async def test_404_preserves_verified_metadata_as_stale(monkeypatch, version):
+    monkeypatch.setattr(settings, "app_version", version)
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return httpx.Response(200, json=RELEASE, headers={"etag": '"release"'})
+        assert request.headers["If-None-Match"] == '"release"'
+        return httpx.Response(404, json={"message": "Not Found"})
+
+    transport(monkeypatch, handler)
+    first = await updates.check_for_update(now=NOW)
+    stale = await updates.check_for_update(now=NOW + timedelta(hours=7))
+    assert stale.status == "check_failed" and not stale.update_available
+    assert stale.cache_status == "stale" and stale.checked_at == first.checked_at
+    assert stale.latest_version == first.latest_version and stale.release_url == first.release_url
+    assert await updates.check_for_update(now=NOW + timedelta(hours=7, minutes=14)) == stale
+    assert len(requests) == 2
 
 
 @pytest.mark.asyncio

@@ -61,6 +61,7 @@ export default function UpdateNotification({ update, compact = false }) {
   const notificationType = stableUpdate ? "update_available" : "stable_release_available";
   const dismissal = `${notificationType}:${update.latest_version}`;
   const showNotice = versionsMatch && trustedRelease && (stableUpdate || developmentNotice) && !dismissed.includes(dismissal);
+  const versionDetails = backend.kind === "development" ? "Development channel: stable releases are alternatives, not newer-version comparisons.\n" : "";
   const metadata = `Backend: ${backend.full}\nFrontend: ${frontend.full}`;
   let diagnostic = "";
   if (mismatch) diagnostic = "Version mismatch";
@@ -113,7 +114,7 @@ export default function UpdateNotification({ update, compact = false }) {
         </Box>
       )}
       <Box className="sidebar-version-row">
-        <Tooltip title={<span style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{metadata}</span>} describeChild>
+        <Tooltip title={<span style={{ whiteSpace: "pre-line", overflowWrap: "anywhere" }}>{versionDetails}{metadata}</span>} describeChild>
           <button type="button" className="sidebar-version" aria-label="Version details">
             <span className={`version-indicator version-indicator-${backend.kind}`} aria-hidden="true" />
             <span>{backend.label}</span>

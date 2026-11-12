@@ -44,7 +44,6 @@ _cache: _Cache | None = None
 _next_check: datetime | None = None
 _failed = False
 _invalid_release = False
-_no_release = False
 _lock = asyncio.Lock()
 
 
@@ -92,7 +91,7 @@ def _result() -> UpdateResult:
         else:
             status = "ahead_of_release"
     elif parsed and parsed[3]:
-        status = "stable_release_available" if _cache else "no_stable_release" if _no_release else "unknown"
+        status = "stable_release_available" if _cache else "unknown"
     return UpdateResult(
         status=status,
         current_version=current,
@@ -136,7 +135,7 @@ def _release(payload: object, now: datetime, etag: str | None) -> _Cache:
 
 
 async def check_for_update(*, now: datetime | None = None) -> UpdateResult:
-    global _cache, _next_check, _failed, _invalid_release, _no_release
+    global _cache, _next_check, _failed, _invalid_release
     async with _lock:
         now = now or datetime.now(UTC)
         if _next_check and now < _next_check:
@@ -166,37 +165,19 @@ async def check_for_update(*, now: datetime | None = None) -> UpdateResult:
                             _cache = _release(json.loads(body), now, response.headers.get("etag"))
             _failed = False
             _invalid_release = False
-            _no_release = False
             _next_check = now + timedelta(seconds=settings.update_cache_seconds)
-        except httpx.HTTPStatusError as exc:
-            if (
-                exc.response.status_code == 404
-                and _cache is None
-                and _version(settings.app_version)
-                and _version(settings.app_version)[3]
-            ):
-                _failed = False
-                _invalid_release = False
-                _no_release = True
-            else:
-                _failed = True
-                _invalid_release = False
-                _no_release = False
-            _next_check = now + timedelta(minutes=15)
         except (httpx.HTTPError, TimeoutError):
             _failed = True
             _invalid_release = False
-            _no_release = False
             _next_check = now + timedelta(minutes=15)
         except (ValueError, UnicodeError):
             _failed = False
             _invalid_release = True
-            _no_release = False
             _next_check = now + timedelta(minutes=15)
         return _result()
 
 
 def reset_cache() -> None:
-    global _cache, _next_check, _failed, _invalid_release, _no_release, _lock
-    _cache, _next_check, _failed, _invalid_release, _no_release = None, None, False, False, False
+    global _cache, _next_check, _failed, _invalid_release, _lock
+    _cache, _next_check, _failed, _invalid_release = None, None, False, False
     _lock = asyncio.Lock()
