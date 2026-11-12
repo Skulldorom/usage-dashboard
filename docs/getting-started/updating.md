@@ -169,11 +169,21 @@ The backend caches trusted metadata in memory for five minutes, revalidates with
 ETags, and backs failures off for 15 minutes. Failed refreshes preserve the last
 trusted release and its original `checked_at`, mark it stale, and suppress
 availability. Invalid release metadata is distinguished from network/API failures.
-The browser also suppresses availability when its snapshot ages past five minutes,
-even before another API response arrives. The 15-minute frontend polling interval
-and five-minute backend cache are separate: repeated browser checks reuse backend
-metadata until its cache expires. Stale metadata is not an up-to-date
-claim. Each worker has its own cache; restarts clear it.
+The browser polls every 15 minutes while visible and checks when a hidden tab
+becomes visible if a check is due. A visibility-triggered check starts a new
+15-minute polling cadence, avoiding a delayed next check on the old schedule.
+For display only, verified metadata remains usable for 21 minutes from its
+backend `checked_at`: up to five minutes of cached age at receipt, 15 minutes
+until the next poll, and one minute for request completion. A successful refresh
+renews this timestamp; without one, the banner expires and a stale diagnostic
+replaces it. Explicit stale, failed, unverified or incompatible responses suppress
+availability immediately, regardless of the display window.
+
+These are separate mechanisms: the backend revalidates GitHub after five minutes,
+the browser requests status every 15 minutes, and the display window keeps a
+verified notice visible between normal checks without treating it as indefinitely
+current. Stale metadata is not an up-to-date claim. Each worker has its own cache;
+restarts clear it.
 
 Requests use a five-second timeout, no redirects or retries, and a 256 KiB response
 limit. Only admin sessions can access `GET /api/v1/updates`; scoped API tokens

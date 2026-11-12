@@ -162,7 +162,7 @@ describe('UpdateNotification', () => {
   })
   it.each([
     { cache_status: 'stale' },
-    { checked_at: new Date(Date.now() - 6 * 60000).toISOString() },
+    { checked_at: new Date(Date.now() - 22 * 60000).toISOString() },
     { checked_at: null },
     { checked_at: new Date(Date.now() + 60000).toISOString() },
     { release_url: 'https://evil.example/release' },
@@ -188,7 +188,7 @@ describe('UpdateNotification', () => {
   })
   it('expires a visible notice without another API response', async () => {
     vi.useFakeTimers()
-    await render({ update: { ...update, checked_at: new Date(Date.now() - 4 * 60000 - 30000).toISOString() } })
+    await render({ update: { ...update, checked_at: new Date(Date.now() - 20 * 60000 - 30000).toISOString() } })
     expect(container.querySelector('a')).not.toBeNull()
     await act(async () => vi.advanceTimersByTime(60000))
     expect(container.querySelector('a')).toBeNull()
@@ -265,6 +265,60 @@ describe('authenticated update lifecycle', () => {
     Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
     await act(async () => document.dispatchEvent(new Event('visibilitychange')))
     expect(fetch).toHaveBeenCalledTimes(3)
+  })
+  it.each(['update_available', 'stable_release_available'])('keeps %s visible through the polling interval and a delayed refresh', async (status) => {
+    const current_version = status === 'stable_release_available' ? 'v0.0.0-dev.abcdef1234567' : 'v1.2.0'
+    vi.stubEnv('VITE_APP_VERSION', current_version)
+    const response = (checked_at) => new Response(JSON.stringify({ ...update, current_version, status, checked_at }), { headers: { 'content-type': 'application/json' } })
+    let resolve
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response(new Date(Date.now() - 5 * 60000 + 1).toISOString()))
+      .mockImplementationOnce(() => new Promise((done) => { resolve = done }))
+      .mockImplementation(() => new Promise(() => {}))
+    vi.stubGlobal('fetch', fetch)
+    await act(async () => root.render(createElement(Harness, { authenticated: true })))
+    for (let minute = 1; minute <= 15; minute++) {
+      await act(async () => vi.advanceTimersByTime(60000))
+      expect(container.querySelector('a')).not.toBeNull()
+    }
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await act(async () => vi.advanceTimersByTime(30000))
+    expect(container.querySelector('a')).not.toBeNull()
+    await act(async () => resolve(response(new Date().toISOString())))
+    await act(async () => vi.advanceTimersByTime(15 * 60000))
+    expect(container.querySelector('a')).not.toBeNull()
+    expect(fetch).toHaveBeenCalledTimes(3)
+    await act(async () => vi.advanceTimersByTime(6 * 60000))
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('Release metadata stale')
+  })
+  it('suppresses a visible banner immediately when a scheduled request fails', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ ...update, checked_at: new Date().toISOString() }), { headers: { 'content-type': 'application/json' } }))
+      .mockRejectedValueOnce(new Error('offline'))
+    vi.stubGlobal('fetch', fetch)
+    await act(async () => root.render(createElement(Harness, { authenticated: true })))
+    expect(container.querySelector('a')).not.toBeNull()
+    await act(async () => vi.advanceTimersByTime(15 * 60000))
+    expect(container.querySelector('a')).toBeNull()
+    expect(container.textContent).toContain('Update check unavailable')
+    expect(container.textContent).not.toContain('Up to date')
+    expect(container.textContent).toContain('v1.2.0')
+  })
+  it('starts the next polling interval from a visibility-triggered check', async () => {
+    const fetch = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ ...update, checked_at: new Date().toISOString() }), { headers: { 'content-type': 'application/json' } })))
+    vi.stubGlobal('fetch', fetch)
+    await act(async () => root.render(createElement(Harness, { authenticated: true })))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    await act(async () => vi.advanceTimersByTime(16 * 60000))
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')))
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await act(async () => vi.advanceTimersByTime(14 * 60000))
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await act(async () => vi.advanceTimersByTime(60000))
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(container.querySelector('a')).not.toBeNull()
   })
   it('ignores late requests on logout and diagnoses API failures', async () => {
     let resolve

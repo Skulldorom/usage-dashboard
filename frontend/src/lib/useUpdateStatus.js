@@ -15,10 +15,13 @@ export default function useUpdateStatus(isAuthenticated) {
     let disposed = false;
     let lastCheckAt = 0;
     let inFlight = false;
+    let interval;
     const controller = new AbortController();
 
     async function check() {
       if (disposed || inFlight || document.visibilityState === "hidden") return;
+      window.clearInterval(interval);
+      interval = window.setInterval(checkWhenVisible, CHECK_INTERVAL_MS);
       inFlight = true;
       lastCheckAt = Date.now();
       try {
@@ -41,7 +44,6 @@ export default function useUpdateStatus(isAuthenticated) {
     }
 
     check();
-    const interval = window.setInterval(checkWhenVisible, CHECK_INTERVAL_MS);
     document.addEventListener("visibilitychange", checkWhenVisible);
     return () => {
       disposed = true;

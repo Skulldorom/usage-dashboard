@@ -10,7 +10,8 @@ import { appVersion, newerStable } from "../lib/appVersion.js";
 const DISMISSED_KEY = "usage-dashboard:dismissed-update:";
 const DISMISS_EVENT = "usage-dashboard:update-dismissed";
 const RELEASE_BASE = "https://github.com/Skulldorom/usage-dashboard/releases/tag/";
-const FRESH_MS = 5 * 60 * 1000;
+// checked_at may already be five minutes old when the backend serves its cache.
+const FRESH_MS = (5 + 15 + 1) * 60 * 1000;
 
 function readDismissals() {
   try {
