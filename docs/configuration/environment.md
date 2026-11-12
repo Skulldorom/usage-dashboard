@@ -56,6 +56,18 @@ default are optional.
 | `ANALYTICS_HOURLY_RETENTION_DAYS` | Days of normalized hourly analytics observations to retain. Defaults to `365`. Daily aggregates are kept indefinitely once materialized. |
 | `REQUEST_TIMEOUT_SECONDS` | Seconds before an upstream provider request times out. Defaults to `20`. |
 
+## Application version metadata
+
+| Variable | Description |
+| --- | --- |
+| `APP_VERSION` | Actual backend build version, exposed through auth-status metadata. Official images embed it during the build; native builds load generated `deploy/version.env`. Defaults to `unknown`. Do not override it to imitate a release. |
+| `VITE_APP_VERSION` | Frontend build-time version embedded in the JS bundle. Must match the running backend before a notification can appear. Official/native release builds set it automatically. |
+
+Release checking has no backend configuration or GitHub token. The former
+`UPDATE_CACHE_SECONDS` and `UPDATE_REQUEST_TIMEOUT_SECONDS` settings are removed.
+Browser cache (15 minutes), failure backoff (one minute), and timeout (five seconds)
+are defined in the frontend service. See [update notifications](/getting-started/updating#update-notifications).
+
 ## Browser extension targets
 
 | Variable | Description |

@@ -8,8 +8,6 @@ class Settings(BaseSettings):
     app_name: str = "Usage Dashboard"
     app_version: str = Field(default="unknown", alias="APP_VERSION")
     api_v1_prefix: str = "/api/v1"
-    update_cache_seconds: int = Field(default=300, ge=60)
-    update_request_timeout_seconds: float = Field(default=5.0, gt=0)
     database_url: str = "sqlite+aiosqlite:///./usage-dashboard.db"
     encryption_key: str = Field(..., min_length=32)
     admin_session_expire_hours: int = Field(default=24, ge=1)

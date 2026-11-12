@@ -489,7 +489,7 @@ async def _save_codex_secret(
 
 @router.get("/auth/status", response_model=AuthStatusRead)
 async def get_auth_status(session: AsyncSession = Depends(get_session)):
-    return await auth_status(session)
+    return {**await auth_status(session), "app_version": settings.app_version}
 
 
 @router.post("/auth/setup", response_model=AuthTokenRead)

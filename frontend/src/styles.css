@@ -1658,7 +1658,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   white-space: nowrap;
   cursor: help;
 }
-.sidebar-version span:not(.version-indicator) {
+.sidebar-version span {
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -1666,14 +1666,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   color: #a9a1b8;
   font-size: 0.69rem;
 }
-.version-indicator {
-  flex: 0 0 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #a9a1b8;
-}
-.version-indicator-stable { background: #63e3ff; }
-.version-indicator-development { background: #e4b96d; }
 .version-copy.MuiIconButton-root {
   flex-shrink: 0;
   min-width: 32px;
@@ -1688,13 +1680,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   outline: 2px solid #63e3ff;
   outline-offset: 3px;
 }
-.version-diagnostic {
-  color: #b6aec4;
-  font-size: 0.72rem !important;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-.version-diagnostic-warning { color: #efc581; }
 .update-version-comparison-label,
 .version-copy-status {
   position: absolute;
