@@ -316,7 +316,7 @@ function Navigation({ mobile = false, isAuthenticated = true, update }) {
         <div className="brand-lockup">
           <BrandMark />
           <div>
-            <strong>Usage</strong>
+            <strong>Usage Dashboard</strong>
             <span>Command Center</span>
           </div>
         </div>
@@ -685,7 +685,7 @@ function Shell() {
       <header className="topbar">
         <div className="mobile-brand">
           <BrandMark />
-          <strong>Usage</strong>
+          <strong>Usage Dashboard</strong>
         </div>
         <div className="topbar-context">
           <span className="eyebrow">API OPERATIONS</span>

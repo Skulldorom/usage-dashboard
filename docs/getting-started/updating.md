@@ -114,7 +114,7 @@ responses cannot be reliably distinguished. Last verified metadata is retained
 as stale, and checks retry after the existing 15-minute failure backoff.
 
 Drafts, prereleases, malformed/placeholder versions, future publication times, and
-untrusted release URLs never produce availability claims. **View release notes**
+untrusted release URLs never produce availability claims. **View release**
 opens only the verified GitHub release page. Notifications are informational:
 they never pull images, restart containers, or run migrations. Stable update
 notices use cyan; development-channel notices use a muted amber accent and
