@@ -38,7 +38,7 @@ Keep the following behavior intact:
 
 - Provider credentials and data-source tokens are encrypted at rest and must never be returned, logged, or exposed in URLs.
 - The one-time first-run setup code and password-reset code are intentionally emitted to backend logs for the operator; preserve that narrow behavior without adding broader secret logging.
-- Custom HTTP validation must reject credential-looking URLs/paths, absolute paths, localhost, and hosts resolving to loopback, link-local, private, reserved, unspecified, or multicast addresses. Preserve the explicit `CUSTOM_HTTP_ALLOWED_HOSTS` allowlist behavior and review DNS-resolution changes as SSRF-sensitive.
+- Custom HTTP validation must reject credential-looking URLs/paths, absolute URLs in the relative path field, localhost, and hosts resolving to loopback, link-local, private, reserved, unspecified, or multicast addresses. Preserve the explicit `CUSTOM_HTTP_ALLOWED_HOSTS` allowlist behavior and review DNS-resolution changes as SSRF-sensitive.
 - `HOMEPAGE_ALLOWED_HOSTS` is a deliberate host-based exception for the homepage payload; other routes still require admin or the required scoped token.
 
 For changes to auth, token handling, provider secrets, host allowlists, SSRF controls, or unauthorized-session behavior, add focused regression coverage in the relevant auth, API, adapter, and frontend tests. See [Authentication](docs/configuration/authentication.md), [API tokens](docs/configuration/api-tokens.md), and [Custom HTTP](docs/providers/custom-http.md).
