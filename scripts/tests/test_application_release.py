@@ -173,7 +173,7 @@ class PolicyTests(unittest.TestCase):
         self.assertIn("edited", pr_trigger)
 
     def test_merge_intent_ignores_post_merge_labels(self):
-        pr = {"number": 42, "merged_at": "2026-11-12T12:00:00Z", "labels": [{"name": "release:major"}]}
+        pr = {"number": 42, "merge_commit_sha": "sha", "merged_at": "2026-11-12T12:00:00Z", "labels": [{"name": "release:major"}]}
         for intent in ("patch", "minor", "major", "none"):
             events = [
                 {"event": "labeled", "label": {"name": "release:minor"}},
@@ -187,8 +187,8 @@ class PolicyTests(unittest.TestCase):
                 self.assertEqual(release.merged_intent("o/r", pr, "sha"), intent)
 
     def test_merge_intent_fails_closed(self):
-        pr = {"number": 42, "merged_at": "now", "labels": [{"name": "release:patch"}]}
-        merged = {"event": "merged", "commit_id": "sha", "created_at": "now"}
+        pr = {"number": 42, "merge_commit_sha": "sha", "merged_at": "2026-11-12T10:47:29Z", "labels": [{"name": "release:patch"}]}
+        merged = {"event": "merged", "commit_id": "sha", "created_at": "2026-11-12T10:47:29Z"}
         labeled = {"event": "labeled", "label": {"name": "release:patch"}}
         for events in [
             [],
@@ -220,6 +220,75 @@ class PolicyTests(unittest.TestCase):
         self.assertIn("APP_VERSION=${APP_VERSION}", (ROOT / "backend/Dockerfile").read_text())
         self.assertIn("VITE_APP_VERSION=$APP_VERSION", (ROOT / "frontend/Dockerfile").read_text())
 
+
+class MergeIntentTests(unittest.TestCase):
+    SHA = "f1750d4e007fc64d4cda43a54380e2a421e728de"
+
+    def setUp(self):
+        self.pr = {"number": 249, "merge_commit_sha": self.SHA,
+                   "merged_at": "2026-11-12T10:47:29Z", "labels": [{"name": "release:major"}]}
+        self.label = {"event": "labeled", "label": {"name": "release:minor"},
+                      "created_at": "2026-11-12T10:40:00Z"}
+        self.merge = {"event": "merged", "commit_id": self.SHA, "created_at": "2026-11-12T10:47:30Z"}
+
+    def intent(self, events, pr=None):
+        # Substitute only the GitHub boundary; exercise pagination and policy together.
+        def api(path):
+            prefix = "repos/Skulldorom/usage-dashboard/issues/249/timeline?per_page=100&page="
+            self.assertTrue(path.startswith(prefix))
+            page = int(path.removeprefix(prefix))
+            return events[(page - 1) * 100:page * 100]
+        with patch.object(release, "api", side_effect=api):
+            return release.merged_intent("Skulldorom/usage-dashboard", pr or self.pr, self.SHA)
+
+    def test_pr_249_timestamp_skew_preserves_merge_time_labels(self):
+        for time in ("2026-11-12T10:47:28Z", "2026-11-12T10:47:29Z", "2026-11-12T10:47:30Z"):
+            with self.subTest(time=time):
+                events = [self.label, {**self.merge, "created_at": time},
+                          {"event": "unlabeled", "label": self.label["label"], "created_at": time},
+                          {"event": "labeled", "label": {"name": "release:major"}, "created_at": time}]
+                self.assertEqual(self.intent(events), "minor")
+
+    def test_mismatched_pr_or_timeline_commit_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.intent([self.label, {**self.merge, "commit_id": "a" * 40}])
+        with self.assertRaises(ValueError):
+            self.intent([self.label, self.merge], {**self.pr, "merge_commit_sha": "a" * 40})
+
+    def test_missing_duplicate_or_conflicting_merge_events_are_rejected(self):
+        merged = {**self.merge, "created_at": self.pr["merged_at"]}
+        for merges in ([], [merged, merged],
+                       [merged, {**merged, "commit_id": "a" * 40}],
+                       [{**merged, "commit_id": "a" * 40}, merged]):
+            with self.subTest(merges=merges), self.assertRaises(ValueError):
+                self.intent([self.label, *merges])
+
+    def test_timestamp_sanity_check_is_bounded_and_requires_complete_metadata(self):
+        for time in (None, "", "invalid", "2026-11-12T10:47:36Z", "2026-11-12T10:47:23Z"):
+            with self.subTest(time=time), self.assertRaises(ValueError):
+                self.intent([self.label, {**self.merge, "created_at": time}])
+            with self.subTest(pr_time=time), self.assertRaises(ValueError):
+                self.intent([self.label, self.merge], {**self.pr, "merged_at": time})
+        for time in ("2026-11-12T10:47:24Z", "2026-11-12T10:47:34Z"):
+            self.assertEqual(self.intent([self.label, {**self.merge, "created_at": time}]), "minor")
+
+    def test_incomplete_or_conflicting_label_history_is_rejected(self):
+        for before in ([], [{**self.label, "event": "unlabeled"}],
+                       [self.label, {**self.label, "label": {"name": "release:patch"}}]):
+            with self.subTest(before=before), self.assertRaises(ValueError):
+                self.intent([*before, self.merge])
+
+    def test_pagination_reads_labels_merge_and_later_conflicts(self):
+        comments = [{"event": "commented"}] * 99
+        self.assertEqual(self.intent([*comments, self.label, self.merge]), "minor")
+        with self.assertRaises(ValueError):
+            self.intent([self.label, self.merge, *comments, self.merge])
+        with patch.object(release, "api", return_value=[self.label, self.merge] * 50):
+            with self.assertRaisesRegex(ValueError, "pagination limit"):
+                release.merged_intent("Skulldorom/usage-dashboard", self.pr, self.SHA)
+        with patch.object(release, "api", side_effect=[[self.label] * 100, subprocess.CalledProcessError(1, "gh")]):
+            with self.assertRaises(subprocess.CalledProcessError):
+                release.merged_intent("Skulldorom/usage-dashboard", self.pr, self.SHA)
 
 class GitTests(unittest.TestCase):
     def setUp(self):
@@ -258,7 +327,7 @@ class GitTests(unittest.TestCase):
         prs = [
             {
                 "number": 1,
-                "merged_at": "now",
+                "merged_at": "2026-11-12T10:47:29Z",
                 "base": {"ref": "main"},
                 "merge_commit_sha": self.head,
                 "labels": [{"name": "release:minor"}],
@@ -290,7 +359,7 @@ class GitTests(unittest.TestCase):
             prs = [
                 {
                     "number": 1,
-                    "merged_at": "now",
+                    "merged_at": "2026-11-12T10:47:29Z",
                     "base": {"ref": "main"},
                     "merge_commit_sha": self.head,
                     "labels": [{"name": f"release:{level}"}],
@@ -325,7 +394,7 @@ class GitTests(unittest.TestCase):
             return [
                 {
                     "number": 1,
-                    "merged_at": "now",
+                    "merged_at": "2026-11-12T10:47:29Z",
                     "base": {"ref": "main"},
                     "merge_commit_sha": commit,
                     "labels": [{"name": "release:minor" if commit == first else "release:patch"}],
@@ -359,7 +428,7 @@ class GitTests(unittest.TestCase):
             return [
                 {
                     "number": 1,
-                    "merged_at": "now",
+                    "merged_at": "2026-11-12T10:47:29Z",
                     "base": {"ref": "main"},
                     "merge_commit_sha": commit,
                     "labels": [{"name": "release:minor" if commit == first else "release:none"}],
@@ -411,7 +480,7 @@ class GitTests(unittest.TestCase):
                 prs = [
                     {
                         "number": 1,
-                        "merged_at": "now",
+                        "merged_at": "2026-11-12T10:47:29Z",
                         "base": {"ref": "main"},
                         "merge_commit_sha": self.head,
                         "labels": [{"name": f"release:{kind}"}],
@@ -445,7 +514,7 @@ class GitTests(unittest.TestCase):
         merged = self.run_git("rev-parse", "HEAD")
         unrelated = {
             "number": 1,
-            "merged_at": "now",
+            "merged_at": "2026-11-12T10:47:29Z",
             "base": {"ref": "main"},
             "merge_commit_sha": self.base,
             "labels": [{"name": "release:major"}],
