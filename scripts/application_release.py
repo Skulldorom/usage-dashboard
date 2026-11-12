@@ -51,13 +51,16 @@ def releasable(paths):
     )
 
 
-def classify(labels, paths):
+def release_intent(labels):
     intents = [label.removeprefix("release:") for label in labels if label.startswith("release:")]
-    if not releasable(paths):
-        return "none"
     if len(intents) != 1 or intents[0] not in LEVELS:
-        raise ValueError("Runtime changes require exactly one release:patch/minor/major/none label")
+        raise ValueError("Every PR requires exactly one release:patch/minor/major/none label")
     return intents[0]
+
+
+def classify(labels, paths):
+    intent = release_intent(labels)
+    return intent if releasable(paths) else "none"
 
 
 def git(*args):
@@ -115,8 +118,8 @@ def ensure_draft(repo, tag, sha, releases):
                 "name": tag,
                 "draft": True,
                 "prerelease": False,
-                "body": MARKER + "\n\nPending tests and both GHCR images.\n\n"
-                "_Created by an AI-authored OpenHands release workflow on behalf of repository maintainers._",
+                "body": MARKER
+                + "\n\nPending tests and both GHCR images.\n\n_Prepared by an AI agent on behalf of the maintainers._",
             },
         )
     except subprocess.CalledProcessError:
@@ -141,6 +144,8 @@ def prepare(repo, initial_base):
         if len(pending) != 1:
             raise ValueError("Multiple unpublished stable tags; resolve release reservations before proceeding")
         tag = pending[0]
+        if latest is None and tag != "v1.0.0":
+            raise ValueError("Initial stable reservation must be v1.0.0")
         sha = git("rev-parse", f"{tag}^{{commit}}")
         git("merge-base", "--is-ancestor", sha, head)
     else:
@@ -161,7 +166,7 @@ def prepare(repo, initial_base):
             paths = git("diff-tree", "--no-commit-id", "--name-only", "-r", f"{commit}^", commit).splitlines()
             if not releasable(paths):
                 continue
-            prs = api(f"repos/{repo}/commits/{commit}/pulls?per_page=100")
+            prs = pages(f"repos/{repo}/commits/{commit}/pulls")
             prs = [
                 pr
                 for pr in prs
@@ -170,9 +175,10 @@ def prepare(repo, initial_base):
             if len(prs) != 1:
                 raise ValueError(f"Commit {commit} requires a classified merged PR (use squash or merge commits)")
             levels.append(classify([label["name"] for label in prs[0]["labels"]], paths))
-        tag = increment(latest or "v0.0.0", max(levels, key=LEVELS.get))
-        if not tag:
+        level = max(levels, key=LEVELS.get)
+        if level == "none":
             return None
+        tag = increment(latest, level) if latest else "v1.0.0"
         sha = head
         reserve(repo, tag, sha)
     ensure_draft(repo, tag, sha, releases)
@@ -198,10 +204,7 @@ def publish(repo, tag, sha):
         {
             "draft": False,
             "make_latest": "true",
-            "body": MARKER
-            + "\n\n"
-            + notes["body"]
-            + "\n\n_Created by an AI-authored OpenHands release workflow on behalf of repository maintainers._",
+            "body": MARKER + "\n\n" + notes["body"] + "\n\n_Prepared by an AI agent on behalf of the maintainers._",
         },
     )
 
@@ -223,10 +226,9 @@ def main():
     args = parser.parse_args()
     if args.command == "classify":
         pr = api(f"repos/{args.repo}/pulls/{args.pr}")
-        paths = [item["filename"] for item in pages(f"repos/{args.repo}/pulls/{args.pr}/files")]
-        if len(paths) >= 3000:
-            raise ValueError("PR file limit reached")
-        print(classify([label["name"] for label in pr["labels"]], paths))
+        if pr["base"]["ref"] != "main":
+            raise ValueError("Classification check expects a PR targeting main")
+        print(release_intent([label["name"] for label in pr["labels"]]))
     elif args.command == "verify-source":
         verify_source(args.tag, args.sha)
     elif args.command == "publish":

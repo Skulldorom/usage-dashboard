@@ -67,18 +67,20 @@ Frontend and backend ship together under one canonical `vMAJOR.MINOR.PATCH` tag.
 `frontend/package.json` is package tooling metadata, not the application version.
 The README badge follows published stable GitHub Releases, not branch builds or tags.
 
-Maintainers classify each runtime-changing PR with exactly one repository label:
+Maintainers classify every PR targeting `main` with exactly one repository label:
 
 | Label | Meaning | Example from v1.2.3 |
 | --- | --- | --- |
 | `release:patch` | Backward-compatible fixes | v1.2.4 |
 | `release:minor` | Backward-compatible features | v1.3.0 |
 | `release:major` | Breaking API/configuration/deployment behavior | v2.0.0 |
-| `release:none` | Explicitly reviewed non-releasable runtime change | No increment |
+| `release:none` | Explicitly reviewed skipped change (including docs/tests) | No increment |
 
 Create these labels in repository settings before adopting the workflow. The PR
 classification check rejects missing, conflicting, or unrecognized classifications
-for runtime paths. Make it a required branch-protection check. Labels, not commit
+on every PR targeting `main`, including documentation-only PRs. Label validation is
+independent of changed-file eligibility; choose `release:none` for skipped changes.
+Make it a required branch-protection check. Labels, not commit
 subjects, are authoritative; a `feat:` title alone is not sufficient. Do not remove
 or change release labels on merged PRs until they have shipped.
 
@@ -94,7 +96,8 @@ classification and block release planning rather than guessing intent.
 
 `Application release` runs weekly (Monday 10:00 UTC) and can be dispatched manually
 from `main`. It batches all changes since the last published stable release and
-applies the highest increment once. There is no release per commit or per merge.
+applies the highest increment once. **Merging a PR does not immediately publish a
+new stable version.** There is no release per commit or per merge.
 A documentation-only/non-releasable batch does nothing. Ambiguous runtime changes
 fail planning before any tag is created; add the missing classification to their
 merged PRs and retry.
@@ -103,8 +106,9 @@ For the **first release**, dispatch with `initial_base` set to a reviewed full
 40-character baseline commit SHA, exclusive. This explicitly selects the history
 being classified instead of guessing which legacy commits should ship. For this
 feature's adoption, use the pre-feature `main` commit as the baseline so the
-classified update-notification PR is included. The initial numeric baseline is
-v0.0.0: patch yields v0.0.1, minor v0.1.0, major v1.0.0. Subsequent runs derive the
+classified update-notification PR is included. The first published stable release is
+**v1.0.0** regardless of patch, minor, or major intent in the first eligible batch. A
+`release:none`-only or documentation-only batch creates no release. Subsequent runs derive the
 version from published stable releases automatically. No version file needs a
 manual bump. History scanning is bounded to 500 first-parent commits per batch.
 
@@ -114,7 +118,10 @@ The reusable Docker workflow tests that exact commit (including PostgreSQL
 migrations), builds both images with the same version, then pushes the existing
 `ghcr.io/skulldorom/usage-dashboard-backend` and
 `ghcr.io/skulldorom/usage-dashboard-frontend` image names. Both image version/revision
-labels are read back from GHCR before the draft Release becomes public. Exact
+labels are read back from GHCR before the draft Release becomes public. The build
+explicitly targets `linux/amd64`; verification pulls that runnable platform and
+uses `docker image inspect --format '{{json .Config.Labels}}'`, which works for
+single manifests and OCI indexes with BuildKit provenance attestations. Exact
 `vX.Y.Z`, `X.Y.Z`, `X.Y`, and SHA tags remain available. `main` and `latest` remain
 development channels; stable releases do not move them.
 
@@ -160,3 +167,16 @@ services. Standalone operators pin both image references to the same published t
 Native operators check out that tag, run `sh scripts/build-release.sh`, and follow
 the existing migration/systemd upgrade procedure. Neither container runtime nor
 native runtime needs `.git`; Git is needed only during native build preparation.
+
+### Required repository protection
+
+Audit of ruleset `main` (ID 19039282): active, but only deletion and non-fast-forward
+rules were configured. Classic branch protection returned “Branch not protected”.
+Operators must add the `release-classification` required status check (GitHub
+Actions) and require PRs before merging to `main`; retain required application
+tests as appropriate. No protection settings were changed by this PR. Classification
+runs without PR path filters and reruns on label additions/removals and base edits.
+Documentation-only PRs therefore receive the same required check. Release planning
+still fails closed for ambiguous runtime history, including unsupported rebase
+merges. Commit-to-PR and Release API results are paginated with a bounded limit;
+selection follows first-parent commit ancestry, not PR creation or merge timestamps.

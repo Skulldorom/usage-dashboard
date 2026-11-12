@@ -2,14 +2,8 @@ name: Docker images
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
-    paths:
-      - backend/**
-      - frontend/**
-      - docker-compose.yml
-      - .github/workflows/docker-images.yml
-      - .github/workflows/application-release.yml
-      - scripts/**
+    branches: [main]
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
   push:
     branches:
       - main
@@ -50,7 +44,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.14'
-      - name: Require explicit release intent for runtime changes
+      - name: Require exactly one release intent on every PR
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -239,6 +233,7 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           target: runtime
+          platforms: linux/amd64
           load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

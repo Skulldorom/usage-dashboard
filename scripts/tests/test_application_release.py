@@ -27,8 +27,6 @@ class PolicyTests(unittest.TestCase):
     def test_increments_and_initial(self):
         for kind, expected in [("patch", "v1.2.10"), ("minor", "v1.3.0"), ("major", "v2.0.0"), ("none", None)]:
             self.assertEqual(release.increment("v1.2.9", kind), expected)
-        for kind, expected in [("patch", "v0.0.1"), ("minor", "v0.1.0"), ("major", "v1.0.0")]:
-            self.assertEqual(release.increment("v0.0.0", kind), expected)
 
     def test_invalid(self):
         for tag in ["latest", "1.2.3", "v01.2.3", "v1.2", "v1.2.3-rc.1", "v1.2.3+build"]:
@@ -44,6 +42,8 @@ class PolicyTests(unittest.TestCase):
         for labels in [[], ["release:patch", "release:minor"], ["release:maybe"]]:
             with self.assertRaises(ValueError):
                 release.classify(labels, ["backend/app/main.py"])
+            with self.assertRaises(ValueError):
+                release.classify(labels, ["README.md"])
 
     def test_atomic_competing_reservations(self):
         # GitHub's create-ref conflict is the only external boundary; verify the loser never moves it.
@@ -57,17 +57,27 @@ class PolicyTests(unittest.TestCase):
 
     def test_registry_failure_never_succeeds(self):
         labels = {"org.opencontainers.image.version": "v1.2.3", "org.opencontainers.image.revision": "sha"}
-        valid = json.dumps({"config": {"Labels": labels}})
+        valid = json.dumps(labels)
         for results in [
             [valid, subprocess.CalledProcessError(1, "docker")],
-            [valid, json.dumps({"config": {"Labels": {}}})],
+            [valid, json.dumps({})],
+            [valid, json.dumps({**labels, "org.opencontainers.image.version": "v1.0.0"})],
+            [valid, json.dumps({**labels, "org.opencontainers.image.revision": "other"})],
         ]:
-            with patch.object(images.subprocess, "check_output", side_effect=results):
+            with (
+                patch.object(images.subprocess, "run"),
+                patch.object(images.subprocess, "check_output", side_effect=results),
+            ):
                 with self.assertRaises((ValueError, subprocess.CalledProcessError)):
                     images.verify("v1.2.3", "sha")
-        with patch.object(images.subprocess, "check_output", return_value=valid) as inspect:
+        with (
+            patch.object(images.subprocess, "run") as pull,
+            patch.object(images.subprocess, "check_output", return_value=valid) as inspect,
+        ):
             images.verify("v1.2.3", "sha")
             self.assertEqual(inspect.call_count, 2)
+            self.assertEqual(pull.call_count, 2)
+            self.assertIn("--platform", pull.call_args.args[0])
 
     def test_publish_failure_and_idempotency(self):
         draft = {"id": 1, "tag_name": "v1.0.0", "draft": True, "body": release.MARKER}
@@ -91,6 +101,31 @@ class PolicyTests(unittest.TestCase):
         ):
             release.publish("o/r", "v1.0.0", "a")
             self.assertFalse(api.call_args.args[2]["draft"])
+
+    def test_pagination_is_complete_and_bounded(self):
+        with patch.object(release, "api", side_effect=[[{}] * 100, [{"id": 101}]]) as api:
+            self.assertEqual(len(release.pages("repos/o/r/commits/sha/pulls")), 101)
+            self.assertTrue(api.call_args.args[0].endswith("page=2"))
+        with patch.object(release, "api", return_value=[{}] * 100):
+            with self.assertRaisesRegex(ValueError, "pagination limit"):
+                release.pages("repos/o/r/releases")
+
+    def test_registry_pull_failure_stops_verification(self):
+        with (
+            patch.object(images.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "docker")),
+            patch.object(images.subprocess, "check_output") as inspect,
+        ):
+            with self.assertRaises(subprocess.CalledProcessError):
+                images.verify("v1.0.0", "sha")
+            inspect.assert_not_called()
+
+    def test_classification_workflow_covers_all_main_prs(self):
+        workflow = (ROOT / ".github/workflows/docker-images.yml").read_text()
+        pr_trigger = workflow.split("  pull_request:")[1].split("  push:")[0]
+        self.assertNotIn("paths:", pr_trigger)
+        self.assertIn("branches: [main]", pr_trigger)
+        self.assertIn("labeled, unlabeled", pr_trigger)
+        self.assertIn("edited", pr_trigger)
 
     def test_workflow_gates_and_metadata(self):
         workflow = (ROOT / ".github/workflows/application-release.yml").read_text()
@@ -142,23 +177,22 @@ class GitTests(unittest.TestCase):
             }
         ]
         with (
-            patch.object(release, "pages", return_value=[]),
-            patch.object(release, "api", return_value=prs),
+            patch.object(release, "pages", side_effect=lambda path: prs if "/commits/" in path else []),
             patch.object(release, "reserve") as reserve,
             patch.object(release, "ensure_draft"),
         ):
-            self.assertEqual(release.prepare("o/r", self.base), {"tag": "v0.1.0", "sha": self.head})
-            reserve.assert_called_once_with("o/r", "v0.1.0", self.head)
+            self.assertEqual(release.prepare("o/r", self.base), {"tag": "v1.0.0", "sha": self.head})
+            reserve.assert_called_once_with("o/r", "v1.0.0", self.head)
             with self.assertRaises(ValueError):
                 release.prepare("o/r", "")
         # All tags below exist only in a disposable repository and are never pushed.
-        self.run_git("tag", "v0.1.0")
+        self.run_git("tag", "v1.0.0")
         with (
             patch.object(release, "pages", return_value=[]),
             patch.object(release, "ensure_draft"),
             patch.object(release, "reserve") as reserve,
         ):
-            self.assertEqual(release.prepare("o/r", ""), {"tag": "v0.1.0", "sha": self.head})
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.0.0", "sha": self.head})
             reserve.assert_not_called()
 
     def test_existing_release_increments_and_no_release(self):
@@ -174,8 +208,7 @@ class GitTests(unittest.TestCase):
                 }
             ]
             with (
-                patch.object(release, "pages", return_value=published),
-                patch.object(release, "api", return_value=prs),
+                patch.object(release, "pages", side_effect=lambda path: prs if "/commits/" in path else published),
                 patch.object(release, "reserve") as reserve,
                 patch.object(release, "ensure_draft"),
             ):
@@ -183,8 +216,7 @@ class GitTests(unittest.TestCase):
                 self.assertEqual(result, {"tag": expected, "sha": self.head} if expected else None)
                 self.assertEqual(reserve.call_count, 1 if expected else 0)
         with (
-            patch.object(release, "pages", return_value=published),
-            patch.object(release, "api", return_value=[]),
+            patch.object(release, "pages", side_effect=lambda path: [] if "/commits/" in path else published),
             patch.object(release, "reserve") as reserve,
         ):
             with self.assertRaises(ValueError):
@@ -211,8 +243,13 @@ class GitTests(unittest.TestCase):
             ]
 
         with (
-            patch.object(release, "pages", return_value=[{"tag_name": "v1.2.3", "draft": False, "prerelease": False}]),
-            patch.object(release, "api", side_effect=prs),
+            patch.object(
+                release,
+                "pages",
+                side_effect=lambda path: (
+                    prs(path) if "/commits/" in path else [{"tag_name": "v1.2.3", "draft": False, "prerelease": False}]
+                ),
+            ),
             patch.object(release, "reserve") as reserve,
             patch.object(release, "ensure_draft"),
         ):
@@ -232,6 +269,79 @@ class GitTests(unittest.TestCase):
             patch.object(release, "reserve") as reserve,
         ):
             self.assertIsNone(release.prepare("o/r", ""))
+            reserve.assert_not_called()
+
+    def test_bootstrap_always_one_stable_version(self):
+        for kind in ["patch", "minor", "major", "none"]:
+            with self.subTest(kind=kind):
+                prs = [
+                    {
+                        "merged_at": "now",
+                        "base": {"ref": "main"},
+                        "merge_commit_sha": self.head,
+                        "labels": [{"name": f"release:{kind}"}],
+                    }
+                ]
+                with (
+                    patch.object(release, "pages", side_effect=lambda path: prs if "/commits/" in path else []),
+                    patch.object(release, "reserve") as reserve,
+                    patch.object(release, "ensure_draft"),
+                ):
+                    expected = {"tag": "v1.0.0", "sha": self.head} if kind != "none" else None
+                    self.assertEqual(release.prepare("o/r", self.base), expected)
+                    self.assertEqual(reserve.call_count, 0 if kind == "none" else 1)
+
+    def test_bootstrap_rejects_legacy_substable_reservation(self):
+        self.run_git("tag", "v0.1.0")
+        with patch.object(release, "pages", return_value=[]), patch.object(release, "ensure_draft") as draft:
+            with self.assertRaisesRegex(ValueError, "must be v1.0.0"):
+                release.prepare("o/r", "")
+            draft.assert_not_called()
+
+    def test_real_merge_and_out_of_order_prs(self):
+        self.run_git("tag", "v1.0.0", self.head)
+        self.run_git("checkout", "-b", "feature", self.base)
+        Path("backend/app").mkdir(parents=True, exist_ok=True)
+        Path("backend/app/other.py").write_text("feature")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "older authored feature")
+        self.run_git("checkout", "main")
+        self.run_git("merge", "--no-ff", "feature", "-m", "Merge PR")
+        merged = self.run_git("rev-parse", "HEAD")
+        unrelated = {
+            "merged_at": "now",
+            "base": {"ref": "main"},
+            "merge_commit_sha": self.base,
+            "labels": [{"name": "release:major"}],
+        }
+        intended = {**unrelated, "merge_commit_sha": merged, "labels": [{"name": "release:patch"}]}
+        with (
+            patch.object(
+                release,
+                "pages",
+                side_effect=lambda path: (
+                    [unrelated, intended]
+                    if "/commits/" in path
+                    else [{"tag_name": "v1.0.0", "draft": False, "prerelease": False}]
+                ),
+            ),
+            patch.object(release, "reserve"),
+            patch.object(release, "ensure_draft"),
+        ):
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.0.1", "sha": merged})
+
+    def test_resume_excludes_concurrent_merges(self):
+        self.run_git("tag", "v1.0.0")
+        reserved = self.head
+        Path("backend/app/main.py").write_text("new merge after reservation")
+        self.run_git("add", ".")
+        self.run_git("commit", "-m", "later merge")
+        with (
+            patch.object(release, "pages", return_value=[]),
+            patch.object(release, "ensure_draft"),
+            patch.object(release, "reserve") as reserve,
+        ):
+            self.assertEqual(release.prepare("o/r", ""), {"tag": "v1.0.0", "sha": reserved})
             reserve.assert_not_called()
 
     def test_native_build_metadata(self):
