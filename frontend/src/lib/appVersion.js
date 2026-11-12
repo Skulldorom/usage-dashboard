@@ -2,7 +2,7 @@ const SEMVER = /^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Z
 
 export function appVersion(value) {
   const match = typeof value === "string" && value.length <= 128 && value.match(SEMVER);
-  if (!match || match[4]?.split(".").some((part) => /^0\d+$/.test(part))) {
+  if (!match || match[0] !== value || match[4]?.split(".").some((part) => /^0\d+$/.test(part))) {
     return { kind: "unknown", label: "Version unknown", full: value || "unknown" };
   }
   const core = match.slice(1, 4);

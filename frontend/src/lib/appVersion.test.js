@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { appVersion, newerStable } from './appVersion.js'
 
 describe('application version metadata', () => {
-  it.each(['unknown', 'main', '', null, 'v0.0.0', '0.0.0+build', 'v01.2.3', '1.2', '1.2.3-rc.01'])('does not classify %s as stable', (version) => {
+  it.each(['unknown', 'main', '', null, 'v0.0.0', '0.0.0+build', 'v01.2.3', '1.2', '1.2.3-rc.01', 'v1.2.3\n'])('does not classify %s as stable', (version) => {
     expect(appVersion(version).kind).toBe('unknown')
   })
   it.each(['v1.0.0', '1.0.0', 'v1.0.0+build'])('shortens stable version %s without losing metadata', (version) => {

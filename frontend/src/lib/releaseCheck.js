@@ -28,7 +28,7 @@ export function validateRelease(payload, now = Date.now()) {
   if (!payload || typeof payload !== "object") return null;
   const { tag_name: tag, html_url: url, published_at: published, url: apiUrl } = payload;
   if (appVersion(tag).kind !== "stable" || payload.draft !== false || payload.prerelease !== false ||
-      url !== RELEASE_BASE + tag || typeof apiUrl !== "string" ||
+      url !== RELEASE_BASE + tag || typeof apiUrl !== "string" || apiUrl.trim() !== apiUrl ||
       !/^https:\/\/api\.github\.com\/repos\/Skulldorom\/usage-dashboard\/releases\/[1-9][0-9]*$/.test(apiUrl) ||
       typeof published !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(published)) return null;
   const timestamp = Date.parse(published);
@@ -121,7 +121,7 @@ async function fetchRelease(controller) {
       write(CACHE_KEY, null);
       write(RETRY_KEY, retryUntil);
       // Only our bounded diagnostic codes reach logs; never response bodies or credentials.
-      const reason = /^(HTTP \d{3}|timeout|invalid content type|oversized response|invalid JSON|invalid release metadata)$/.test(error.message)
+      const reason = /^(HTTP \d{3}|timeout|invalid content type|oversized response|invalid JSON|invalid release metadata)$/.test(error?.message)
         ? error.message : "network error";
       console.warn(`[updates] GitHub release check failed: ${reason}`);
     }

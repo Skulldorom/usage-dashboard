@@ -50,13 +50,13 @@ describe("verified browser releases", () => {
   });
   it.each([
     null, [], {}, { tag_name: "v0.0.0" }, { tag_name: "v1.03.0" },
-    { tag_name: "v1.3.0-rc.1" }, { tag_name: "placeholder" },
+    { tag_name: "v1.3.0-rc.1" }, { tag_name: "placeholder" }, { tag_name: "v1.3.0\n" },
     { draft: true }, { draft: null }, { prerelease: true }, { prerelease: undefined },
     { html_url: "https://evil.example/v1.3.0" },
     { html_url: payload.html_url + "?redirect=evil" },
     { html_url: payload.html_url.replace("github.com", "github.com.evil.example") },
     { html_url: payload.html_url.replace("Skulldorom", "other") },
-    { url: payload.url.replace("Skulldorom", "other") }, { url: null },
+    { url: payload.url.replace("Skulldorom", "other") }, { url: null }, { url: payload.url + "\n" },
     { published_at: null }, { published_at: "garbage" }, { published_at: "2026-11-13T12:00:00Z" },
     { published_at: "2026-02-30T12:00:00Z" }, { published_at: "2026-11-11T12:00:00" },
   ])("rejects malformed or untrusted metadata %j", async (change) => {
