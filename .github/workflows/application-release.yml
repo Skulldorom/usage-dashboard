@@ -49,6 +49,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read
     uses: ./.github/workflows/docker-images.yml
     with:
       release_tag: ${{ needs.prepare.outputs.tag }}
