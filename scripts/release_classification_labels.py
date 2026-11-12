@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 from urllib.parse import quote
 
@@ -34,7 +35,27 @@ def api(path, method="GET", data=None):
     if data is not None:
         command += ["--input", "-"]
     result = subprocess.run(command, input=json.dumps(data) if data is not None else None,
-                            text=True, capture_output=True, check=True, timeout=60)
+                            text=True, capture_output=True, timeout=60)
+    if result.returncode:
+        status = re.search(r"HTTP (\d{3})", result.stderr or "")
+        status = status.group(1) if status else "unknown"
+        message = "GitHub request failed; no structured error message"
+        try:
+            body = json.loads(result.stdout)
+            if isinstance(body, dict) and isinstance(body.get("message"), str):
+                message = body["message"]
+        except (TypeError, ValueError):
+            pass
+        # Never print raw stderr: gh debug output can contain authentication headers.
+        for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN"):
+            token = os.environ.get(name)
+            if token:
+                message = message.replace(token, "[REDACTED]")
+        message = re.sub(r"(?:gh[pousr]_|github_pat_)[A-Za-z0-9_]+", "[REDACTED]", message)
+        message = re.sub(r"(?i)(?:authorization|proxy-authorization|cookie|set-cookie)[^\r\n]*",
+                         "[REDACTED header]", message)
+        raise RuntimeError(f"GitHub API {method} failed (HTTP {status}, exit {result.returncode}): "
+                           f"{json.dumps(message[:1000])}") from None
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 

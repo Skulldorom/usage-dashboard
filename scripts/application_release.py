@@ -1,6 +1,7 @@
 """Plan/resume a single application release. Network mutations require an explicit command."""
 
 import argparse
+from datetime import datetime, timedelta
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import subprocess
 
 STABLE = re.compile(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\Z")
 LEVELS = {"none": 0, "patch": 1, "minor": 2, "major": 3}
+MERGE_TIME_TOLERANCE = timedelta(seconds=5)
 MARKER = "Application release managed by scripts/application_release.py."
 
 
@@ -101,9 +103,27 @@ def changed_paths(commit):
 
 
 def merged_intent(repo, pr, commit):
-    labels = set()
+    if pr.get("merge_commit_sha") != commit:
+        raise ValueError("PR merge commit does not match release commit")
     events = pages(f"repos/{repo}/issues/{pr['number']}/timeline")
-    for event in events:
+    merges = [index for index, event in enumerate(events) if event.get("event") == "merged"]
+    if len(merges) != 1:
+        raise ValueError("PR timeline requires exactly one merge event")
+    merge_index = merges[0]
+    merged = events[merge_index]
+    if merged.get("commit_id") != commit:
+        raise ValueError("PR timeline merge does not match release commit")
+    try:
+        pr_time = datetime.strptime(pr["merged_at"], "%Y-%m-%dT%H:%M:%SZ")
+        event_time = datetime.strptime(merged["created_at"], "%Y-%m-%dT%H:%M:%SZ")
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("Missing or invalid PR merge timestamps") from None
+    # SHA and the unique PR-scoped event establish identity; clocks are only a sanity check.
+    if abs(event_time - pr_time) > MERGE_TIME_TOLERANCE:
+        raise ValueError("PR merge timestamps differ by more than five seconds")
+    labels = set()
+    # Timeline order, not timestamp comparison, defines the merge-time label snapshot.
+    for event in events[:merge_index]:
         kind = event.get("event")
         if kind in ("labeled", "unlabeled"):
             name = event["label"]["name"]
@@ -113,11 +133,7 @@ def merged_intent(repo, pr, commit):
                 if name.startswith("release:") and name not in labels:
                     raise ValueError("Incomplete release label history")
                 labels.discard(name)
-        elif kind == "merged":
-            if event.get("commit_id") != commit or event.get("created_at") != pr["merged_at"]:
-                raise ValueError("PR timeline merge does not match release commit")
-            return release_intent(labels)
-    raise ValueError("PR timeline has no matching merge event")
+    return release_intent(labels)
 
 
 def reserve(repo, tag, sha):

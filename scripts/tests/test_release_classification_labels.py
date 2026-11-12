@@ -1,6 +1,8 @@
 """Exercise real reconciliation; substitute only GitHub's mutable API boundary."""
 
 import copy
+import json
+import subprocess
 import importlib.util
 from pathlib import Path
 import unittest
@@ -63,6 +65,53 @@ class GitHub:
     def names(self):
         return {item["name"] for item in self.pull["labels"]}
 
+
+class ApiTests(unittest.TestCase):
+    def test_api_errors_report_status_and_sanitized_message_not_raw_headers(self):
+        secret = "test-private-token"
+        result = subprocess.CompletedProcess([], 1,
+            json.dumps({"message": f"Resource not accessible by integration {secret}", "status": "403"}),
+            f"gh: Resource not accessible by integration (HTTP 403)\nAuthorization: Bearer {secret}\n")
+        # Only the external process boundary is substituted; the API wrapper handles the response.
+        with (patch.object(labels.subprocess, "run", return_value=result),
+              patch.dict(labels.os.environ, {"GH_TOKEN": secret}),
+              self.assertRaises(RuntimeError) as error):
+            labels.api("repos/owner/repo/issues/42/labels", "POST", {"labels": ["release:patch"]})
+        message = str(error.exception)
+        self.assertIn("POST", message)
+        self.assertIn("403", message)
+        self.assertIn("Resource not accessible by integration", message)
+        self.assertNotIn(secret, message)
+        self.assertNotIn("Authorization", message)
+
+    def test_non_json_error_does_not_echo_raw_output_or_workflow_commands(self):
+        result = subprocess.CompletedProcess([], 1, "Authorization: secret", "::error::secret (HTTP 502)")
+        with patch.object(labels.subprocess, "run", return_value=result), self.assertRaises(RuntimeError) as error:
+            labels.api("repos/owner/repo/pulls/42")
+        self.assertIn("502", str(error.exception))
+        self.assertNotIn("secret", str(error.exception))
+
+    def test_error_message_redacts_credentials_and_escapes_control_characters(self):
+        result = subprocess.CompletedProcess([], 1,
+            json.dumps({"message": "Bad credentials ghp_abc123\n::error::injected"}), "")
+        with patch.object(labels.subprocess, "run", return_value=result), self.assertRaises(RuntimeError) as error:
+            labels.api("repos/owner/repo/pulls/42")
+        self.assertNotIn("ghp_abc123", str(error.exception))
+        self.assertNotIn("\n", str(error.exception))
+
+    def test_successful_empty_and_json_responses(self):
+        for output, expected in (("", None), ('[{"name":"release:patch"}]', [{"name": "release:patch"}])):
+            result = subprocess.CompletedProcess([], 0, output, "")
+            with patch.object(labels.subprocess, "run", return_value=result):
+                self.assertEqual(labels.api("repos/owner/repo/issues/42/labels"), expected)
+
+    def test_workflow_grants_only_pr_write_and_executes_trusted_code(self):
+        workflow = (ROOT / ".github/workflows/release-classification-labels.yml").read_text()
+        self.assertIn("pull-requests: write", workflow)
+        self.assertNotIn("issues: write", workflow)
+        self.assertIn("pull_request_target:", workflow)
+        self.assertIn("ref=$BASE_SHA", workflow)
+        self.assertNotIn("actions/checkout", workflow)
 
 class ReconciliationTests(unittest.TestCase):
     def test_open_default_and_duplicate_delivery(self):
