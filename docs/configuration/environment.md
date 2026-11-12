@@ -40,7 +40,7 @@ default are optional.
 
 | Variable | Description |
 | --- | --- |
-| `IMAGE_TAG` | Tag for the default GHCR backend/frontend images. Defaults to `latest`. |
+| `IMAGE_TAG` | Tag for both default GHCR application images. Defaults to the recommended stable `latest` (`stable` is equivalent); `main` is development, `vX.Y.Z` is immutable, and `vX.Y`/`vX` are moving stable aliases. Pulls and deployments are always operator-initiated. |
 | `BACKEND_IMAGE` | Optional full backend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-backend:${IMAGE_TAG}`. |
 | `FRONTEND_IMAGE` | Optional full frontend image override. Defaults to `ghcr.io/skulldorom/usage-dashboard-frontend:${IMAGE_TAG}`. |
 | `NGINX_HTTP_PORT` | Host port published by the frontend/proxy container. Defaults to `3000`. |

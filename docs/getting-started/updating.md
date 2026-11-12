@@ -6,7 +6,24 @@ Use the upgrade procedure for the way Usage Dashboard was installed:
 - [Native Linux](/getting-started/native-linux#upgrade)
 - [Standalone containers](/getting-started/standalone-containers#upgrade)
 
-Updates are shipped as release tags and matching images on GitHub Container Registry.
+GitHub Releases are authoritative for published stable versions. Stable means the
+latest published, non-draft, non-prerelease GitHub Release; a registry tag alone
+does not establish that a release is published.
+
+## Docker image channels
+
+Compose defaults to `IMAGE_TAG=latest`; this behavior remains unchanged. `latest`
+is the recommended stable channel; `stable` is its equivalent alias. Both move
+after both reserved release images are verified, immediately before GitHub publication. `main` is the moving development channel and may contain unreleased
+changes. The immutable `vX.Y.Z` tag identifies one exact release. The moving `vX.Y`
+and `vX` tags point to the newest stable version in their respective series. Treat
+moving tags as convenience channels, not immutable deployment references.
+
+Compose does not pull images while running. Automatic updates require an explicitly
+configured updater; none is installed by the official configuration. `docker compose pull` explicitly
+fetches the selected tag, and `docker compose up -d` recreates changed containers.
+Database migrations run automatically when the backend starts. Neither command
+switches channels.
 
 ## Refresh the selected channel
 
@@ -15,20 +32,17 @@ docker compose pull
 docker compose up -d
 ```
 
-These commands refresh the configured image channel; they do not switch from development to stable.
-The default `latest` tag follows `main`, not the latest stable release.
-
-Compose recreates any containers whose image changed. Database migrations run
-automatically when the backend starts.
-
 ## Pin a version
 
-By default the stack tracks the `latest` image tag. To pin a specific release,
-set `IMAGE_TAG` in `.env`:
+To deploy an exact stable release, set `IMAGE_TAG` in `.env`. Both application
+images use the same tag:
 
 ```bash
 IMAGE_TAG=v1.2.0
 ```
+
+Exact `vX.Y.Z` tags are immutable. Pin one for incident recovery or whenever a
+moving channel is unsuitable; explicitly restore the desired channel afterward.
 
 ## Custom image references
 
@@ -42,6 +56,32 @@ FRONTEND_IMAGE=ghcr.io/your-org/usage-dashboard-frontend:latest
 
 See the [environment variable reference](/configuration/environment) for all
 image-related settings.
+
+## Channel promotion and recovery
+
+The `stable-channels.yml` workflow on `main` performs promotion. Manual dispatch
+requires its confirmation boolean to be `true`; the default is a dry run. Promotion
+verifies both pulled images' OCI version/revision labels, then
+updates moving tags using pinned image-index digests. It refuses to move a tag already
+pointing to a newer version and shares `application-release` concurrency to avoid
+racing release publication.
+
+GitHub Releases and GHCR cannot be updated atomically. A partial promotion can leave
+verified reserved-release images discoverable in GHCR before GitHub publication.
+Those images are not a published release. Roll forward by rerunning the workflow
+after resolving its reported issue; do not roll back moving tags. Temporarily pin
+Compose to the latest published exact `vX.Y.Z` when a known published version is
+needed during recovery.
+
+To migrate from the previous `latest`-as-development behavior, manually dispatch
+`stable-channels.yml` on `main`, review the dry-run plan, then dispatch with
+confirmation set to `true`. Recovery through this workflow selects only the latest
+published GitHub Release. If an `Application release` reservation is pending, rerun
+`Application release`: it resumes the reservation using the exact existing images.
+Bootstrap also uses a manual `stable-channels.yml` dispatch on `main`, initially
+with confirmation false to review the plan. Compose retains its `latest` default,
+and explicit stable-version pins remain supported. No workflow pulls images onto or
+restarts an operator's host.
 
 The commands on this page apply only to Docker Compose. Native and standalone
 container deployments must follow their linked ordering so migrations complete
@@ -88,11 +128,11 @@ the current session, but cannot preserve it across reloads.
 
 ### Stable and development image channels
 
-`latest` and `main` retain their existing development-channel meaning. They embed
-`v0.0.0-dev.<full-commit-SHA>` because a branch build is not a published stable
-release, even if its source commit also has a release tag. The footer shortens
-only the presentation; full build metadata remains intact. Stable release builds
-inject the actual release tag into backend `APP_VERSION`, frontend
+`main` is the development channel and embeds `v0.0.0-dev.<full-commit-SHA>`
+because a branch build is not a published stable release, even if its source commit
+also has a release tag. `latest` is the stable-equivalent moving channel. The footer
+shortens only the presentation; full build metadata remains intact. Stable release
+builds inject the actual release tag into backend `APP_VERSION`, frontend
 `VITE_APP_VERSION`, and OCI version labels. Matching images share the same source
 revision. No runtime version constant or Git checkout is required.
 
@@ -210,14 +250,18 @@ labels are read back from GHCR before the draft Release becomes public. The buil
 explicitly targets `linux/amd64`; verification pulls that runnable platform and
 uses `docker image inspect` to read image configuration labels, which works for
 single manifests and OCI indexes with BuildKit provenance attestations. Exact
-`vX.Y.Z`, `X.Y.Z`, `X.Y`, and SHA tags remain available. `main` and `latest` remain
-development channels; stable releases do not move them.
+`vX.Y.Z` is the immutable release tag. After both images pass verification,
+promotion copies their exact digests to `vX.Y`, `vX`, `stable`, and `latest`,
+then publishes the GitHub Release. `main` and SHA tags identify development builds.
+Legacy unprefixed version aliases are not maintained by this workflow.
 
 Tests/build/push/verification failures leave only an unpublished reservation;
 GitHub's latest stable release and the dashboard never advertise it. A failed
-matrix push can leave one image/tag or a moving minor alias in GHCR: **only published
+matrix push can leave one exact image/tag in GHCR; no moving alias changes until
+both images verify. A promotion failure can leave partial moving aliases: **only published
 GitHub Releases are installable release announcements**. Do not deploy an unpublished
-reservation. Retry the workflow to rebuild the same reserved commit and complete
+reservation. Retry the workflow to reuse verified existing exact tags, build only missing
+artifacts from the same reserved commit, and complete
 publication before including newer merges. Newer triggers cannot cancel the active release; after publication a follow-up evaluation processes remaining commits. Never move an existing stable tag.
 Multiple unpublished tags or unmanaged draft Releases require operator resolution;
 the workflow fails closed. GitHub cannot atomically publish two images, so moving
@@ -250,8 +294,8 @@ notice. The authenticated sidebar retains a compact installed-version label and
 exposes both artifact versions in details for a mismatch. Dismissal applies to the
 specific release and notification type; nothing updates the installation automatically.
 
-Compose operators set `IMAGE_TAG` to a **published** `vX.Y.Z` and recreate both
-services. Standalone operators pin both image references to the same published tag.
+Compose operators normally keep `IMAGE_TAG=latest` (or `stable`) and pull/recreate
+both services; a **published** `vX.Y.Z` provides explicit reproducible pinning. Standalone operators pin both image references to the same published tag.
 Native operators check out that tag, run `sh scripts/build-release.sh`, and follow
 the existing migration/systemd upgrade procedure. Neither container runtime nor
 native runtime needs `.git`; Git is needed only during native build preparation.

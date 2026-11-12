@@ -26,7 +26,8 @@ storage and health-aware startup ordering.
    that password; set it only for an external database. Keep `.env` private and
    backed up.
 
-3. Optionally pin `IMAGE_TAG` to a release, then start the stack:
+3. Optionally pin `IMAGE_TAG` to an exact published `vX.Y.Z` release. By default,
+   Compose uses the stable-equivalent moving `latest` tag. Then start the stack:
 
    ```bash
    docker compose pull

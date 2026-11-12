@@ -27,7 +27,7 @@ cp .env.example .env
 openssl rand -base64 32 | tr '+/' '-_'
 ```
 
-Copy the generated value into `ENCRYPTION_KEY` in `.env`, replacing `replace-with-generated-fernet-key`. Then start the stack:
+Copy the generated value into `ENCRYPTION_KEY` in `.env`, replacing `replace-with-generated-fernet-key`. Compose defaults to the recommended stable `latest` channel (`stable` is equivalent); set `IMAGE_TAG` to an exact published `vX.Y.Z` to pin a release. Images are not pulled or deployed automatically. Then start the stack:
 
 ```bash
 docker compose pull
