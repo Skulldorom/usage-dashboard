@@ -91,7 +91,7 @@ sudo -H -u usage-dashboard /opt/usage-dashboard/backend/.venv/bin/pip \
 
 cd /opt/usage-dashboard/frontend
 sudo -H -u usage-dashboard env VITE_API_BASE_URL=/api npm ci
-sudo -H -u usage-dashboard env VITE_API_BASE_URL=/api npm run build
+sudo -H -u usage-dashboard sh /opt/usage-dashboard/scripts/build-release.sh
 ```
 
 Do not track `main` on a production host. Use a release tag so installs and
@@ -194,7 +194,7 @@ sudo -H -u usage-dashboard git fetch --tags --prune
 sudo -H -u usage-dashboard git checkout "$VERSION"
 sudo -H -u usage-dashboard backend/.venv/bin/pip install -r backend/requirements.txt
 sudo -H -u usage-dashboard env VITE_API_BASE_URL=/api npm --prefix frontend ci
-sudo -H -u usage-dashboard env VITE_API_BASE_URL=/api npm --prefix frontend run build
+sudo -H -u usage-dashboard sh scripts/build-release.sh
 sudo install -m 0644 deploy/systemd/*.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo nginx -t

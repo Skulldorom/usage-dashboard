@@ -11,6 +11,7 @@ User=usage-dashboard
 Group=usage-dashboard
 WorkingDirectory=/opt/usage-dashboard/backend
 EnvironmentFile=/etc/usage-dashboard/backend.env
+EnvironmentFile=-/opt/usage-dashboard/deploy/version.env
 Environment=PYTHONDONTWRITEBYTECODE=1
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/opt/usage-dashboard/backend/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000

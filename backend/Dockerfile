@@ -1,5 +1,6 @@
 FROM python:3.15-slim AS runtime
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+ARG APP_VERSION=unknown
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 APP_VERSION=${APP_VERSION}
 WORKDIR /app
 RUN addgroup --system app && adduser --system --ingroup app app
 COPY backend/requirements.txt ./requirements.txt
