@@ -106,7 +106,17 @@ export default function UpdateNotification({ update, compact = false }) {
             </Tooltip>
           </Box>
           <Typography className="update-notification-copy">{developmentNotice ? "A stable release is available as an alternative to this development build." : "A new version of Usage Dashboard is available."}</Typography>
-          <Typography className="update-version-change">{developmentNotice ? latest.label : `${backend.label} → ${latest.label}`}</Typography>
+          <Box className="update-version-change">
+            {!developmentNotice && (
+              <>
+                <span className="update-version-installed">{backend.label}</span>
+                <span aria-hidden="true">→</span>
+                <span className="version-copy-status">to</span>
+              </>
+            )}
+            <span className="update-version-latest">{latest.label}</span>
+            {!developmentNotice && <span className="update-new-badge">New</span>}
+          </Box>
           <Link href={update.release_url} target="_blank" rel="noopener noreferrer" className="update-release-link">
             View release <OpenInNewRoundedIcon fontSize="inherit" aria-hidden="true" />
           </Link>
