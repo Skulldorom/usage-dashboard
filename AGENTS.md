@@ -58,13 +58,15 @@ Usage Dashboard is a self-hosted provider-usage application:
 
 ## Validation
 
+See the repository's [local development documentation](https://skulldorom.github.io/usage-dashboard/docs/development/local-development.html) for setup details.
+
 Run the checks relevant to the change and report exact results:
 
 ```bash
-# Backend
-PYTHONPATH=backend .venv/bin/pytest -q backend
-.venv/bin/ruff check backend
-.venv/bin/ruff format --check backend
+# Backend: activate or create the project's virtual environment first.
+PYTHONPATH=backend python -m pytest -q backend
+python -m ruff check backend
+python -m ruff format --check backend
 
 # Frontend
 cd frontend
@@ -72,6 +74,8 @@ npm test
 npm run lint
 npm run build
 ```
+
+If the project's virtual environment is not active or does not exist, create or activate it according to the development documentation before treating a missing Python module or command as a genuine validation failure.
 
 For database or PostgreSQL behavior, also run the repository's PostgreSQL/Docker-backed tests when available. For frontend behavior, add focused regression coverage before relying only on the production build. Use `git diff --check` before committing.
 
