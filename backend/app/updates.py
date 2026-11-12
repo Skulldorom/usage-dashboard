@@ -43,6 +43,7 @@ class _Cache:
 _cache: _Cache | None = None
 _next_check: datetime | None = None
 _failed = False
+_invalid_release = False
 _lock = asyncio.Lock()
 
 
@@ -75,12 +76,22 @@ def is_newer(current: str, latest: str) -> bool:
 def _result() -> UpdateResult:
     current = settings.app_version
     parsed = _version(current)
-    current = current if parsed else None
-    status = "check_failed" if _failed else "unknown"
+    current = current if parsed and (parsed[:3] != (0, 0, 0) or parsed[3]) else None
+    parsed = _version(current) if current else None
+    status = "check_failed" if _failed else "unverified_release" if _invalid_release else "unknown"
     available = False
-    if not _failed and _cache and parsed and not parsed[3]:
-        available = is_newer(current, _cache.tag)
-        status = "update_available" if available else "up_to_date"
+    if _failed or _invalid_release:
+        pass
+    elif _cache and parsed and not parsed[3]:
+        if parsed[:3] == _version(_cache.tag)[:3]:
+            status = "up_to_date"
+        elif is_newer(current, _cache.tag):
+            available = True
+            status = "update_available"
+        else:
+            status = "ahead_of_release"
+    elif parsed and parsed[3]:
+        status = "stable_release_available" if _cache else "unknown"
     return UpdateResult(
         status=status,
         current_version=current,
@@ -89,7 +100,7 @@ def _result() -> UpdateResult:
         release_name=_cache.name if _cache else None,
         published_at=_cache.published_at if _cache else None,
         checked_at=_cache.checked_at if _cache else None,
-        cache_status=("stale" if _failed else "fresh") if _cache else "empty",
+        cache_status=("stale" if _failed or _invalid_release else "fresh") if _cache else "empty",
         update_available=available,
     )
 
@@ -102,6 +113,7 @@ def _release(payload: object, now: datetime, etag: str | None) -> _Cache:
     if (
         not parsed
         or parsed[3]
+        or parsed[:3] == (0, 0, 0)
         or payload.get("draft") is not False
         or payload.get("prerelease") is not False
         or url != RELEASE_BASE + tag
@@ -110,7 +122,10 @@ def _release(payload: object, now: datetime, etag: str | None) -> _Cache:
     published = payload.get("published_at")
     if not isinstance(published, str):
         raise ValueError("missing publication time")
-    published_at = datetime.fromisoformat(published.replace("Z", "+00:00"))
+    try:
+        published_at = datetime.fromisoformat(published.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("invalid publication time") from exc
     if published_at.tzinfo is None or published_at > now:
         raise ValueError("invalid publication time")
     name = payload.get("name")
@@ -120,7 +135,7 @@ def _release(payload: object, now: datetime, etag: str | None) -> _Cache:
 
 
 async def check_for_update(*, now: datetime | None = None) -> UpdateResult:
-    global _cache, _next_check, _failed
+    global _cache, _next_check, _failed, _invalid_release
     async with _lock:
         now = now or datetime.now(UTC)
         if _next_check and now < _next_check:
@@ -149,14 +164,20 @@ async def check_for_update(*, now: datetime | None = None) -> UpdateResult:
                                     raise ValueError("oversized release response")
                             _cache = _release(json.loads(body), now, response.headers.get("etag"))
             _failed = False
+            _invalid_release = False
             _next_check = now + timedelta(seconds=settings.update_cache_seconds)
-        except (httpx.HTTPError, ValueError, UnicodeError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError):
             _failed = True
+            _invalid_release = False
+            _next_check = now + timedelta(minutes=15)
+        except (ValueError, UnicodeError):
+            _failed = False
+            _invalid_release = True
             _next_check = now + timedelta(minutes=15)
         return _result()
 
 
 def reset_cache() -> None:
-    global _cache, _next_check, _failed, _lock
-    _cache, _next_check, _failed = None, None, False
+    global _cache, _next_check, _failed, _invalid_release, _lock
+    _cache, _next_check, _failed, _invalid_release = None, None, False, False
     _lock = asyncio.Lock()

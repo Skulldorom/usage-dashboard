@@ -5,7 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 
 class UpdateCheckRead(BaseModel):
-    status: Literal["update_available", "up_to_date", "unknown", "check_failed"]
+    status: Literal[
+        "update_available",
+        "stable_release_available",
+        "up_to_date",
+        "ahead_of_release",
+        "unknown",
+        "check_failed",
+        "unverified_release",
+    ]
     current_version: str | None
     latest_version: str | None = None
     release_url: str | None = None

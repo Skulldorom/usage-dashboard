@@ -1616,68 +1616,57 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .sidebar-copyright {
   margin-top: 0;
 }
+.version-footer { display: grid; gap: 8px; min-width: 0; }
+.sidebar-version-row { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; }
 .sidebar-version {
-  display: block;
-  color: #82798e;
-  font-size: 0.72rem;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-.update-notification {
-  display: grid;
-  gap: 10px;
-  padding: 13px;
-  border: 1px solid rgba(6, 200, 255, 0.3);
-  border-radius: 14px;
-  background: linear-gradient(145deg, rgba(6, 200, 255, 0.1), rgba(21, 16, 31, 0.86));
-  min-width: 0;
-}
-.update-notification-header {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #d8f8ff;
-  font-size: 0.8rem;
-}
-.update-notification-header .MuiIconButton-root {
-  margin-left: auto;
-  color: #aaa2b9;
-}
-.update-notification-copy {
-  color: #aaa2b9;
-  font-size: 0.75rem !important;
-  line-height: 1.45 !important;
-}
-.update-version-change {
-  color: #fbf9ff;
-  font-size: 0.78rem !important;
-  font-weight: 750 !important;
-  overflow-wrap: anywhere;
-}
-.update-version-change span { color: #14cbfa; padding-inline: 3px; }
-.update-release-link {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  color: #63e3ff !important;
-  font-size: 0.74rem !important;
-  font-weight: 750 !important;
-  width: fit-content;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 5px 3px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #c2bacd;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  cursor: help;
 }
+.sidebar-version span:not(.version-indicator) { overflow: hidden; text-overflow: ellipsis; }
+.sidebar-version code { color: #a9a1b8; font-size: 0.69rem; }
+.version-indicator { flex: 0 0 5px; height: 5px; border-radius: 50%; background: #a9a1b8; }
+.version-indicator-stable { background: #63e3ff; }
+.version-indicator-development { background: #e4b96d; }
+.version-copy.MuiIconButton-root { color: #b6aec4; font-size: 0.85rem; }
+.sidebar-version:focus-visible, .version-copy:focus-visible, .update-notification a:focus-visible { outline: 2px solid #63e3ff; outline-offset: 3px; }
+.version-diagnostic { color: #b6aec4; font-size: 0.68rem !important; text-align: center; }
+.version-diagnostic-warning { color: #efc581; }
+.version-copy-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.update-notification {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid rgba(6, 200, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(6, 200, 255, 0.06);
+  min-width: 0;
+}
+.update-notification-info { border-color: rgba(228, 185, 109, 0.3); background: rgba(228, 185, 109, 0.05); }
+.update-notification-header { display: flex; align-items: center; gap: 6px; color: #d8f8ff; }
+.update-notification-header strong { font-size: 0.75rem; line-height: 1.4; }
+.update-notification-info .update-notification-header { color: #efc581; }
+.update-notification-header .MuiIconButton-root { margin-left: auto; color: #b6aec4; }
+.update-notification-header > svg { flex-shrink: 0; font-size: 1rem; }
+.update-notification-copy { color: #b6aec4; font-size: 0.7rem !important; line-height: 1.5 !important; }
+.update-version-change { color: #fbf9ff; font-size: 0.78rem !important; font-weight: 750 !important; overflow-wrap: anywhere; }
+.update-release-link { display: inline-flex; align-items: center; gap: 5px; color: #63e3ff !important; font-size: 0.72rem !important; font-weight: 700 !important; width: fit-content; }
 .mobile-update-slot { display: none; }
 @media (max-width: 900px) {
   .mobile-update-slot { display: block; margin-bottom: 18px; }
   .mobile-update-slot:empty { display: none; }
-  .mobile-update-notification {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px 12px;
-    padding: 11px 13px;
-    border: 1px solid rgba(6, 200, 255, 0.26);
-    border-radius: 14px;
-    background: rgba(6, 200, 255, 0.07);
-  }
-  .mobile-update-notification .update-notification-header { flex: 1 1 155px; }
-  .mobile-update-notification .update-release-link { margin-left: auto; }
+  .version-footer-mobile { gap: 6px; }
+  .version-footer-mobile .update-notification { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+  .version-footer-mobile .update-notification-header, .version-footer-mobile .update-notification-copy { grid-column: 1 / -1; }
+  .version-footer-mobile .update-release-link { justify-self: end; }
 }
