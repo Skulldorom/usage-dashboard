@@ -21,6 +21,7 @@ def load(name):
 
 release = load("application_release")
 images = load("verify_release_images")
+label_workflow = load("release_classification_labels")
 
 
 class PolicyTests(unittest.TestCase):
@@ -34,6 +35,50 @@ class PolicyTests(unittest.TestCase):
                 release.increment(tag, "patch")
         with self.assertRaises(ValueError):
             release.increment("v1.2.3", "guess")
+
+    def test_default_classification_is_only_applied_on_open(self):
+        self.assertEqual(label_workflow.label_actions("opened", []), [("add", "release:patch")])
+        for intent in ("minor", "major", "none"):
+            self.assertEqual(label_workflow.label_actions("opened", {f"release:{intent}"}), [])
+        self.assertEqual(label_workflow.label_actions("reopened", set()), [])
+        self.assertEqual(label_workflow.label_actions("unlabeled", set(), "release:patch"), [])
+
+    def test_label_change_removes_old_only_when_event_order_is_unambiguous(self):
+        timeline = [
+            {"event": "labeled", "label": {"name": "release:patch"}, "created_at": "1"},
+            {"event": "labeled", "label": {"name": "release:minor"}, "created_at": "2"},
+        ]
+        self.assertEqual(
+            label_workflow.label_actions("labeled", {"release:patch", "release:minor"}, "release:minor", timeline),
+            [("remove", "release:patch")],
+        )
+        for ambiguous in (timeline + [{**timeline[-1], "label": {"name": "release:patch"}}],):
+            with self.assertRaises(ValueError):
+                label_workflow.label_actions("labeled", {"release:patch", "release:minor"}, "release:minor", ambiguous)
+        with self.assertRaises(ValueError):
+            label_workflow.label_actions("labeled", {"release:patch", "release:minor"}, "release:minor", [])
+
+    def test_classification_workflow_uses_trusted_base_script_and_least_privilege(self):
+        workflow = (ROOT / ".github/workflows/release-classification-labels.yml").read_text()
+        self.assertIn("pull_request_target:", workflow)
+        self.assertIn("issues: write", workflow)
+        self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("branches: [main]", workflow)
+        self.assertIn("ref=$BASE_SHA", workflow)
+        self.assertNotIn("actions/checkout", workflow)
+
+    def test_reusable_permission_contract_and_remaining_evaluation(self):
+        caller = (ROOT / ".github/workflows/application-release.yml").read_text()
+        callee = (ROOT / ".github/workflows/docker-images.yml").read_text()
+        image_job = caller.split("  images:")[1].split("  publish:")[0]
+        for permission in ("contents: read", "packages: write", "pull-requests: read"):
+            self.assertIn(permission, image_job)
+        self.assertIn("if: github.event_name == 'pull_request'", callee)
+        self.assertIn("branches: [main]", caller)
+        self.assertIn("--skip-unbootstrapped-push", caller)
+        self.assertIn("needs: [prepare, publish]", caller)
+        self.assertIn('if [ "$head" != "$RELEASE_SHA" ]', caller)
+        self.assertIn("actions: write", caller)
 
     def test_classification(self):
         for kind in release.LEVELS:
@@ -162,6 +207,7 @@ class PolicyTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/application-release.yml").read_text()
         build = (ROOT / ".github/workflows/docker-images.yml").read_text()
         self.assertIn("cancel-in-progress: false", workflow)
+        self.assertIn("branches: [main]", workflow)
         self.assertIn("needs: [prepare, images]", workflow)
         self.assertLess(
             workflow.index("python scripts/verify_release_images.py"),
@@ -348,6 +394,16 @@ class GitTests(unittest.TestCase):
         ):
             self.assertIsNone(release.prepare("o/r", ""))
             reserve.assert_not_called()
+
+    def test_automatic_push_waits_for_reviewed_first_release_bootstrap(self):
+        with (
+            patch.object(release, "pages", return_value=[]),
+            patch.object(release, "reserve") as reserve,
+            patch.object(release, "ensure_draft") as draft,
+        ):
+            self.assertIsNone(release.prepare("o/r", "", skip_unbootstrapped_push=True))
+            reserve.assert_not_called()
+            draft.assert_not_called()
 
     def test_bootstrap_always_one_stable_version(self):
         for kind in ["patch", "minor", "major", "none"]:

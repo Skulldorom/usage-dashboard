@@ -48,7 +48,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: python scripts/application_release.py classify --pr "$PR_NUMBER"
+        run: |
+          for _ in $(seq 1 15); do
+            if python scripts/application_release.py classify --pr "$PR_NUMBER"; then
+              exit 0
+            fi
+            sleep 4
+          done
+          exit 1
 
   test-backend:
     name: Test backend (pytest + Ruff)

@@ -67,14 +67,16 @@ Frontend and backend ship together under one canonical `vMAJOR.MINOR.PATCH` tag.
 `frontend/package.json` is package tooling metadata, not the application version.
 The README badge follows published stable GitHub Releases, not branch builds or tags.
 
-Maintainers classify every PR targeting `main` with exactly one repository label:
+New PRs targeting `main` automatically receive `release:patch` when no release classification is present. Maintainers may select `release:minor`, `release:major`, or `release:none`; the label workflow removes the previous classification when the event history establishes one unambiguous latest selection. Simultaneous or ambiguous changes fail closed and require a maintainer to leave exactly one label. Opening gets the default; reopening, synchronization, and deliberately removing a label never restore it. Draft PRs are classified too, and the required check remains active until exactly one valid label is present.
+
+The release classifications are:
 
 | Label | Meaning | Example from v1.2.3 |
 | --- | --- | --- |
 | `release:patch` | Backward-compatible fixes | v1.2.4 |
 | `release:minor` | Backward-compatible features | v1.3.0 |
 | `release:major` | Breaking API/configuration/deployment behavior | v2.0.0 |
-| `release:none` | Explicitly reviewed skipped change (including docs/tests) | No increment |
+| `release:none` | Explicitly reviewed skipped change (including docs/tests) | No release for this PR |
 
 Create these labels in repository settings before adopting the workflow. The PR
 classification check rejects missing, conflicting, or unrecognized classifications
@@ -103,17 +105,15 @@ classification and block release planning rather than guessing intent.
 
 ### Creating a release
 
-`Application release` runs weekly (Monday 10:00 UTC) and can be dispatched manually
-from `main`. It batches all changes since the last published stable release and
-applies the highest increment once. **Merging a PR does not immediately publish a
-new stable version.** There is no release per commit or per merge.
+`Application release` evaluates every push to `main`, runs weekly (Monday 10:00 UTC), and can be dispatched manually from `main`. The same serialized pipeline batches pending changes since the last published stable release and applies the highest increment once. A merge triggers evaluation; it only publishes when eligible runtime changes have a release-worthy classification. Documentation-only, test-only, and other ineligible paths do not publish by themselves. The scheduled run remains a fallback for missed/failed evaluations, and manual dispatch retries a reserved attempt before planning newer commits.
 A documentation-only/non-releasable batch does nothing. Ambiguous runtime changes
 fail planning before any tag is created. Fix missing labels before merging;
 after merge, editing labels does not rewrite intent. Legacy unlabeled history
 requires a reviewed bootstrap baseline rather than retroactive classification.
 
-For the **first release**, dispatch with `initial_base` set to a reviewed full
-40-character baseline commit SHA, exclusive. This explicitly selects the history
+Before the first stable release, automatic pushes deliberately skip planning; they cannot infer a baseline. To bootstrap, verify that `2040b2ef6e24f1cde5dc2fdb2ee09eaf77eaab0a` is the reviewed pre-feature baseline, open **Actions → Application release → Run workflow** on `main`, enter that full SHA in `initial_base`, and dispatch. Do not create the tag manually. Review the resulting reserved `v1.0.0` commit and allow the normal tests, both image pushes, registry verification, and publication to finish. Retry failed runs using the same workflow; planner resumes that exact reservation before newer changes. Once `v1.0.0` is published, pushes run normally without `initial_base`. A failed bootstrap reservation blocks later versions until retried or explicitly resolved.
+
+The planner requires a reviewed full 40-character baseline SHA, exclusive. This explicitly selects the history
 being classified instead of guessing which legacy commits should ship. For this
 feature's adoption, use the pre-feature `main` commit as the baseline so the
 classified update-notification PR is included. The first published stable release is
@@ -140,7 +140,7 @@ GitHub's latest stable release and the dashboard never advertise it. A failed
 matrix push can leave one image/tag or a moving minor alias in GHCR: **only published
 GitHub Releases are installable release announcements**. Do not deploy an unpublished
 reservation. Retry the workflow to rebuild the same reserved commit and complete
-publication before including newer merges. Never move an existing stable tag.
+publication before including newer merges. Newer triggers cannot cancel the active release; after publication a follow-up evaluation processes remaining commits. Never move an existing stable tag.
 Multiple unpublished tags or unmanaged draft Releases require operator resolution;
 the workflow fails closed. GitHub cannot atomically publish two images, so moving
 image aliases are not a release transaction. Pin a published exact version in both
@@ -153,7 +153,7 @@ workflow dispatch/write permissions to trusted maintainers. Tag creation with
 
 Label the breaking PR `release:major` before merging, document migration and
 configuration changes in that PR, and merge any companion frontend/backend work
-before the weekly run (or dispatch once the batch is ready). Review every pending
+before merging the breaking PR (or stage them together in one PR). Review every pending
 PR's label and ensure the breaking release is deployable as one commit snapshot.
 The highest pending intent makes the next version `v(N+1).0.0`; no separate frontend
 or backend bump is needed. Branch protection should require classification and the
@@ -180,13 +180,42 @@ native runtime needs `.git`; Git is needed only during native build preparation.
 
 ### Required repository protection
 
-Audit of ruleset `main` (ID 19039282): active, but only deletion and non-fast-forward
-rules were configured. Classic branch protection returned “Branch not protected”.
-Operators must add the `release-classification` required status check (GitHub
-Actions) and require PRs before merging to `main`; retain required application
-tests as appropriate. No protection settings were changed by this PR. Classification
-runs without PR path filters and reruns on label additions/removals and base edits.
-Documentation-only PRs therefore receive the same required check. Release planning
-still fails closed for ambiguous runtime history, including unsupported rebase
-merges. Commit-to-PR and Release API results are paginated with a bounded limit;
-selection follows first-parent commit ancestry, not PR creation or merge timestamps.
+Audit on 2026-11-12: active `main` ruleset (ID 19039282) requires PRs and
+`release-classification`, `Test backend (pytest + Ruff)`,
+`Test backend migrations (PostgreSQL)`, and `Test frontend (test + lint + build)`
+from GitHub Actions (integration 15368). No bypass actors are configured.
+Stable-tag ruleset 27110157 covers `refs/tags/v*`, prohibiting updates, deletion,
+and non-fast-forward changes without bypass. It permits creation, so the release
+workflow needs no tag-protection bypass. Neither ruleset was changed.
+
+All PR validation workflows run without PR path filters, including docs-only and
+draft PRs; release labels never bypass backend/frontend/migration checks.
+The trusted `pull_request_target` label job fetches only its base commit's
+script, never PR code, and validates immediately after its own label mutations.
+This matters because `GITHUB_TOKEN` label writes do not trigger new workflow runs.
+The read-only `release-classification` PR check remains in the Docker workflow
+with its existing identity. It waits up to a minute for label reconciliation before
+rejecting invalid labels. Keep it required from GitHub Actions. The label workflow
+must exist on `main` before it can run: classify this adoption PR explicitly, then
+verify defaults on the next PR. Neither workflow runs PR code with label-write permissions.
+Rebase remains allowed by repository settings but unsupported for runtime release
+history; use squash or merge commits for runtime PRs.
+
+The reusable `images` caller explicitly allows `contents: read`, `packages: write`,
+and `pull-requests: read`. The last permission fixes the pre-job startup error in
+run 43204555380: GitHub validates nested permissions even for conditionally skipped
+jobs. PR classification remains explicitly conditional on `pull_request`, so release
+runs do not execute it while nested permissions remain compatible. Label reconciliation needs `contents: read`, `pull-requests: read`, and
+`issues: write`. Reservation/publication use `contents: write`; registry operations
+use package permissions. The post-publication follow-up job alone has `actions: write`
+to dispatch this same workflow when `main` advanced beyond the published snapshot.
+No PAT, custom service, or bypass actor is needed.
+
+GitHub concurrency keeps one active and at most one pending run; newer triggers can
+replace pending runs even with cancellation disabled. Planning reads current `main`,
+resumes any reservation first, and after successful publication queues a fresh
+evaluation when newer commits remain. Thus merges arriving during recovery are not
+stranded waiting for another merge. A failed attempt is retried on the next push,
+weekly run, or manual dispatch. No tag push trigger exists. Local syntax/permission
+contract tests cannot prove GitHub token issuance, check attachment, or registry
+publishing: verify those in Actions after adoption, without bypassing the gates.
