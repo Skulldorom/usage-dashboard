@@ -156,7 +156,7 @@ def ensure_draft(repo, tag, sha, releases):
             raise
 
 
-def prepare(repo, initial_base):
+def prepare(repo, initial_base, skip_unbootstrapped_push=False):
     git("fetch", "origin", "main", "--tags")
     head = git("rev-parse", "origin/main")
     releases = pages(f"repos/{repo}/releases")
@@ -168,6 +168,9 @@ def prepare(repo, initial_base):
     latest = max(published, key=version) if published else None
     tags = [tag for tag in git("tag", "--list").splitlines() if STABLE.fullmatch(tag)]
     pending = [tag for tag in tags if latest is None or version(tag) > version(latest)]
+    if not latest and not pending and not initial_base and skip_unbootstrapped_push:
+        print("No stable release exists; automatic push planning waits for reviewed bootstrap dispatch")
+        return None
     if pending:
         if len(pending) != 1:
             raise ValueError("Multiple unpublished stable tags; resolve release reservations before proceeding")
@@ -252,6 +255,7 @@ def main():
     parser.add_argument("--pr", type=int)
     parser.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY"))
     parser.add_argument("--initial-base", default="")
+    parser.add_argument("--skip-unbootstrapped-push", action="store_true")
     parser.add_argument("--tag")
     parser.add_argument("--sha")
     args = parser.parse_args()
@@ -265,7 +269,7 @@ def main():
     elif args.command == "publish":
         publish(args.repo, args.tag, args.sha)
     else:
-        plan = prepare(args.repo, args.initial_base)
+        plan = prepare(args.repo, args.initial_base, args.skip_unbootstrapped_push)
         if plan:
             with open(os.environ["GITHUB_OUTPUT"], "a") as output:
                 output.write(f"tag={plan['tag']}\nsha={plan['sha']}\n")

@@ -65,3 +65,12 @@ Local source setup is a development workflow, not a production installation. See
 ## License
 
 [Mozilla Public License 2.0](LICENSE)
+
+## Application releases
+
+PRs targeting `main` default to `release:patch`. Maintainers select `release:minor`,
+`release:major`, or `release:none` instead; ambiguous classifications block merging.
+Merges automatically evaluate eligible runtime changes for a stable release after
+all tests, both Docker image publications, and registry verification pass. Docs-only
+and test-only changes do not create releases. Monday and manual runs remain fallbacks.
+See [release policy, bootstrap, and recovery](docs/getting-started/updating.md#application-versioning-policy).

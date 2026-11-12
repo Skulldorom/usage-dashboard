@@ -1,0 +1,31 @@
+name: Release classification labels
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, labeled, unlabeled, edited, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-classification-labels-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: read
+    steps:
+      - name: Add default or clean up an unambiguous selection
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          script="$(gh api "repos/$GITHUB_REPOSITORY/contents/scripts/release_classification_labels.py?ref=$BASE_SHA" --jq .content | base64 -d)"
+          printf '%s\n' "$script" > "$RUNNER_TEMP/release_classification_labels.py"
+          python "$RUNNER_TEMP/release_classification_labels.py"

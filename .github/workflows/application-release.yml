@@ -1,6 +1,8 @@
 name: Application release
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 10 * * 1'
   workflow_dispatch:
@@ -41,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           INITIAL_BASE: ${{ inputs.initial_base }}
-        run: python scripts/application_release.py prepare --initial-base "$INITIAL_BASE"
+        run: python scripts/application_release.py prepare --initial-base "$INITIAL_BASE" ${{ github.event_name == 'push' && '--skip-unbootstrapped-push' || '' }}
 
   images:
     needs: prepare
@@ -49,6 +51,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      pull-requests: read
     uses: ./.github/workflows/docker-images.yml
     with:
       release_tag: ${{ needs.prepare.outputs.tag }}
@@ -81,3 +84,21 @@ jobs:
         run: |
           python scripts/verify_release_images.py "$TAG" "$SHA"
           python scripts/application_release.py publish --tag "$TAG" --sha "$SHA"
+
+  evaluate-remaining:
+    needs: [prepare, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Queue evaluation of commits received during the reserved release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)"
+          if [ "$head" != "$RELEASE_SHA" ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/application-release.yml/dispatches" \
+              --method POST -f ref=main
+          fi
