@@ -47,9 +47,9 @@ export function Overview({ hermes, economics, overview, selectedProvider }) {
   return (
     <Grid container spacing={1.5} className="usage-summary-grid">
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Cost" value={summary.cost === null ? '—' : formatMoney(summary.cost, summary.currency)} detail={costDetail} source={summary.hasUnknownPayg ? 'Some PAYG cost is unavailable' : 'Commitment + PAYG cost bases'} /></Grid>
-      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Tokens" value={metricDisplay(summary.tokens, 'tokens')} source="Hermes observed" /></Grid>
-      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Requests" value={metricDisplay(summary.requests, 'requests')} source="Hermes observed" /></Grid>
-      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Sessions" value={metricDisplay(summary.sessions, 'sessions')} source="Hermes observed" /></Grid>
+      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Tokens" value={metricDisplay(summary.tokens, 'tokens')} source="Observed telemetry" /></Grid>
+      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Requests" value={metricDisplay(summary.requests, 'requests')} source="Observed telemetry" /></Grid>
+      <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Sessions" value={metricDisplay(summary.sessions, 'sessions')} source="Observed telemetry" /></Grid>
       {summary.sharedWorkload && <Grid size={{ xs: 12 }}><Alert severity="info">Shared provider workload cannot be attributed to this config. Select All providers to view the provider-level totals.</Alert></Grid>}
     </Grid>
   )
@@ -180,7 +180,7 @@ function UsageOverTime({ hermes }) {
     <Card component="section" variant="outlined" className="glass-panel">
       <CardContent>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', mb: 2 }}>
-          <Box><Typography variant="h5">Usage over time</Typography><Typography variant="body2" color="text.secondary">Daily Hermes-observed workload. Observed cost is telemetry reported by Hermes—not subscription commitment or provider-reported spend. Missing samples remain gaps.</Typography></Box>
+          <Box><Typography variant="h5">Usage over time</Typography><Typography variant="body2" color="text.secondary">Daily data-source-observed workload. Observed cost is supplemental telemetry—not subscription commitment or provider-reported spend. Missing samples remain gaps.</Typography></Box>
           <FormControl size="small" sx={{ minWidth: 145 }}><InputLabel>Group</InputLabel><Select label="Group" value={grouping} onChange={(event) => setGrouping(event.target.value)}><MenuItem value="provider">By provider</MenuItem><MenuItem value="model">By model</MenuItem></Select></FormControl>
         </Stack>
         <Tabs value={metric} onChange={(_, value) => setMetric(value)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>{WORKLOAD_METRICS.map((item) => <Tab key={item.value} value={item.value} label={item.label} />)}</Tabs>
@@ -229,7 +229,7 @@ function DataQuality({ hermes, overview }) {
   const quality = pricingQuality(hermes)
   const healthy = (hermes?.sources || []).filter((source) => source.status === 'healthy').length
   const stale = overview?.coverage?.stale_or_unavailable_provider_count || 0
-  const summary = [`${healthy}/${hermes?.sources?.length || 0} Hermes sources healthy`, stale ? `${stale} stale/unavailable providers` : 'provider snapshots current', quality.coverage === null ? 'pricing coverage unavailable' : `${Math.round(quality.coverage)}% priced`, `${quality.unpricedModels.length} unpriced models`].join(' · ')
+  const summary = [`${healthy}/${hermes?.sources?.length || 0} data sources healthy`, stale ? `${stale} stale/unavailable providers` : 'provider snapshots current', quality.coverage === null ? 'pricing coverage unavailable' : `${Math.round(quality.coverage)}% priced`, `${quality.unpricedModels.length} unpriced models`].join(' · ')
   return (
     <Card component="section" variant="outlined" className="glass-panel"><CardContent>
       <Stack direction="row" spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setOpen(!open)} role="button" aria-expanded={open}><Box><Typography variant="h6">Data sources & quality</Typography><Typography variant="body2" color="text.secondary">{summary}</Typography></Box><ExpandMoreRoundedIcon sx={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }} /></Stack>
