@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { Box, IconButton, Link, Tooltip, Typography } from "@mui/material";
 import SystemUpdateAltRoundedIcon from "@mui/icons-material/SystemUpdateAltRounded";
 import InfoOutlinedIcon from "@mui/icons-material/InfoOutlined";
-import ContentCopyRoundedIcon from "@mui/icons-material/ContentCopyRounded";
 import CloseRoundedIcon from "@mui/icons-material/CloseRounded";
 import OpenInNewRoundedIcon from "@mui/icons-material/OpenInNewRounded";
 import { appVersion } from "../lib/appVersion.js";
@@ -23,7 +22,6 @@ function readDismissals() {
 
 export default function UpdateNotification({ update, compact = false }) {
   const [dismissed, setDismissed] = useState(readDismissals);
-  const [copyStatus, setCopyStatus] = useState("");
   useEffect(() => {
     function sync(event) {
       setDismissed((previous) => [...new Set([...previous, ...readDismissals(), ...(event.detail ? [event.detail] : [])])]);
@@ -39,8 +37,6 @@ export default function UpdateNotification({ update, compact = false }) {
 
   const backend = appVersion(update.current_version);
   const frontend = appVersion(import.meta.env.VITE_APP_VERSION || "unknown");
-  const versionsMatch = backend.kind !== "unknown" && frontend.kind !== "unknown" &&
-    backend.full.replace(/^v/, "") === frontend.full.replace(/^v/, "");
   const notificationType = releaseNotice(frontend.full, backend.full, update.release);
   const developmentNotice = notificationType === "stable_release_available";
   const tag = update.release?.release?.tag_name;
@@ -49,15 +45,6 @@ export default function UpdateNotification({ update, compact = false }) {
   const showNotice = notificationType && !dismissed.includes(dismissal);
   const versionDetails = backend.kind === "development" ? "Development channel: stable releases are alternatives, not newer-version comparisons.\n" : "";
   const metadata = `Backend: ${backend.full}\nFrontend: ${frontend.full}`;
-
-  async function copyVersion() {
-    try {
-      await navigator.clipboard.writeText(versionsMatch ? backend.full : metadata);
-      setCopyStatus("Version copied");
-    } catch {
-      setCopyStatus("Copy unavailable. Full metadata is in version details.");
-    }
-  }
 
   function dismiss() {
     try {
@@ -106,13 +93,7 @@ export default function UpdateNotification({ update, compact = false }) {
             {backend.sha && <code>{backend.sha}</code>}
           </button>
         </Tooltip>
-        <Tooltip title="Copy full version metadata">
-          <IconButton size="small" aria-label="Copy full version metadata" onClick={copyVersion} className="version-copy">
-            <ContentCopyRoundedIcon fontSize="inherit" />
-          </IconButton>
-        </Tooltip>
       </Box>
-      <span role="status" className="version-copy-status">{copyStatus}</span>
     </Box>
   );
 }
