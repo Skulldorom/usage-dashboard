@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Card, CardContent, Chip, CircularProgress, Collapse, FormControl, Grid,
@@ -243,7 +243,8 @@ function DataQuality({ hermes, overview }) {
 }
 
 export default function UsageDashboardPage() {
-  const { hash } = useLocation()
+  const { hash, key: navigationKey } = useLocation()
+  const scrolledNavigation = useRef(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedId = searchParams.get('provider') || 'all'
   const [range, setRange] = useState(DEFAULT_RANGE)
@@ -270,8 +271,13 @@ export default function UsageDashboardPage() {
   }, [range, selectedId])
 
   useEffect(() => {
-    if (hash && !loading) document.getElementById(hash.slice(1))?.scrollIntoView()
-  }, [hash, loading])
+    if (loading || scrolledNavigation.current === navigationKey) return
+    const target = hash && document.getElementById(hash.slice(1))
+    if (!target) return
+    target.scrollIntoView()
+    // Loading may change again without a new section-navigation request.
+    scrolledNavigation.current = navigationKey
+  }, [hash, navigationKey, loading])
 
   const providerRows = useMemo(() => providerUsageRows(data.overview, data.economics, data.hermes), [data])
   const visibleRows = selectedId === 'all' ? providerRows : providerRows.filter((row) => String(row.config_id) === selectedId)

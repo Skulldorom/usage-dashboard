@@ -121,10 +121,16 @@ describe('rendered primary navigation', () => {
       await click(submenuLinks().find((link) => link.textContent === 'Filters'))
       expectActive('Filters')
       expect(window.location.hash).toBe('#usage-filters')
+      scrollIntoView.mockClear()
       await traverse('back')
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-overview'))
       expectActive('Overview')
       expect(window.location.hash).toBe('#usage-overview')
+      scrollIntoView.mockClear()
       await traverse('forward')
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+      expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-filters'))
       expectActive('Filters')
       expect(window.location.hash).toBe('#usage-filters')
       expect(window.location.pathname + window.location.search).toBe(path)
@@ -192,6 +198,96 @@ describe('rendered primary navigation', () => {
       expect(scrollIntoView.mock.contexts.at(-1)).toBe(document.getElementById(link.hash.slice(1)))
     }
     expect(fetch.mock.calls).toHaveLength(requests)
+  })
+
+  it('re-scrolls an active link without adding history entries or moving focus', async () => {
+    await render('/usage?provider=1#usage-overview')
+    const overview = submenuLinks().find((link) => link.textContent === 'Overview')
+    const historyLength = window.history.length
+    const requests = fetch.mock.calls.length
+    scrollIntoView.mockClear()
+    await click(overview)
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-overview'))
+    expect(window.history.length).toBe(historyLength)
+    expect(document.activeElement).toBe(overview)
+    scrollIntoView.mockClear()
+    await act(async () => user.keyboard('{Enter}'))
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(window.history.length).toBe(historyLength)
+    expect(fetch.mock.calls).toHaveLength(requests)
+    await click(submenuLinks().find((link) => link.textContent === 'Filters'))
+    await traverse('back')
+    expectActive('Overview')
+    expect(scrollIntoView.mock.contexts.at(-1)).toBe(document.getElementById('usage-overview'))
+  })
+
+  async function changeRange() {
+    await click(container.querySelectorAll('[role="combobox"]')[1])
+    await click([...document.querySelectorAll('[role="option"]')].find((option) => option.getAttribute('aria-selected') === 'false'))
+  }
+
+  function holdUsageRequest() {
+    const original = fetch.getMockImplementation()
+    let release
+    fetch.mockImplementation((url, ...args) => {
+      if (new URL(url, window.location.origin).pathname.endsWith('/usage')) {
+        return new Promise((resolve) => { release = () => resolve(original(url, ...args)) })
+      }
+      return original(url, ...args)
+    })
+    return async () => { await act(async () => release()) }
+  }
+
+  it('does not scroll again when a reporting-range refresh completes', async () => {
+    await render('/usage?provider=1#usage-overview')
+    scrollIntoView.mockClear()
+    const finish = holdUsageRequest()
+    await changeRange()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await finish()
+    expect(window.location.hash).toBe('#usage-overview')
+    expect(scrollIntoView).not.toHaveBeenCalled()
+  })
+
+  it('waits for asynchronous content before scrolling a direct deep link once', async () => {
+    const finish = holdUsageRequest()
+    await render('/usage?provider=1#usage-overview')
+    expect(document.getElementById('usage-overview')).toBeNull()
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await finish()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-overview'))
+  })
+
+  it('defers a same-hash re-click during refresh until its target remounts', async () => {
+    await render('/usage?provider=1#usage-overview')
+    const finish = holdUsageRequest()
+    await changeRange()
+    scrollIntoView.mockClear()
+    const historyLength = window.history.length
+    const overview = submenuLinks().find((link) => link.textContent === 'Overview')
+    await click(overview)
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await finish()
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-overview'))
+    expect(window.history.length).toBe(historyLength)
+    expect(document.activeElement).toBe(overview)
+  })
+
+  it('scrolls only the latest navigation requested while data is loading', async () => {
+    await render('/usage?provider=1#usage-overview')
+    scrollIntoView.mockClear()
+    const finish = holdUsageRequest()
+    await changeRange()
+    await click(submenuLinks().find((link) => link.textContent === 'Overview'))
+    await click(submenuLinks().find((link) => link.textContent === 'Attribution'))
+    expect(scrollIntoView).not.toHaveBeenCalled()
+    await finish()
+    expectActive('Attribution')
+    expect(scrollIntoView).toHaveBeenCalledTimes(1)
+    expect(scrollIntoView.mock.contexts[0]).toBe(document.getElementById('usage-attribution'))
   })
 
   it('navigates between primary routes and retains Settings section anchors', async () => {

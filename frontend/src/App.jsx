@@ -345,6 +345,7 @@ function Navigation({ mobile = false, isAuthenticated = true, update }) {
                         location.hash === subitem.href ? " active" : ""
                       }`}
                       to={{ pathname: location.pathname, search: location.search, hash: subitem.href }}
+                      replace={location.hash === subitem.href}
                     >
                       {subitem.label}
                     </Link>
