@@ -57,6 +57,10 @@ describe("quiet version footer", () => {
     expect(container.textContent).toBe("v1.2.0");
     expect(container.querySelector(".version-indicator")).toBeNull();
     expect(hasNotice()).toBe(false);
+    expect(container.querySelector('[aria-label="Copy full version metadata"]')).toBeNull();
+    const details = container.querySelector('[aria-label="Version details"]');
+    details.focus();
+    expect(document.activeElement).toBe(details);
   });
   it("keeps a verified update accessible with a trusted external link", async () => {
     await render();
@@ -128,13 +132,8 @@ describe("quiet version footer", () => {
     await act(async () => window.dispatchEvent(new StorageEvent("storage")));
     expect(hasNotice()).toBe(false);
   });
-  it("copies real metadata and preserves dismissal when storage fails", async () => {
-    const writeText = vi.fn().mockResolvedValue();
-    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+  it("preserves dismissal when storage fails", async () => {
     await render();
-    await act(async () => container.querySelector('[aria-label="Copy full version metadata"]').click());
-    expect(writeText).toHaveBeenCalledWith("v1.2.0");
-    expect(container.querySelector('[role="status"]').textContent).toBe("Version copied");
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
     await act(async () => container.querySelector('[aria-label^="Dismiss"]').click());
     expect(hasNotice()).toBe(false);

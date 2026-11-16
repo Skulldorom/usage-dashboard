@@ -745,7 +745,8 @@ input {
 .settings-panel {
   border-radius: 21px !important;
 }
-.settings-panel[id] {
+.settings-panel[id],
+.main-content [id^="usage-"] {
   scroll-margin-top: calc(var(--topbar-height) + 18px);
 }
 .settings-panel + .settings-panel {
@@ -1627,7 +1628,7 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 .sidebar-lower-section {
   margin-top: auto;
   display: grid;
-  gap: 14px;
+  gap: 4px;
   min-width: 0;
 }
 .version-footer {
@@ -1666,22 +1667,13 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   color: #a9a1b8;
   font-size: 0.69rem;
 }
-.version-copy.MuiIconButton-root {
-  flex-shrink: 0;
-  min-width: 32px;
-  min-height: 32px;
-  color: #b6aec4;
-  font-size: 0.85rem;
-}
 .sidebar-version:focus-visible,
-.version-copy:focus-visible,
 .update-notification a:focus-visible,
 .update-notification button:focus-visible {
   outline: 2px solid #63e3ff;
   outline-offset: 3px;
 }
-.update-version-comparison-label,
-.version-copy-status {
+.update-version-comparison-label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1786,10 +1778,6 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   }
   .mobile-update-slot:empty { display: none; }
   .version-footer-mobile { gap: 8px; }
-  .version-footer-mobile .version-copy {
-    min-width: 44px;
-    min-height: 44px;
-  }
   .version-footer-mobile .update-notification-header .MuiIconButton-root {
     width: 44px;
     height: 44px;
