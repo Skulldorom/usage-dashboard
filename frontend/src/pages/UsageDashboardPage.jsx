@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useLocation, useSearchParams } from 'react-router-dom'
 import {
   Alert, Box, Card, CardContent, Chip, CircularProgress, Collapse, FormControl, Grid,
   InputLabel, LinearProgress, MenuItem, Select, Stack, Tab, Tabs, Table, TableBody,
@@ -45,7 +45,7 @@ export function Overview({ hermes, economics, overview, selectedProvider }) {
     ? 'No reliable cost is available'
     : [summary.commitment ? `${formatMoney(summary.commitment, summary.currency)} subscriptions` : null, summary.payg ? `${formatMoney(summary.payg, summary.currency)} PAYG` : null].filter(Boolean).join(' · ')
   return (
-    <Grid container spacing={1.5} className="usage-summary-grid">
+    <Grid id="usage-overview" container spacing={1.5} className="usage-summary-grid">
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Cost" value={summary.cost === null ? '—' : formatMoney(summary.cost, summary.currency)} detail={costDetail} source={summary.hasUnknownPayg ? 'Some PAYG cost is unavailable' : 'Commitment + PAYG cost bases'} /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Tokens" value={metricDisplay(summary.tokens, 'tokens')} source="Hermes observed" /></Grid>
       <Grid size={{ xs: 6, lg: 3 }}><SummaryCard label="Requests" value={metricDisplay(summary.requests, 'requests')} source="Hermes observed" /></Grid>
@@ -112,7 +112,7 @@ function ProviderCard({ row, icon }) {
 
 function ProviderSection({ rows, icons }) {
   return (
-    <Box component="section">
+    <Box id="usage-provider-trends" component="section">
       <Typography variant="h5" sx={{ mb: 0.5 }}>Provider usage & quota</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>Workload, billing, and every provider-native quota window in one place.</Typography>
       <Grid container spacing={2}>{rows.map((row) => <Grid key={row.config_id} size={{ xs: 12, lg: 6 }}><ProviderCard row={row} icon={icons.get(row.provider)} /></Grid>)}</Grid>
@@ -177,7 +177,7 @@ function UsageOverTime({ hermes }) {
   const [metric, setMetric] = useState('tokens')
   const [grouping, setGrouping] = useState('provider')
   return (
-    <Card component="section" variant="outlined" className="glass-panel">
+    <Card id="usage-breakdowns" component="section" variant="outlined" className="glass-panel">
       <CardContent>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ justifyContent: 'space-between', mb: 2 }}>
           <Box><Typography variant="h5">Usage over time</Typography><Typography variant="body2" color="text.secondary">Daily Hermes-observed workload. Observed cost is telemetry reported by Hermes—not subscription commitment or provider-reported spend. Missing samples remain gaps.</Typography></Box>
@@ -216,7 +216,7 @@ function Breakdown({ hermes }) {
   const rows = tab === 'provider' ? hermes?.by_provider || [] : tab === 'model' ? hermes?.by_model || [] : hermes?.by_profile || []
   const totalTokens = rows.reduce((sum, row) => sum + Number(row.tokens || 0), 0)
   return (
-    <Card component="section" variant="outlined" className="glass-panel"><CardContent>
+    <Card id="usage-attribution" component="section" variant="outlined" className="glass-panel"><CardContent>
       <Typography variant="h5">Breakdown</Typography>
       <Tabs value={tab} onChange={(_, value) => setTab(value)} sx={{ mb: 1 }}><Tab value="provider" label="Providers" /><Tab value="model" label="Models" /><Tab value="profile" label="Profiles" /></Tabs>
       {!rows.length ? <Typography variant="body2" color="text.secondary">No {tab} attribution is available for this range.</Typography> : <Box className="usage-table-scroll"><Table size="small"><TableHead><TableRow><TableCell>{tab[0].toUpperCase() + tab.slice(1)}</TableCell><TableCell align="right">Cost</TableCell><TableCell align="right">Tokens</TableCell><TableCell align="right">Requests</TableCell><TableCell align="right">Sessions</TableCell><TableCell align="right">Share</TableCell></TableRow></TableHead><TableBody>{rows.map((row) => <TableRow key={row.key}><TableCell>{tab === 'provider' ? providerNameWithLabel(row.key) : row.key}</TableCell><TableCell align="right">{row.cost === null || row.cost === undefined ? '—' : formatMoney(row.cost)}</TableCell><TableCell align="right">{metricDisplay(row.tokens, 'tokens')}</TableCell><TableCell align="right">{metricDisplay(row.requests, 'requests')}</TableCell><TableCell align="right">{metricDisplay(row.sessions, 'sessions')}</TableCell><TableCell align="right">{row.tokens !== null && totalTokens > 0 ? `${(row.tokens / totalTokens * 100).toFixed(1)}%` : '—'}</TableCell></TableRow>)}</TableBody></Table></Box>}
@@ -243,6 +243,7 @@ function DataQuality({ hermes, overview }) {
 }
 
 export default function UsageDashboardPage() {
+  const { hash } = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const selectedId = searchParams.get('provider') || 'all'
   const [range, setRange] = useState(DEFAULT_RANGE)
@@ -268,13 +269,17 @@ export default function UsageDashboardPage() {
     return () => { cancelled = true }
   }, [range, selectedId])
 
+  useEffect(() => {
+    if (hash && !loading) document.getElementById(hash.slice(1))?.scrollIntoView()
+  }, [hash, loading])
+
   const providerRows = useMemo(() => providerUsageRows(data.overview, data.economics, data.hermes), [data])
   const visibleRows = selectedId === 'all' ? providerRows : providerRows.filter((row) => String(row.config_id) === selectedId)
   const selectedProvider = visibleRows.length === 1 && selectedId !== 'all' ? visibleRows[0] : null
   const providerIcons = useMemo(() => new Map(data.providerCatalog.map((provider) => [provider.id, provider.icon])), [data.providerCatalog])
 
   return <>
-    <header className="page-heading usage-page-heading"><Box><div className="page-kicker">Usage</div><Typography component="h1" variant="h2">Usage</Typography><Typography component="p">Understand your AI workload, provider quotas, costs, and usage trends.</Typography></Box>
+    <header id="usage-filters" className="page-heading usage-page-heading"><Box><div className="page-kicker">Usage</div><Typography component="h1" variant="h2">Usage</Typography><Typography component="p">Understand your AI workload, provider quotas, costs, and usage trends.</Typography></Box>
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25} className="usage-header-controls">
         <FormControl size="small" sx={{ minWidth: 190 }}><InputLabel>Provider</InputLabel><Select label="Provider" value={selectedId} onChange={(event) => setSearchParams(event.target.value === 'all' ? {} : { provider: event.target.value })}><MenuItem value="all">All providers</MenuItem>{providerRows.map((row) => <MenuItem key={row.config_id} value={String(row.config_id)}>{row.displayName}</MenuItem>)}</Select></FormControl>
         <FormControl size="small" sx={{ minWidth: 135 }}><InputLabel>Range</InputLabel><Select label="Range" value={range} onChange={(event) => setRange(event.target.value)}>{RANGE_OPTIONS.map((option) => <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>)}</Select></FormControl>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   BrowserRouter,
+  Link,
   NavLink,
   Route,
   Routes,
@@ -338,15 +339,15 @@ function Navigation({ mobile = false, isAuthenticated = true, update }) {
               {item.to === "/usage" && showUsageSubmenu && (
                 <div className="nav-submenu" aria-label="Usage sections">
                   {visibleUsageSubmenuItems.map((subitem) => (
-                    <a
+                    <Link
                       key={subitem.href}
                       className={`nav-submenu-link${
                         location.hash === subitem.href ? " active" : ""
                       }`}
-                      href={subitem.href}
+                      to={{ pathname: location.pathname, search: location.search, hash: subitem.href }}
                     >
                       {subitem.label}
-                    </a>
+                    </Link>
                   ))}
                 </div>
               )}

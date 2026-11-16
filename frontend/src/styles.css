@@ -745,7 +745,8 @@ input {
 .settings-panel {
   border-radius: 21px !important;
 }
-.settings-panel[id] {
+.settings-panel[id],
+.main-content [id^="usage-"] {
   scroll-margin-top: calc(var(--topbar-height) + 18px);
 }
 .settings-panel + .settings-panel {
