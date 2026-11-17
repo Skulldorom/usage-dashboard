@@ -10,10 +10,14 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControl,
   FormControlLabel,
+  InputLabel,
+  MenuItem,
   IconButton,
   Paper,
   Stack,
+  Select,
   Table,
   TableBody,
   TableCell,
@@ -139,6 +143,7 @@ export function InstallWithHermesSection({ onCopyInstallPrompt }) {
 
 export default function DataSourcesSection() {
   const [sources, setSources] = useState([])
+  const [catalog, setCatalog] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [open, setOpen] = useState(false)
@@ -149,6 +154,7 @@ export default function DataSourcesSection() {
   const [inspectionOpen, setInspectionOpen] = useState(false)
   const [mappingSource, setMappingSource] = useState(null)
   const [form, setForm] = useState({
+    kind: 'hermes',
     name: '',
     base_url: '',
     token: '',
@@ -162,7 +168,9 @@ export default function DataSourcesSection() {
     setLoading(true)
     setError('')
     try {
-      setSources(await api.dataSourceConfigs())
+      const [configs, kinds] = await Promise.all([api.dataSourceConfigs(), api.dataSourceCatalog()])
+      setSources(configs)
+      setCatalog(kinds)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -173,7 +181,7 @@ export default function DataSourcesSection() {
   useEffect(() => { load() }, [load])
 
   function openAdd() {
-    setForm({ name: '', base_url: '', token: '', profiles: '', provider_mappings: '', mute_unmapped_provider_alerts: false, poll_interval_minutes: 60 })
+    setForm({ kind: 'hermes', name: '', base_url: '', token: '', profiles: '', provider_mappings: '', mute_unmapped_provider_alerts: false, poll_interval_minutes: 60 })
     setActionResult(null)
     setOpen(true)
   }
@@ -183,7 +191,7 @@ export default function DataSourcesSection() {
     setError('')
     try {
       const payload = {
-        kind: 'hermes',
+        kind: form.kind,
         name: form.name || undefined,
         base_url: form.base_url || undefined,
         token: form.token || undefined,
@@ -268,7 +276,7 @@ export default function DataSourcesSection() {
         </Box>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
           <Button variant="outlined" size="small" startIcon={<AddRoundedIcon />} onClick={openAdd}>
-            Add Hermes source
+            Add data source
           </Button>
           <HubRoundedIcon color="primary" />
         </Stack>
@@ -408,7 +416,7 @@ export default function DataSourcesSection() {
               </Table>
             ) : (
               <Box className="empty-state">
-                <Typography variant="h6">No stored Hermes observations yet</Typography>
+                <Typography variant="h6">No stored observations yet</Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }}>
                   Run a sync to fetch telemetry, then inspect again. If sync fetched records but stored none, the sync diagnostics above will explain why.
                 </Typography>
@@ -422,15 +430,28 @@ export default function DataSourcesSection() {
       </Dialog>
 
       <Dialog open={open} onClose={() => setOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>Connect Hermes Agent</DialogTitle>
+        <DialogTitle>Connect data source</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
             <Typography variant="body2" color="text.secondary">
-              Usage Dashboard polls the read-only Hermes Usage Sidecar for
-              observed usage metadata. No prompts, responses, or message contents
-              are collected.
+              Data sources provide observed telemetry only. They never replace or
+              add to authoritative provider-reported usage.
             </Typography>
-            <Alert severity="info">
+            <FormControl fullWidth>
+              <InputLabel>Source type</InputLabel>
+              <Select
+                label="Source type"
+                value={form.kind}
+                onChange={(event) => {
+                  const kind = event.target.value
+                  const source = catalog.find((item) => item.id === kind)
+                  setForm({ ...form, kind, poll_interval_minutes: source?.default_poll_interval_minutes ?? 60 })
+                }}
+              >
+                {catalog.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}
+              </Select>
+            </FormControl>
+            {form.kind === 'hermes' && <><Alert severity="info">
               <Stack spacing={1}>
                 <Typography variant="subtitle2" component="p">
                   Hermes Usage Sidecar required
@@ -466,20 +487,29 @@ export default function DataSourcesSection() {
                 </Stack>
               </Stack>
             </Alert>
-            <InstallWithHermesSection onCopyInstallPrompt={copyInstallPrompt} />
-            <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="hermes" helperText="Defaults to the source kind." />
-            <TextField label="Hermes sidecar base URL" value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder="http://127.0.0.1:8799" fullWidth required />
-            <TextField label="Bearer token" type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText="Token configured in USAGE_SIDECAR_TOKEN. Stored encrypted." />
+            <InstallWithHermesSection onCopyInstallPrompt={copyInstallPrompt} /></>}
+            {form.kind === '9router' && <Alert severity="warning">
+              9Router uses its authenticated <code>/api/usage/request-details</code> dashboard endpoint. Enable 9Router observability/request details first. History is bounded, so high traffic or a low 9Router record limit may require a higher retention limit; one minute is the shortest supported polling interval. Observed telemetry does not change provider totals.
+            </Alert>}
+            <TextField label="Name" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder={form.kind} helperText="Defaults to the source type." />
+            <TextField label={form.kind === '9router' ? '9Router base URL' : 'Hermes sidecar base URL'} value={form.base_url} onChange={(event) => setForm({ ...form, base_url: event.target.value })} placeholder={form.kind === '9router' ? 'http://9router:20128' : 'http://127.0.0.1:8799'} fullWidth required />
+            <TextField label={form.kind === '9router' ? '9Router dashboard password' : 'Bearer token'} type="password" value={form.token} onChange={(event) => setForm({ ...form, token: event.target.value })} helperText={form.kind === '9router' ? 'Used only to obtain a temporary official dashboard session. Stored encrypted.' : 'Token configured in USAGE_SIDECAR_TOKEN. Stored encrypted.'} />
             <TextField label="Profiles" value={form.profiles} onChange={(event) => setForm({ ...form, profiles: event.target.value })} placeholder="coder, default" helperText="Comma-separated. Leave blank for all profiles." />
-            <TextField label="Provider mappings" value={form.provider_mappings} onChange={(event) => setForm({ ...form, provider_mappings: event.target.value })} placeholder="anthropic=anthropic, openrouter=openrouter" helperText="Optional overrides: hermes-provider=dashboard-provider, comma-separated." />
+            <TextField label="Provider mappings" value={form.provider_mappings} onChange={(event) => setForm({ ...form, provider_mappings: event.target.value })} placeholder="anthropic=anthropic, openrouter=openrouter" helperText="Optional overrides: observed-provider=dashboard-provider, comma-separated." />
             <FormControlLabel
               control={<Checkbox checked={form.mute_unmapped_provider_alerts} onChange={(event) => setForm({ ...form, mute_unmapped_provider_alerts: event.target.checked })} />}
               label="Mute unmapped provider alerts"
             />
             <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
-              Leaves unmapped Hermes providers visible in the mapping dialog, but suppresses sync-result warning banners if you intentionally do not want to map them.
+              Leaves unmapped observed providers visible in the mapping dialog, but suppresses sync-result warning banners if you intentionally do not want to map them.
             </Typography>
-            <TextField label="Poll interval (minutes)" type="number" value={form.poll_interval_minutes} onChange={(event) => setForm({ ...form, poll_interval_minutes: event.target.value })} />
+            <TextField
+              label="Poll interval (minutes)"
+              type="number"
+              value={form.poll_interval_minutes}
+              onChange={(event) => setForm({ ...form, poll_interval_minutes: event.target.value })}
+              helperText={form.kind === '9router' ? '9Router retains only bounded request details. One minute is the recommended starting point.' : undefined}
+            />
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 3 }}>

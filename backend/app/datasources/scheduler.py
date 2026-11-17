@@ -31,9 +31,19 @@ TICK_SECONDS = 60
 _task: asyncio.Task | None = None
 
 
-def is_due(last_attempt_at: datetime | None, interval_minutes: int, now: datetime | None = None) -> bool:
-    """Whether a source is due for a poll."""
+def is_due(
+    last_attempt_at: datetime | None,
+    interval_minutes: int,
+    now: datetime | None = None,
+    next_attempt_at: datetime | None = None,
+) -> bool:
+    """Whether a source is due for a poll and is not in source-requested backoff."""
     current = now or datetime.now(UTC)
+    current = current if current.tzinfo else current.replace(tzinfo=UTC)
+    if next_attempt_at is not None:
+        next_attempt = next_attempt_at if next_attempt_at.tzinfo else next_attempt_at.replace(tzinfo=UTC)
+        if current < next_attempt:
+            return False
     if last_attempt_at is None:
         return True
     last = last_attempt_at if last_attempt_at.tzinfo else last_attempt_at.replace(tzinfo=UTC)
@@ -49,7 +59,11 @@ async def discover_due_sources(session_factory: async_sessionmaker) -> list[int]
             .all()
         )
         now = datetime.now(UTC)
-        return [s.id for s in sources if is_due(s.last_attempt_at, s.poll_interval_minutes, now)]
+        return [
+            s.id
+            for s in sources
+            if is_due(s.last_attempt_at, s.poll_interval_minutes, now, s.next_attempt_at)
+        ]
 
 
 async def poll_one(source_id: int, session_factory: async_sessionmaker) -> None:

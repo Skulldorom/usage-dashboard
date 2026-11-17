@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from app.datasources.base import DataSource
 from app.datasources.hermes import HermesDataSource
+from app.datasources.ninerouter import NineRouterDataSource
 
 DATA_SOURCES: dict[str, type[DataSource]] = {
     HermesDataSource.id: HermesDataSource,
+    NineRouterDataSource.id: NineRouterDataSource,
 }
 
 
@@ -24,6 +26,7 @@ def list_data_sources() -> list[dict]:
             "name": cls.name,
             "description": cls.description,
             "metrics": cls.metric_names,
+            "default_poll_interval_minutes": cls.default_poll_interval_minutes,
         }
         for cls in DATA_SOURCES.values()
     ]

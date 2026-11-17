@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.core.config import settings
 from app.core.crypto import CryptoService
 from app.datasources import scheduler
+from app.datasources.base import DataSourceRetryError
 from app.datasources import service as ds_service
 from app.models import Base, DataSourceConfig, UsageObservation
 
@@ -195,3 +196,71 @@ async def test_start_stop_cancels_cleanly(monkeypatch):
 
     assert scheduler._task is None
     assert task.done()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_defers_source_until_retry_eligibility(session_factory):
+    now = datetime.now(UTC)
+    source_id = await _seed_source(
+        session_factory,
+        base_url="backoff",
+        last_attempt_at=now - timedelta(minutes=2),
+        interval=1,
+    )
+    async with session_factory() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.next_attempt_at = now + timedelta(minutes=10)
+        await session.commit()
+
+    assert source_id not in await scheduler.discover_due_sources(session_factory)
+
+    async with session_factory() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+        await session.commit()
+
+    assert source_id in await scheduler.discover_due_sources(session_factory)
+
+
+@pytest.mark.asyncio
+async def test_retry_failure_defers_polling_and_success_clears_backoff(monkeypatch, session_factory):
+    class _BackoffThenHealthy:
+        calls = 0
+
+        async def fetch_observations(self, base_url, token, extra, timeout):
+            type(self).calls += 1
+            if type(self).calls == 1:
+                raise DataSourceRetryError("authentication failed", 15 * 60)
+            return [{"timestamp": "2026-08-22T12:00:00+00:00", "provider": "anthropic", "input_tokens": 10}]
+
+    monkeypatch.setattr(ds_service, "get_data_source", lambda kind: _BackoffThenHealthy)
+    source_id = await _seed_source(session_factory, interval=1)
+    await scheduler.poll_one(source_id, session_factory)
+
+    source = await _get_source(session_factory, source_id)
+    assert source.consecutive_failures == 1
+    assert source.next_attempt_at is not None
+    assert source_id not in await scheduler.discover_due_sources(session_factory)
+
+    async with session_factory() as session:
+        source = await session.get(DataSourceConfig, source_id)
+        source.next_attempt_at = datetime.now(UTC) - timedelta(seconds=1)
+        source.last_attempt_at = datetime.now(UTC) - timedelta(minutes=2)
+        await session.commit()
+    await scheduler.poll_one(source_id, session_factory)
+
+    source = await _get_source(session_factory, source_id)
+    assert source.consecutive_failures == 0
+    assert source.next_attempt_at is None
+    assert source.latest_error is None
+
+
+@pytest.mark.asyncio
+async def test_hermes_failure_keeps_normal_interval_behavior(monkeypatch, session_factory):
+    monkeypatch.setattr(ds_service, "get_data_source", lambda kind: _FakeHermes)
+    source_id = await _seed_source(session_factory, base_url="fail", interval=1)
+    await scheduler.poll_one(source_id, session_factory)
+
+    source = await _get_source(session_factory, source_id)
+    assert source.next_attempt_at is None
+    assert scheduler.is_due(source.last_attempt_at, 1, now=source.last_attempt_at + timedelta(minutes=1))
