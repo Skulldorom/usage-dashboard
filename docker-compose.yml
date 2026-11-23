@@ -1,6 +1,6 @@
 services:
   db:
-    image: ${POSTGRES_IMAGE:-postgres:18-alpine}
+    image: ${POSTGRES_IMAGE:-postgres:19-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-usage_dashboard}
