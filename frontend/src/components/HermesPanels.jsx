@@ -65,10 +65,10 @@ function HermesDailyChart({ daily }) {
   const values = rows.map((row) => Number(row.tokens || row.requests || row.cost || 0))
   const max = Math.max(...values, 0)
   if (!rows.length || max <= 0) {
-    return <Typography variant="body2" color="text.secondary">No daily Hermes points in this range.</Typography>
+    return <Typography variant="body2" color="text.secondary">No daily observed-telemetry points in this range.</Typography>
   }
   return (
-    <Box className="hermes-daily-chart" role="img" aria-label="Hermes observed usage over time">
+    <Box className="hermes-daily-chart" role="img" aria-label="Observed telemetry usage over time">
       {rows.map((row, index) => {
         const value = values[index]
         const height = Math.max(6, Math.round((value / max) * 100))
@@ -109,7 +109,7 @@ export function HermesSourceCard({ source, compact = false }) {
 
   return (
     <Card variant="outlined" className="glass-panel data-source-card">
-      <CardActionArea component="a" href="/usage" aria-label={`Open Hermes telemetry for ${source.name}`}>
+      <CardActionArea component="a" href="/usage" aria-label={`Open observed telemetry for ${source.name}`}>
         <CardContent>
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'flex-start', gap: 1 }}>
             <Box>
@@ -205,7 +205,7 @@ export function HermesBreakdownPanel({ range }) {
     return (
       <Card variant="outlined" className="glass-panel">
         <CardContent>
-          <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
+          <Typography variant="overline" color="primary.main">Observed telemetry</Typography>
           <Alert severity="info" sx={{ mt: 1 }}>{error}</Alert>
         </CardContent>
       </Card>
@@ -218,7 +218,7 @@ export function HermesBreakdownPanel({ range }) {
         <CardContent>
           <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
             <CircularProgress size={16} />
-            <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
+            <Typography variant="overline" color="primary.main">Observed telemetry</Typography>
           </Stack>
         </CardContent>
       </Card>
@@ -236,10 +236,10 @@ export function HermesBreakdownPanel({ range }) {
             <Box>
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <HubRoundedIcon color="primary" fontSize="small" />
-                <Typography variant="overline" color="primary.main">Hermes telemetry</Typography>
+                <Typography variant="overline" color="primary.main">Observed telemetry</Typography>
               </Stack>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                Observed usage flowing through Hermes Agent. Supplemental to provider-reported totals; never double-counted.
+                Observed usage from configured data sources. Supplemental to provider-reported totals; never double-counted.
               </Typography>
             </Box>
             <Button href="/settings#data-sources" size="small" variant="outlined">Manage sources</Button>
@@ -276,7 +276,7 @@ export function HermesBreakdownPanel({ range }) {
                 ))}
               </Grid>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                Estimated from Hermes-observed model + token usage against a maintained pricing catalogue. Separate from provider-reported cost and never added to it.
+                Estimated from data-source-observed model + token usage against a maintained pricing catalogue when source cost is unavailable. Separate from provider-reported cost and never added to it.
               </Typography>
             </Box>
           )}
@@ -287,7 +287,7 @@ export function HermesBreakdownPanel({ range }) {
       <Card variant="outlined" className="glass-panel">
         <CardContent>
           <Typography variant="overline" color="primary.main">Observed usage over time</Typography>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Daily Hermes-observed tokens, requests, and cost for the selected Usage range.</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>Daily data-source-observed tokens, requests, and cost for the selected Usage range.</Typography>
           <HermesDailyChart daily={data.daily} />
         </CardContent>
       </Card>

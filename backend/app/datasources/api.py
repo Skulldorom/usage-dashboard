@@ -15,8 +15,9 @@ from app.core.auth import require_admin_auth, require_scope
 from app.core.config import settings
 from app.core.crypto import CryptoService
 from app.database import get_session
+from app.datasources.base import DataSourceFetchResult, DataSourceRetryError
 from app.datasources.registry import get_data_source, list_data_sources
-from app.datasources.service import sync_data_source
+from app.datasources.service import record_data_source_failure, sync_data_source
 from app.models import DataSourceConfig, ProviderConfig, UsageObservation
 from app.schemas import (
     DataSourceConfigCreate,
@@ -50,6 +51,7 @@ def _status(source: DataSourceConfig) -> DataSourceStatus:
     return DataSourceStatus(
         status=state,
         last_attempt_at=source.last_attempt_at,
+        next_attempt_at=source.next_attempt_at,
         last_success_at=source.last_success_at,
         last_failure_at=source.last_failure_at,
         consecutive_failures=source.consecutive_failures or 0,
@@ -111,6 +113,7 @@ async def create_data_source_config(payload: DataSourceConfigCreate, session: As
         get_data_source(payload.kind)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    adapter_cls = get_data_source(payload.kind)
     name = (payload.name or payload.kind).strip() or payload.kind
     encrypted = _crypto().encrypt(payload.token) if payload.token else None
     source = DataSourceConfig(
@@ -120,7 +123,11 @@ async def create_data_source_config(payload: DataSourceConfigCreate, session: As
         encrypted_token=encrypted,
         extra=_extra_from(payload.profiles, payload.provider_mappings, payload.mute_unmapped_provider_alerts),
         is_enabled=payload.is_enabled,
-        poll_interval_minutes=payload.poll_interval_minutes,
+        poll_interval_minutes=(
+            payload.poll_interval_minutes
+            if payload.poll_interval_minutes is not None
+            else adapter_cls.default_poll_interval_minutes
+        ),
     )
     session.add(source)
     try:
@@ -147,6 +154,9 @@ async def update_data_source_config(
         source.base_url = payload.base_url
     if payload.has_update_for("token"):
         source.encrypted_token = _crypto().encrypt(payload.token) if payload.token else None
+        # A user supplied fresh credentials; let their explicit update recover
+        # from a prior automatic-auth backoff on the next scheduler tick.
+        source.next_attempt_at = None
     if (
         payload.has_update_for("profiles")
         or payload.has_update_for("provider_mappings")
@@ -190,11 +200,15 @@ async def test_data_source(source_id: int, session: AsyncSession = Depends(get_s
     try:
         adapter = get_data_source(source.kind)()
         token = _crypto().decrypt(source.encrypted_token) if source.encrypted_token else None
-        records = await adapter.fetch_observations(
+        fetched = await adapter.fetch_observations(
             source.base_url, token, source.extra or {}, settings.request_timeout_seconds
         )
+    except DataSourceRetryError as exc:
+        await record_data_source_failure(session, source, exc)
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    records = fetched.records if isinstance(fetched, DataSourceFetchResult) else fetched
     return {"ok": True, "records": len(records)}
 
 
@@ -225,7 +239,7 @@ async def data_source_observations(source_id: int, limit: int = 50, session: Asy
         (
             await session.execute(
                 select(UsageObservation)
-                .where(UsageObservation.data_source_id == source_id, UsageObservation.source == "hermes")
+                .where(UsageObservation.data_source_id == source_id)
                 .order_by(desc(UsageObservation.observed_at), desc(UsageObservation.id))
                 .limit(bounded_limit)
             )
@@ -303,7 +317,6 @@ async def _provider_mappings_read(session: AsyncSession, source: DataSourceConfi
             )
             .where(
                 UsageObservation.data_source_id == source.id,
-                UsageObservation.source == "hermes",
             )
             .group_by(UsageObservation.provider, UsageObservation.metric)
         )

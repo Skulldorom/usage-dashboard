@@ -36,7 +36,7 @@ export function estimatedCostTotal(estimate) {
 
 export function estimatedCostCards(estimate) {
   // Build headline cards for the derived estimated-cost block, distinct from
-  // provider/Hermes-reported cost. Returns [] when no estimate is present.
+  // provider/data-source-reported cost. Returns [] when no estimate is present.
   const cards = []
   const total = estimatedCostTotal(estimate)
   const pricedTokens = estimate?.total_tokens ?? 0
